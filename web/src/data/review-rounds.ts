@@ -1,0 +1,58 @@
+import type { ReviewRound } from "../lib/types";
+
+export const seedReviewRounds: ReviewRound[] = [
+  {
+    issue: "SP-154",
+    number: 2,
+    from: "d35a2cf",
+    to: "8b7e13a",
+    date: "Nov 8, 2024",
+    author: "Codex",
+    summary: "Reviewed concurrent decision handling and feedback for conflicting updates.",
+  },
+  {
+    issue: "SP-154",
+    number: 1,
+    from: "a17c021",
+    to: "d35a2cf",
+    date: "Nov 7, 2024",
+    author: "Claude Code",
+    summary: "Reviewed the initial decision flow and its audit history.",
+  },
+  {
+    issue: "SP-142",
+    number: 2,
+    from: "a3f9c2d",
+    to: "7b4e1aa",
+    date: "Nov 6, 2024",
+    author: "Codex",
+    summary: "Reviewed sign-in expiry, branch validation, and related interface updates.",
+  },
+  {
+    issue: "SP-142",
+    number: 1,
+    from: "6fa81d0",
+    to: "a3f9c2d",
+    date: "Nov 4, 2024",
+    author: "Claude Code",
+    summary: "Reviewed code verification and the sign-in form.",
+  },
+  {
+    issue: "SP-144",
+    number: 1,
+    from: "2e89b11",
+    to: "5c3bd14",
+    date: "Nov 5, 2024",
+    author: "Claude Code",
+    summary: "Reviewed error messages for unsuccessful sign-in.",
+  },
+  {
+    issue: "SP-153",
+    number: 1,
+    from: "019ac41",
+    to: "27d9a8c",
+    date: "Nov 7, 2024",
+    author: "Codex",
+    summary: "Reviewed the issue list filters and view switching.",
+  },
+];
