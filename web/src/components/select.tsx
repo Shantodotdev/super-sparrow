@@ -1,4 +1,4 @@
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 type SelectOption = { value: string; label: string };
@@ -8,11 +8,19 @@ type SelectProps = {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
-  variant?: "filter" | "default";
+  variant?: "filter" | "default" | "chip";
+  icon?: IconName;
 };
 
 /** A controlled select with an accessible, keyboard-operable listbox. */
-export function Select({ label, value, options, onChange, variant = "default" }: SelectProps) {
+export function Select({
+  label,
+  value,
+  options,
+  onChange,
+  variant = "default",
+  icon,
+}: SelectProps) {
   const id = useId();
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -103,6 +111,7 @@ export function Select({ label, value, options, onChange, variant = "default" }:
           setOpen(!open);
         }}
       >
+        {icon && <Icon name={icon} />}
         {variant === "filter" && <span className="custom-select-label">{label}</span>}
         <span className="custom-select-value">{options[selected]?.label ?? value}</span>
         <Icon name="chevron-down" className="custom-select-chevron" />

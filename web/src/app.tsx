@@ -3,6 +3,8 @@ import { Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { filterIssues } from "./lib/issue-filter";
 import { Select } from "./components/select";
 import { Icon, type IconName } from "./components/icon";
+import { NewIssueModal, type NewIssueValues } from "./components/new-issue-modal";
+import { Modal } from "./components/modal";
 import {
   createContext,
   useContext,
@@ -33,6 +35,7 @@ type Issue = {
   findings: number;
   milestone: string;
   updated: string;
+  plan?: string;
 };
 type Finding = {
   id: string;
@@ -484,8 +487,6 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [showNew, setShowNew] = useState(false);
-  const [title, setTitle] = useState("");
-  const [newLabels, setNewLabels] = useState<string[]>([]);
   const [toast, setToast] = useState("");
   const go = (next: Page, issue?: string, round = "2") => {
     if (next === "issue")
@@ -520,33 +521,26 @@ export function App() {
         e.preventDefault();
         setPalette(true);
       }
-      if (e.key === "Escape") {
-        setPalette(false);
-        setShowNew(false);
-      }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  const addIssue = (e: FormEvent) => {
-    e.preventDefault();
+  const addIssue = (values: NewIssueValues) => {
     const key = `SP-${Math.max(...issues.map((item) => Number(item.key.split("-")[1]))) + 1}`;
     setIssues((current) => [
       {
         key,
-        title: title.trim(),
-        status: "Backlog",
-        labels: newLabels,
-        assignee: "Shanto",
+        title: values.title,
+        status: values.status as IssueStatus,
+        labels: values.labels,
+        assignee: values.assignee,
         findings: 0,
-        milestone: "Later",
+        milestone: values.milestone,
         updated: "Just now",
+        plan: values.plan,
       },
       ...current,
     ]);
-    setTitle("");
-    setNewLabels([]);
-    setShowNew(false);
     notify(`${key} created in this preview`);
   };
   const decide = (finding: Finding, status: string) => {
@@ -567,10 +561,7 @@ export function App() {
     go,
     decide,
     notify,
-    openNew: () => {
-      setNewLabels([]);
-      setShowNew(true);
-    },
+    openNew: () => setShowNew(true),
   };
   if (page === "signin")
     return (
@@ -656,69 +647,41 @@ export function App() {
             {toast}
           </div>
         )}
-        {palette && (
-          <div className="overlay" onMouseDown={() => setPalette(false)}>
-            <div
-              className="palette"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Navigation"
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className="palette-title">
-                Go to <kbd>esc</kbd>
-              </div>
-              {(
-                [
-                  ["issues", "Issues"],
-                  ["findings", "Open findings"],
-                  ["milestones", "Milestones"],
-                  ["activity", "Activity"],
-                  ["settings", "People and agents"],
-                ] as [Page, string][]
-              ).map(([key, label]) => (
-                <button key={key} onClick={() => go(key)}>
-                  {label}
-                  <span>↗</span>
-                </button>
-              ))}
-            </div>
+        <Modal
+          open={palette}
+          onClose={() => setPalette(false)}
+          className="palette"
+          label="Navigation"
+        >
+          <div className="palette-title">
+            Go to <kbd>esc</kbd>
           </div>
-        )}
-        {showNew && (
-          <div className="overlay">
-            <div className="modal" role="dialog" aria-modal="true" aria-label="New issue">
-              <form onSubmit={addIssue}>
-                <h2>Create issue</h2>
-                <label>
-                  Title
-                  <input
-                    autoFocus
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Issue title"
-                  />
-                </label>
-                <LabelPicker
-                  options={[
-                    ...new Set([...initialIssues, ...issues].flatMap((item) => item.labels)),
-                  ].sort()}
-                  selected={newLabels}
-                  onChange={setNewLabels}
-                />
-                <div className="modal-actions">
-                  <button className="button" type="button" onClick={() => setShowNew(false)}>
-                    Cancel
-                  </button>
-                  <button className="primary" disabled={!title.trim()}>
-                    Create issue
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+          {(
+            [
+              ["issues", "Issues"],
+              ["findings", "Open findings"],
+              ["milestones", "Milestones"],
+              ["activity", "Activity"],
+              ["settings", "People and agents"],
+            ] as [Page, string][]
+          ).map(([key, label]) => (
+            <button key={key} onClick={() => go(key)}>
+              {label}
+              <span>↗</span>
+            </button>
+          ))}
+        </Modal>
+        <NewIssueModal
+          open={showNew}
+          statuses={statuses}
+          assignees={[...new Set(initialIssues.map((issue) => issue.assignee))]}
+          milestones={[...new Set(initialIssues.map((issue) => issue.milestone))]}
+          labels={[
+            ...new Set([...initialIssues, ...issues].flatMap((issue) => issue.labels)),
+          ].sort()}
+          onCreate={addIssue}
+          onClose={() => setShowNew(false)}
+        />
       </div>
     </AppContext.Provider>
   );
@@ -810,6 +773,7 @@ function Nav({
   );
 }
 function Avatar({ name }: { name: string }) {
+  if (name === "Unassigned") return <Icon name="circle-user-round" />;
   if (name === "Codex" || name === "Claude Code")
     return (
       <img
@@ -1147,9 +1111,11 @@ function IssuePage({
           <Icon name="circle-dot" /> &nbsp;{issue.key}　 ·　 <Icon name="git-branch" /> &nbsp;
           feat/sp-142-email-code　 ·　 <Icon name="message-square" /> &nbsp; 8 comments
         </div>
-        <p className="issue-summary">
-          Adds sign-in with email code, branch creation flow, and related UI updates.
-        </p>
+        {issue.plan === undefined && (
+          <p className="issue-summary">
+            Adds sign-in with email code, branch creation flow, and related UI updates.
+          </p>
+        )}
         <div className="tabs issue-tabs">
           {["Plan", "Review rounds", "Activity"].map((name) => (
             <button
@@ -1161,7 +1127,9 @@ function IssuePage({
             </button>
           ))}
         </div>
-        {tab === "Plan" ? (
+        {tab === "Plan" && issue.plan !== undefined ? (
+          <div className="plan issue-created-plan">{issue.plan || "No plan added yet."}</div>
+        ) : tab === "Plan" ? (
           <div className="plan">
             <section>
               <Icon name="target" className="plan-icon" />
@@ -1794,6 +1762,9 @@ function Settings({
   notify: (message: string) => void;
 }) {
   const [dialog, setDialog] = useState<"member" | "token" | null>(null);
+  const lastDialog = useRef<"member" | "token">("member");
+  if (dialog) lastDialog.current = dialog;
+  const displayedDialog = dialog ?? lastDialog.current;
   const [agent, setAgent] = useState("Claude Code");
   const [name, setName] = useState("");
   const [members, setMembers] = useState(["Shanto", "Alex", "Jamie"]);
@@ -1958,47 +1929,48 @@ function Settings({
           </>
         )}
       </div>
-      {dialog && (
-        <div className="overlay">
-          <div className="modal" role="dialog" aria-modal="true">
-            <form onSubmit={add}>
-              <h2>{dialog === "member" ? "Add member" : "Create agent token"}</h2>
-              <label>
-                {dialog === "member" ? "Name" : "Token label"}
-                <input autoFocus required value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              {dialog === "member" && (
-                <label>
-                  Email
-                  <input type="email" required />
-                </label>
-              )}
-              {dialog === "token" && (
-                <div className="select-field">
-                  <span>Agent</span>
-                  <Select
-                    label="Agent"
-                    value={agent}
-                    onChange={setAgent}
-                    options={[
-                      { value: "Claude Code", label: "Claude Code" },
-                      { value: "Codex", label: "Codex" },
-                    ]}
-                  />
-                </div>
-              )}
-              <div className="modal-actions">
-                <button className="button" type="button" onClick={() => setDialog(null)}>
-                  Cancel
-                </button>
-                <button className="primary">
-                  {dialog === "member" ? "Add member" : "Create token"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={dialog !== null}
+        onClose={() => setDialog(null)}
+        className="modal"
+        label={displayedDialog === "member" ? "Add member" : "Create agent token"}
+      >
+        <form onSubmit={add}>
+          <h2>{displayedDialog === "member" ? "Add member" : "Create agent token"}</h2>
+          <label>
+            {displayedDialog === "member" ? "Name" : "Token label"}
+            <input autoFocus required value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          {displayedDialog === "member" && (
+            <label>
+              Email
+              <input type="email" required />
+            </label>
+          )}
+          {displayedDialog === "token" && (
+            <div className="select-field">
+              <span>Agent</span>
+              <Select
+                label="Agent"
+                value={agent}
+                onChange={setAgent}
+                options={[
+                  { value: "Claude Code", label: "Claude Code" },
+                  { value: "Codex", label: "Codex" },
+                ]}
+              />
+            </div>
+          )}
+          <div className="modal-actions">
+            <button className="button" type="button" onClick={() => setDialog(null)}>
+              Cancel
+            </button>
+            <button className="primary">
+              {displayedDialog === "member" ? "Add member" : "Create token"}
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
     </>
   );
 }
