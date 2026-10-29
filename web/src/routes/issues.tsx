@@ -73,7 +73,11 @@ function IssuesPage() {
               onChange={setMilestone}
               options={milestones}
             />
-            <div className="view-switch" role="group" aria-label="Issue view">
+            <div
+              className={`view-switch ${view === "board" ? "view-switch--board" : ""}`}
+              role="group"
+              aria-label="Issue view"
+            >
               <button
                 type="button"
                 aria-pressed={view !== "board"}

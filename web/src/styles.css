@@ -1489,7 +1489,9 @@ select {
   .project-button,
   .issue-row,
   .group-heading-chevron,
-  .issue-group-content {
+  .issue-group-content,
+  .view-switch button,
+  .view-switch::before {
     transition: none;
   }
   .custom-select-trigger,
@@ -1573,30 +1575,55 @@ select {
   margin-bottom: 0;
 }
 .view-switch {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   padding: 3px;
   gap: 2px;
   border: 1px solid #292e38;
-  border-radius: 10px;
+  border-radius: 999px;
   background: #101216;
 }
+.view-switch::before {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: #273142;
+  content: "";
+  pointer-events: none;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.view-switch--board::before {
+  transform: translateX(calc(100% + 2px));
+}
 .view-switch button {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 84px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 6px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: #9ba9bc;
   font-size: 12px;
+  transition: color 180ms ease;
+}
+.view-switch button:nth-of-type(2) {
+  padding: 8px 14px;
 }
 .view-switch button:hover {
   color: #edf0f6;
 }
 .view-switch button[aria-pressed="true"] {
   color: #edf0f6;
-  background: #273142;
 }
 .view-switch .icon {
   width: 15px;
