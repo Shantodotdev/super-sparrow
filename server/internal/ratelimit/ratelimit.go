@@ -71,3 +71,32 @@ func (l *Limiter) sweep(now time.Time) {
 		}
 	}
 }
+
+// Check reports whether a hit for key would be allowed now, without recording one, and when it
+// would not, how long until it would. Pair it with Record to count only some outcomes, such as
+// failures. Check and Record are not one step, so concurrent callers can go slightly over the limit.
+func (l *Limiter) Check(key string) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.now()
+	recent := l.recent(key, now)
+	l.hits[key] = recent
+	if len(recent) >= l.limit {
+		return false, recent[0].Add(l.window).Sub(now)
+	}
+	return true, 0
+}
+
+// Record counts a hit for key, whether or not it is within the limit.
+func (l *Limiter) Record(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.now()
+	l.calls++
+	if l.calls%sweepEvery == 0 {
+		l.sweep(now)
+	}
+	l.hits[key] = append(l.recent(key, now), now)
+}

@@ -175,29 +175,39 @@ func TestCodeRequestsAreRateLimitedPerEmailAndPerIP(t *testing.T) {
 	f.service.Wait()
 }
 
-func TestCodeChecksAreRateLimitedPerIP(t *testing.T) {
+func TestWrongCodesAreRateLimitedPerIP(t *testing.T) {
 	f := newFixture(t)
 	code := f.codeFor(t, "olive@example.com")
 	wrong := "000000"
 	if code == wrong {
 		wrong = "111111"
 	}
+	const office = "198.51.100.9"
 
-	// Wrong guesses spread over strangers' emails still use up the address's checks.
-	for i := range codeChecksPerIP {
+	// Wrong guesses spread over strangers' emails all count against the address.
+	for i := range wrongCodesPerIP - 1 {
 		address := "stranger" + string(rune('a'+i)) + "@example.com"
-		if _, err := f.service.VerifyCode(f.ctx, address, wrong, "Firefox on Linux", "198.51.100.9"); !errors.Is(err, store.ErrInvalidCode) {
+		if _, err := f.service.VerifyCode(f.ctx, address, wrong, "Firefox on Linux", office); !errors.Is(err, store.ErrInvalidCode) {
 			t.Fatalf("check %d: %v", i+1, err)
 		}
 	}
+
+	// A right code from the same address signs in and is not counted.
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux", office); err != nil {
+		t.Fatalf("right code from a busy address: %v", err)
+	}
+	if _, err := f.service.VerifyCode(f.ctx, "strangerz@example.com", wrong, "Firefox on Linux", office); !errors.Is(err, store.ErrInvalidCode) {
+		t.Fatalf("last wrong code within the limit: %v", err)
+	}
+
 	var limited *RateLimitError
-	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux", "198.51.100.9"); !errors.As(err, &limited) || limited.RetryAfter <= 0 {
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", wrong, "Firefox on Linux", office); !errors.As(err, &limited) || limited.RetryAfter <= 0 {
 		t.Fatalf("over the per-IP limit: %v", err)
 	}
 
-	// The limit left the code alone, so its person can still sign in from their own address.
-	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux", "203.0.113.7"); err != nil {
-		t.Fatalf("VerifyCode from another address: %v", err)
+	// Another address is not limited.
+	if _, err := f.service.VerifyCode(f.ctx, "strangerz@example.com", wrong, "Firefox on Linux", "203.0.113.7"); !errors.Is(err, store.ErrInvalidCode) {
+		t.Fatalf("another address: %v", err)
 	}
 }
 

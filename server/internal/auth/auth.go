@@ -32,9 +32,9 @@ const (
 
 	codeRequestsPerEmail = 5
 	codeRequestsPerIP    = 20
-	codeChecksPerIP      = 10
+	wrongCodesPerIP      = 20
 	codeRequestWindow    = time.Hour
-	codeCheckWindow      = time.Hour
+	wrongCodeWindow      = time.Hour
 	emailSendTimeout     = 30 * time.Second
 	secretBytes          = 32
 )
@@ -60,8 +60,10 @@ type Service struct {
 	logger    *slog.Logger
 	perEmail  *ratelimit.Limiter
 	perIP     *ratelimit.Limiter
-	checks    *ratelimit.Limiter
-	sending   sync.WaitGroup
+	// wrongCodes counts wrong sign-in codes per client address. Right codes are not counted, so
+	// a team signing in from behind one office address never uses it up.
+	wrongCodes *ratelimit.Limiter
+	sending    sync.WaitGroup
 }
 
 // New returns a Service. publicURL is the address people open, used in emails. codeKey is the
@@ -70,14 +72,14 @@ type Service struct {
 // rate limits; pass time.Now outside tests.
 func New(st *store.Store, mailer email.Sender, publicURL *url.URL, codeKey []byte, logger *slog.Logger, now func() time.Time) *Service {
 	return &Service{
-		store:     st,
-		mailer:    mailer,
-		publicURL: publicURL,
-		codeKey:   codeKey,
-		logger:    logger,
-		perEmail:  ratelimit.New(codeRequestsPerEmail, codeRequestWindow, now),
-		perIP:     ratelimit.New(codeRequestsPerIP, codeRequestWindow, now),
-		checks:    ratelimit.New(codeChecksPerIP, codeCheckWindow, now),
+		store:      st,
+		mailer:     mailer,
+		publicURL:  publicURL,
+		codeKey:    codeKey,
+		logger:     logger,
+		perEmail:   ratelimit.New(codeRequestsPerEmail, codeRequestWindow, now),
+		perIP:      ratelimit.New(codeRequestsPerIP, codeRequestWindow, now),
+		wrongCodes: ratelimit.New(wrongCodesPerIP, wrongCodeWindow, now),
 	}
 }
 
@@ -126,15 +128,16 @@ type SignIn struct {
 
 // VerifyCode checks code for address and, when it is right, creates a session for the device.
 // Every wrong, expired, or used code fails with store.ErrInvalidCode. Five wrong guesses cancel
-// a person's codes, so each client address may check only a few codes an hour; otherwise anyone
-// who knows a teammate's email could keep them from signing in.
+// a person's codes, so each client address may enter only a few wrong codes an hour; otherwise
+// anyone who knows teammates' emails could keep them all from signing in. Right codes do not
+// count, so people signing in from one shared address do not use up each other's tries.
 func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, clientIP string) (SignIn, error) {
 	normalized := strings.ToLower(strings.TrimSpace(address))
 	code = strings.ReplaceAll(strings.TrimSpace(code), " ", "")
 	if len(code) != 6 || strings.Trim(code, "0123456789") != "" {
 		return SignIn{}, &store.ValidationError{Field: "code", Message: "must be the 6-digit code from the email"}
 	}
-	if ok, retry := s.checks.Allow(clientIP); !ok {
+	if ok, retry := s.wrongCodes.Check(clientIP); !ok {
 		return SignIn{}, &RateLimitError{RetryAfter: retry}
 	}
 
@@ -145,6 +148,9 @@ func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, cl
 
 	actor, session, err := s.store.VerifySignInCode(ctx, normalized, s.hashCode(normalized, code),
 		store.NewSession{Hash: Hash(secret), DeviceLabel: deviceLabel})
+	if errors.Is(err, store.ErrInvalidCode) {
+		s.wrongCodes.Record(clientIP)
+	}
 	if err != nil {
 		return SignIn{}, err
 	}

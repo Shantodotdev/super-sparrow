@@ -124,7 +124,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 - A code expires after 10 minutes, works once, and is stored only as a hash keyed with a server secret that is kept out of the database, so a copy of the database does not reveal codes. Five wrong attempts cancel it.
 - An email's three newest codes work at once, so someone else requesting codes for that email cannot cancel the one its owner is entering. A wrong guess counts against all of them, and signing in cancels the rest.
 - The sign-in screen shows the same message whether or not the email belongs to a teammate, so it never reveals who has an account. Codes are sent only to active teammates.
-- Code requests are rate-limited per email and per IP address, and code checks per IP address, so nobody can keep cancelling a teammate's codes from one address.
+- Code requests are rate-limited per email and per IP address, and wrong codes per IP address, so nobody can keep cancelling a teammate's codes from one address. Right codes do not count, so a team signing in from one office address does not use up its tries.
 - A successful sign-in creates a session stored in the database. The browser gets an `HttpOnly`, `SameSite=Lax` cookie. When the public URL uses HTTPS, the cookie is also `Secure` and named with the `__Host-` prefix; over `http://localhost` in development it is not, so sign-in works there. A session lasts 30 days and renews while in use.
 - Settings lists each person's signed-in devices, with sign-out for one device or all of them.
 - Disabling a teammate ends all their sessions and revokes all their agent tokens at once.
