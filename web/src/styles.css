@@ -685,6 +685,16 @@ select {
   color: #dce2ec;
   font-size: 12px;
 }
+.group-heading .count {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #9ba9bc;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: normal;
+}
 .status-icon {
   color: #98a9c3;
   font-size: 17px;
@@ -1492,7 +1502,8 @@ select {
   .group-heading-chevron,
   .issue-group-content,
   .view-switch button,
-  .view-switch::before {
+  .view-switch::before,
+  .issue-filters .new-issue-button {
     transition: none;
   }
   .custom-select-trigger,
@@ -1554,6 +1565,23 @@ select {
 }
 .issue-filters .new-issue-button {
   white-space: nowrap;
+  padding: 6px 15px;
+  border-color: #5f7fff;
+  box-shadow:
+    0 4px 14px #2455eb38,
+    inset 0 1px #ffffff24;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.issue-filters .new-issue-button:hover {
+  transform: translateY(-1px);
+  border-color: #89a0ff;
+  box-shadow:
+    0 6px 18px #2455eb55,
+    inset 0 1px #ffffff33;
 }
 .list-content {
   padding-top: 0;
