@@ -1,6 +1,7 @@
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
+import { HeadContent, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import appCss from "../styles.css?url";
+import { App } from "../app";
 
 /** The HTML shell around every page, with the shared query client from the router context. */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -18,7 +19,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="app-scrollbar">
       <head>
         <HeadContent />
       </head>
@@ -35,7 +36,7 @@ function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <App />
     </QueryClientProvider>
   );
 }
