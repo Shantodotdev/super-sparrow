@@ -1,11 +1,11 @@
 # Coding agent guidelines
 
-Use these instructions when working on Super Sparrow. [PRODUCT.md](PRODUCT.md) explains what the product is, [SRS.md](SRS.md) defines its requirements and architecture, and [PLAN.md](PLAN.md) lists the build steps in order.
+Use these instructions when working on Super Sparrow. [docs/PRODUCT.md](docs/PRODUCT.md) explains what the product is, [docs/SRS.md](docs/SRS.md) defines its requirements and architecture, and [docs/PLAN.md](docs/PLAN.md) lists the build steps in order.
 
 ## Before changing code
 
 1. Read the SRS sections relevant to the task. For work across the Go server and the frontend, include the data model and the agent interface sections.
-2. For planned work, find the matching step in PLAN.md and read it. Once Super Sparrow tracks its own work, find the issue named in the branch instead.
+2. For planned work, find the matching step in [docs/PLAN.md](docs/PLAN.md) and read it. Once Super Sparrow tracks its own work, find the issue named in the branch instead.
 3. Check `git status --short`, inspect the files you will touch, and preserve unrelated work. Keep the change focused on the request.
 4. Check the actual scripts and dependencies before telling a developer to run a command. If the SRS and code disagree, explain the gap rather than guessing. Base implementation claims on the code you inspected.
 
@@ -38,7 +38,9 @@ Use these instructions when working on Super Sparrow. [PRODUCT.md](PRODUCT.md) e
 ## Changes and verification
 
 - Format only files you changed. `make format` formats the whole repository; use it only when a repository-wide format is requested.
-- For Go changes, run `make check-go` and `make test-go`. For frontend changes, run `make check-web` and `make test-web`. For changes across both, run both and check that the API types the frontend uses still match the server.
+- For Go changes, run `make check-go` and `make test-go`. For frontend changes, run `make check-web` and `make test-web`. For desktop changes, run `make check-desktop`. For changes across the server and the frontend, run both and check that the API types the frontend uses still match the server.
+- Use Bun for every JavaScript and TypeScript task: scripts, tests, and tools. Do not add Node to the toolchain or to CI.
+- Pin dependencies to exact versions, and keep `bun.lock`, `server/go.sum`, and `desktop/src-tauri/Cargo.lock` committed.
 - For a change to MCP tools, call each changed tool once against a running server and check its response and its recorded actor.
 - While iterating, run only the affected tests (`go test ./path/to/pkg -run <Name>`, `bun test <file> -t <name>`), and run the full suites once at the end. When a run's output is long, save it to a file and read the summary and the failures.
 - For documentation-only edits, format the edited Markdown files with Prettier. Tests are not required.
@@ -46,7 +48,7 @@ Use these instructions when working on Super Sparrow. [PRODUCT.md](PRODUCT.md) e
 - In the final report, say what changed, which commands actually ran and their results, and what remains unverified. Do not invent test results or implemented features.
 - When giving responses or output to the user, do not output code blocks by default. Respond concisely, referencing relevant file paths, file names, or function names instead. Provide code blocks only when the user explicitly requests to show code.
 
-The `make` targets above are created in the first step of PLAN.md. Until they exist, say which checks you could not run.
+[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) lists every `make` target and the pinned toolchain versions.
 
 ## Database migrations
 
@@ -66,9 +68,10 @@ The `make` targets above are created in the first step of PLAN.md. Until they ex
 
 ## Where to look
 
-- [PRODUCT.md](PRODUCT.md): what the product is and who it is for.
-- [SRS.md](SRS.md): requirements, architecture, data model, and security.
-- [PLAN.md](PLAN.md): the build steps, in order.
+- [docs/PRODUCT.md](docs/PRODUCT.md): what the product is and who it is for.
+- [docs/SRS.md](docs/SRS.md): requirements, architecture, data model, and security.
+- [docs/PLAN.md](docs/PLAN.md): the build steps, in order.
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md): toolchain, first run, commands, CI, and releases.
 - `server/`: Go server, CLI, MCP server, and migrations.
 - `web/`: TanStack Start (React) frontend.
 - `desktop/`: Tauri v2 app.

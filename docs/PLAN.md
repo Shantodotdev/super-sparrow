@@ -4,6 +4,8 @@ Steps to build the first version of Super Sparrow, in order. Requirements are in
 
 ## 1. Foundation
 
+Done in the initial scaffold.
+
 1. Create the `server/` (Go), `web/` (TanStack Start), and `desktop/` (Tauri) folders.
 2. Add a Makefile with `check-go`, `test-go`, `check-web`, `test-web`, `format`, and `dev` targets, as AGENTS.md describes.
 3. Set up CI to run those checks and tests.
