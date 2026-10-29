@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 )
 
 const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.status, i.parent_issue_id,
@@ -37,7 +39,8 @@ type NewIssue struct {
 	LabelIDs        []string
 }
 
-// IssueUpdate lists the issue fields to change. Setting an ID or text field to "" clears it.
+// IssueUpdate lists the issue fields to change. Setting an ID or text field to "" clears it, and
+// setting LabelIDs replaces the whole set.
 type IssueUpdate struct {
 	Title           Field[string]
 	Plan            Field[string]
@@ -46,6 +49,8 @@ type IssueUpdate struct {
 	AssigneeActorID Field[string]
 	BranchName      Field[string]
 	PullRequestURL  Field[string]
+	Status          Field[IssueStatus]
+	LabelIDs        Field[[]string]
 }
 
 // IssueFilter selects issues within one project. Results come newest first, a page at a time:
@@ -174,7 +179,8 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 	return issue, err
 }
 
-// UpdateIssue changes the given fields of an issue. People and agents can update issues.
+// UpdateIssue changes the given fields, status, and labels of an issue in one transaction, with
+// one event for each kind of change. People and agents can update issues.
 func (s *Store) UpdateIssue(ctx context.Context, by Caller, issueID string, update IssueUpdate) (Issue, error) {
 	if err := validateIssueUpdate(&update); err != nil {
 		return Issue{}, err
@@ -187,47 +193,64 @@ func (s *Store) UpdateIssue(ctx context.Context, by Caller, issueID string, upda
 			return err
 		}
 
-		next := current
-		changes := map[string]any{}
-		applyChange(update.Title, &next.Title, "title", changes)
-		applyChange(update.ParentIssueID, &next.ParentIssueID, "parent_issue_id", changes)
-		applyChange(update.MilestoneID, &next.MilestoneID, "milestone_id", changes)
-		applyChange(update.AssigneeActorID, &next.AssigneeActorID, "assignee_actor_id", changes)
-		applyChange(update.BranchName, &next.BranchName, "branch_name", changes)
-		applyChange(update.PullRequestURL, &next.PullRequestURL, "pull_request_url", changes)
-		// A plan can be long, so its event records only that it changed; the issue holds the text.
-		if update.Plan.Set && update.Plan.Value != current.Plan {
-			next.Plan = update.Plan.Value
-			changes["plan"] = map[string]any{"changed": true}
-		}
-		if len(changes) == 0 {
-			issue = current
-			return nil
-		}
-
-		err = checkIssueReferences(w, current.ProjectID, current.ID, changedOrEmpty(update.ParentIssueID, next.ParentIssueID),
-			changedOrEmpty(update.MilestoneID, next.MilestoneID), changedOrEmpty(update.AssigneeActorID, next.AssigneeActorID))
-		if err != nil {
+		if err := updateIssueFields(w, current, update); err != nil {
 			return err
 		}
-
-		next.UpdatedAt = w.now
-		_, err = w.exec(`
-			UPDATE issues SET title = ?, plan = ?, parent_issue_id = ?, milestone_id = ?, assignee_actor_id = ?,
-				branch_name = ?, pull_request_url = ?, updated_at = ?
-			WHERE id = ?`,
-			next.Title, next.Plan, nullString(next.ParentIssueID), nullString(next.MilestoneID),
-			nullString(next.AssigneeActorID), nullString(next.BranchName), nullString(next.PullRequestURL),
-			w.timestamp(), current.ID)
-		if err != nil {
-			return mapUniqueViolation(err, "another issue in this project already uses branch "+next.BranchName, "update issue")
+		if update.Status.Set {
+			if err := setIssueStatus(w, current, update.Status.Value); err != nil {
+				return err
+			}
+		}
+		if update.LabelIDs.Set {
+			if err := setIssueLabels(w, current, update.LabelIDs.Value); err != nil {
+				return err
+			}
 		}
 
-		issue = next
-		return w.event(current.ProjectID, TargetIssue, current.ID, "issue.updated", changes)
+		issue, err = getIssue(w.ctx, w.tx, `i.id = ?`, current.ID)
+		return err
 	})
 
 	return issue, err
+}
+
+// updateIssueFields writes the changed text and reference fields and records them in one event.
+func updateIssueFields(w *writeTx, current Issue, update IssueUpdate) error {
+	next := current
+	changes := map[string]any{}
+	applyChange(update.Title, &next.Title, "title", changes)
+	applyChange(update.ParentIssueID, &next.ParentIssueID, "parent_issue_id", changes)
+	applyChange(update.MilestoneID, &next.MilestoneID, "milestone_id", changes)
+	applyChange(update.AssigneeActorID, &next.AssigneeActorID, "assignee_actor_id", changes)
+	applyChange(update.BranchName, &next.BranchName, "branch_name", changes)
+	applyChange(update.PullRequestURL, &next.PullRequestURL, "pull_request_url", changes)
+	// A plan can be long, so its event records only that it changed; the issue holds the text.
+	if update.Plan.Set && update.Plan.Value != current.Plan {
+		next.Plan = update.Plan.Value
+		changes["plan"] = map[string]any{"changed": true}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+
+	err := checkIssueReferences(w, current.ProjectID, current.ID, changedOrEmpty(update.ParentIssueID, next.ParentIssueID),
+		changedOrEmpty(update.MilestoneID, next.MilestoneID), changedOrEmpty(update.AssigneeActorID, next.AssigneeActorID))
+	if err != nil {
+		return err
+	}
+
+	_, err = w.exec(`
+		UPDATE issues SET title = ?, plan = ?, parent_issue_id = ?, milestone_id = ?, assignee_actor_id = ?,
+			branch_name = ?, pull_request_url = ?, updated_at = ?
+		WHERE id = ?`,
+		next.Title, next.Plan, nullString(next.ParentIssueID), nullString(next.MilestoneID),
+		nullString(next.AssigneeActorID), nullString(next.BranchName), nullString(next.PullRequestURL),
+		w.timestamp(), current.ID)
+	if err != nil {
+		return mapUniqueViolation(err, "another issue in this project already uses branch "+next.BranchName, "update issue")
+	}
+
+	return w.event(current.ProjectID, TargetIssue, current.ID, "issue.updated", changes)
 }
 
 func validateIssueUpdate(update *IssueUpdate) error {
@@ -251,6 +274,15 @@ func validateIssueUpdate(update *IssueUpdate) error {
 		if update.PullRequestURL.Value, err = optionalHTTPURL("pull_request_url", update.PullRequestURL.Value); err != nil {
 			return err
 		}
+	}
+	if update.Status.Set && !update.Status.Value.valid() {
+		return invalid("status", "must be backlog, todo, in_progress, in_review, done, or canceled")
+	}
+	if update.LabelIDs.Set {
+		if len(update.LabelIDs.Value) > maxLabelsPerIssue {
+			return invalid("label_ids", "must have at most %d labels", maxLabelsPerIssue)
+		}
+		update.LabelIDs.Value = uniqueSorted(update.LabelIDs.Value)
 	}
 	return nil
 }
@@ -284,24 +316,34 @@ func (s *Store) SetIssueStatus(ctx context.Context, by Caller, issueID string, s
 		if err != nil {
 			return err
 		}
-		if current.Status == status {
-			return nil
-		}
-
-		completedAt := sql.NullString{}
-		if status.closed() {
-			completedAt = sql.NullString{String: w.timestamp(), Valid: true}
-		}
-
-		_, err = w.exec(`UPDATE issues SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?`,
-			status, completedAt, w.timestamp(), current.ID)
-		if err != nil {
-			return fmt.Errorf("change issue status: %w", err)
-		}
-
-		return w.event(current.ProjectID, TargetIssue, current.ID, "issue.status_changed",
-			map[string]any{"from": current.Status, "to": status})
+		return setIssueStatus(w, current, status)
 	})
+}
+
+func setIssueStatus(w *writeTx, current Issue, status IssueStatus) error {
+	return setIssueStatusWith(w, current, status, map[string]any{})
+}
+
+// setIssueStatusWith moves the issue to status, adding extra to the event's payload, such as why
+// it moved.
+func setIssueStatusWith(w *writeTx, current Issue, status IssueStatus, extra map[string]any) error {
+	if current.Status == status {
+		return nil
+	}
+
+	completedAt := sql.NullString{}
+	if status.closed() {
+		completedAt = sql.NullString{String: w.timestamp(), Valid: true}
+	}
+
+	_, err := w.exec(`UPDATE issues SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?`,
+		status, completedAt, w.timestamp(), current.ID)
+	if err != nil {
+		return fmt.Errorf("change issue status: %w", err)
+	}
+
+	extra["from"], extra["to"] = current.Status, status
+	return w.event(current.ProjectID, TargetIssue, current.ID, "issue.status_changed", extra)
 }
 
 // SetIssueLabels replaces an issue's labels. People and agents can label issues.
@@ -309,33 +351,83 @@ func (s *Store) SetIssueLabels(ctx context.Context, by Caller, issueID string, l
 	if len(labelIDs) > maxLabelsPerIssue {
 		return invalid("label_ids", "must have at most %d labels", maxLabelsPerIssue)
 	}
-	labelIDs = uniqueSorted(labelIDs)
 
 	return s.write(ctx, by, func(w *writeTx) error {
 		current, err := getIssue(w.ctx, w.tx, `i.id = ?`, issueID)
 		if err != nil {
 			return err
 		}
-		if slices.Equal(current.LabelIDs, labelIDs) {
+		return setIssueLabels(w, current, uniqueSorted(labelIDs))
+	})
+}
+
+// setIssueLabels replaces the issue's labels with labelIDs, which must already be unique and sorted.
+func setIssueLabels(w *writeTx, current Issue, labelIDs []string) error {
+	if slices.Equal(current.LabelIDs, labelIDs) {
+		return nil
+	}
+	if err := checkLabels(w, current.ProjectID, labelIDs); err != nil {
+		return err
+	}
+
+	if _, err := w.exec(`DELETE FROM issue_labels WHERE issue_id = ?`, current.ID); err != nil {
+		return fmt.Errorf("clear issue labels: %w", err)
+	}
+	if err := insertIssueLabels(w, current.ID, labelIDs); err != nil {
+		return err
+	}
+	if _, err := w.exec(`UPDATE issues SET updated_at = ? WHERE id = ?`, w.timestamp(), current.ID); err != nil {
+		return fmt.Errorf("touch issue: %w", err)
+	}
+
+	return w.event(current.ProjectID, TargetIssue, current.ID, "issue.labels_changed",
+		map[string]any{"from": current.LabelIDs, "to": labelIDs})
+}
+
+// UpdatePlanChecklist ticks or unticks checklist items in an issue's plan, keyed by their index
+// as checklist.Items numbers them. It changes only those lines, so it never overwrites an edit
+// someone else made to the rest of the plan. People and agents can tick items.
+func (s *Store) UpdatePlanChecklist(ctx context.Context, by Caller, issueID string, changes map[int]bool) (Issue, error) {
+	if len(changes) == 0 {
+		return Issue{}, invalid("items", "must name at least one item")
+	}
+	for index := range changes {
+		if index < 0 {
+			return Issue{}, invalid("items", "indexes must not be negative")
+		}
+	}
+
+	var issue Issue
+	err := s.write(ctx, by, func(w *writeTx) error {
+		current, err := getIssue(w.ctx, w.tx, `i.id = ?`, issueID)
+		if err != nil {
+			return err
+		}
+
+		plan, err := checklist.Set(current.Plan, changes)
+		if err != nil {
+			return invalid("items", "%s", err.Error())
+		}
+		issue = current
+		if plan == current.Plan {
 			return nil
 		}
-		if err := checkLabels(w, current.ProjectID, labelIDs); err != nil {
-			return err
-		}
 
-		if _, err := w.exec(`DELETE FROM issue_labels WHERE issue_id = ?`, current.ID); err != nil {
-			return fmt.Errorf("clear issue labels: %w", err)
+		if _, err := w.exec(`UPDATE issues SET plan = ?, updated_at = ? WHERE id = ?`, plan, w.timestamp(), current.ID); err != nil {
+			return fmt.Errorf("update plan checklist: %w", err)
 		}
-		if err := insertIssueLabels(w, current.ID, labelIDs); err != nil {
-			return err
-		}
-		if _, err := w.exec(`UPDATE issues SET updated_at = ? WHERE id = ?`, w.timestamp(), current.ID); err != nil {
-			return fmt.Errorf("touch issue: %w", err)
-		}
+		issue.Plan, issue.UpdatedAt = plan, w.now
 
-		return w.event(current.ProjectID, TargetIssue, current.ID, "issue.labels_changed",
-			map[string]any{"from": current.LabelIDs, "to": labelIDs})
+		items := make([]map[string]any, 0, len(changes))
+		for _, item := range checklist.Items(plan) {
+			if _, ok := changes[item.Index]; ok {
+				items = append(items, map[string]any{"index": item.Index, "text": item.Text, "checked": item.Checked})
+			}
+		}
+		return w.event(current.ProjectID, TargetIssue, current.ID, "issue.checklist_changed", map[string]any{"items": items})
 	})
+
+	return issue, err
 }
 
 // checkIssueReferences checks that a parent issue, milestone, and assignee exist and fit the
@@ -446,12 +538,16 @@ func (s *Store) GetIssueByKey(ctx context.Context, key string) (Issue, error) {
 // FindIssueForBranch returns the issue a branch belongs to: the issue that records this exact
 // branch name, or else the issue whose key the name contains, as in feat/wp-142-meta-comments.
 func (s *Store) FindIssueForBranch(ctx context.Context, branch string) (Issue, error) {
+	return findIssueForBranch(ctx, s.db, branch)
+}
+
+func findIssueForBranch(ctx context.Context, q querier, branch string) (Issue, error) {
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
 		return Issue{}, invalid("branch", "is required")
 	}
 
-	issue, err := getIssue(ctx, s.db, `i.branch_name = ? ORDER BY i.created_at LIMIT 1`, branch)
+	issue, err := getIssue(ctx, q, `i.branch_name = ? ORDER BY i.created_at LIMIT 1`, branch)
 	if !errors.Is(err, ErrNotFound) {
 		return issue, err
 	}
@@ -465,7 +561,7 @@ func (s *Store) FindIssueForBranch(ctx context.Context, branch string) (Issue, e
 
 		key, numberText := branch[start+location[2]:start+location[3]], branch[start+location[4]:start+location[5]]
 		number, _ := strconv.Atoi(numberText)
-		issue, err := getIssueByProjectNumber(ctx, s.db, key, number)
+		issue, err := getIssueByProjectNumber(ctx, q, key, number)
 		if !errors.Is(err, ErrNotFound) {
 			return issue, err
 		}

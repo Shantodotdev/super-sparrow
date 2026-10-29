@@ -10,6 +10,9 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
+// modelHeader is where an agent names the model it runs.
+const modelHeader = "Sparrow-Model"
+
 // access is who may call a route.
 type access int
 
@@ -18,6 +21,7 @@ const (
 	signedIn
 	humanOnly
 	ownerOnly
+	agentOnly
 )
 
 // identity is who made a request, taken from their session cookie or agent token.
@@ -25,9 +29,14 @@ type identity struct {
 	actor     store.Actor
 	sessionID string
 	tokenID   string
+	// reportedModel is the model an agent names in the Sparrow-Model header. It is recorded on
+	// events as reported; the server cannot verify it.
+	reportedModel string
 }
 
-func (id identity) caller() store.Caller { return store.Caller{ActorID: id.actor.ID} }
+func (id identity) caller() store.Caller {
+	return store.Caller{ActorID: id.actor.ID, ReportedModel: id.reportedModel}
+}
 
 type identityKey struct{}
 
@@ -67,6 +76,8 @@ func (s *server) authorize(w http.ResponseWriter, r *http.Request, level access,
 		return forbiddenRequest("only a person can do this, not an agent")
 	case level == ownerOnly && !id.actor.IsOwner():
 		return forbiddenRequest("only an owner can do this")
+	case level == agentOnly && id.tokenID == "":
+		return forbiddenRequest("send an agent token as a bearer token; create one in settings")
 	}
 
 	return handler(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
@@ -88,7 +99,7 @@ func (s *server) identify(w http.ResponseWriter, r *http.Request) (identity, err
 		if ok, retry := s.perToken.Allow(checked.Token.ID); !ok {
 			return identity{}, &auth.RateLimitError{RetryAfter: retry}
 		}
-		return identity{actor: checked.Actor, tokenID: checked.Token.ID}, nil
+		return identity{actor: checked.Actor, tokenID: checked.Token.ID, reportedModel: strings.TrimSpace(r.Header.Get(modelHeader))}, nil
 	}
 
 	cookie, err := r.Cookie(s.cookieName)

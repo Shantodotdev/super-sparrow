@@ -46,8 +46,7 @@ func conflict(reason string) error { return fmt.Errorf("%s: %w", reason, ErrConf
 // mapUniqueViolation turns a unique constraint failure into ErrConflict with reason, and wraps
 // any other error with context.
 func mapUniqueViolation(err error, reason, context string) error {
-	var sqliteErr *sqlite.Error
-	if errors.As(err, &sqliteErr) {
+	if sqliteErr, ok := errors.AsType[*sqlite.Error](err); ok {
 		code := sqliteErr.Code()
 		if code == sqlite3.SQLITE_CONSTRAINT_UNIQUE || code == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY {
 			return conflict(reason)

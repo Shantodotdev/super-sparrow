@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,12 +23,31 @@ const timeLayout = "2006-01-02T15:04:05.000Z"
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+
+	changeMu sync.Mutex
+	changed  chan struct{}
 }
 
 // New returns a Store over db, which must already be migrated. now supplies the current time;
 // pass time.Now outside tests.
 func New(db *sql.DB, now func() time.Time) *Store {
-	return &Store{db: db, now: now}
+	return &Store{db: db, now: now, changed: make(chan struct{})}
+}
+
+// Changed returns a channel that is closed after the next committed change. Live views take it
+// before reading new events, so a change committed in between still wakes them.
+func (s *Store) Changed() <-chan struct{} {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
+	return s.changed
+}
+
+// notifyChanged wakes everyone waiting on Changed and starts a new wait.
+func (s *Store) notifyChanged() {
+	s.changeMu.Lock()
+	defer s.changeMu.Unlock()
+	close(s.changed)
+	s.changed = make(chan struct{})
 }
 
 // querier is the part of *sql.DB and *sql.Tx that reads use, so one read helper serves both.
@@ -79,6 +99,7 @@ func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error)
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
+	s.notifyChanged()
 	return nil
 }
 
@@ -99,6 +120,7 @@ func (s *Store) transact(ctx context.Context, fn func(tx *sql.Tx, now time.Time)
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 
+	s.notifyChanged()
 	return nil
 }
 

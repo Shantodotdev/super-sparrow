@@ -1,0 +1,27 @@
+# Runs Super Sparrow as one service. From this folder: docker compose up -d --build
+# Put the settings in sparrow.env next to this file (see docs/DEPLOYMENT.md). The paths and the
+# listen address below belong to the image, so they are set here rather than in sparrow.env.
+services:
+  sparrow:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        VERSION: ${SPARROW_VERSION:?set SPARROW_VERSION, such as v0.2.0}
+    image: super-sparrow:${SPARROW_VERSION:?set SPARROW_VERSION, such as v0.2.0}
+    restart: unless-stopped
+    env_file: sparrow.env
+    environment:
+      SPARROW_LISTEN_ADDR: 0.0.0.0:8090
+      SPARROW_DATABASE_PATH: /data/sparrow.db
+      SPARROW_WEB_DIR: /srv/web
+    # Only the reverse proxy on this host reaches the server.
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - sparrow-data:/data
+    mem_limit: 256m
+    stop_grace_period: 30s
+
+volumes:
+  sparrow-data:

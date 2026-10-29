@@ -72,6 +72,8 @@ Use these instructions when working on Super Sparrow. [docs/PRODUCT.md](docs/PRO
 - [docs/SRS.md](docs/SRS.md): requirements, architecture, data model, and security.
 - [docs/PLAN.md](docs/PLAN.md): the build steps, in order.
 - [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md): toolchain, first run, commands, CI, and releases.
+- [docs/API.md](docs/API.md): every HTTP endpoint and its rules.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): running a server, backups and restores, the webhook, the Linear import, and connecting agents.
 - `server/`: Go server, CLI, MCP server, and migrations. `server/internal/store` is the only code that touches the database.
 - `web/`: TanStack Start (React) frontend.
 - `desktop/`: Tauri v2 app.

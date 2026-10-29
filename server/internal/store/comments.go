@@ -27,43 +27,51 @@ func (s *Store) AddComment(ctx context.Context, by Caller, input NewComment) (Co
 	if err != nil {
 		return Comment{}, err
 	}
+	input.Body = body
 
-	comment := Comment{
-		ID: newID(), IssueID: input.IssueID, FindingID: input.FindingID,
-		ParentCommentID: input.ParentCommentID, Body: body,
-	}
+	var comment Comment
 	err = s.write(ctx, by, func(w *writeTx) error {
-		projectID, err := commentTargetProject(w, input.IssueID, input.FindingID)
+		projectID, issueID, err := commentTarget(w, input.IssueID, input.FindingID)
 		if err != nil {
 			return err
 		}
 
-		if input.ParentCommentID != "" {
-			parent, err := getComment(w.ctx, w.tx, input.ParentCommentID)
-			if errors.Is(err, ErrNotFound) || (err == nil && (parent.IssueID != input.IssueID || parent.FindingID != input.FindingID)) {
-				return invalid("parent_comment_id", "must be a comment on the same issue or finding")
-			}
-			if err != nil {
-				return err
-			}
-		}
-
-		comment.AuthorActorID, comment.CreatedAt, comment.UpdatedAt = w.caller.ID, w.now, w.now
-		_, err = w.exec(`
-			INSERT INTO comments (id, issue_id, finding_id, parent_comment_id, body, author_actor_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			comment.ID, nullString(input.IssueID), nullString(input.FindingID), nullString(input.ParentCommentID),
-			body, w.caller.ID, w.timestamp(), w.timestamp())
-		if err != nil {
-			return fmt.Errorf("add comment: %w", err)
-		}
-
-		return w.event(projectID, TargetComment, comment.ID, "comment.added", map[string]any{
-			"issue_id": input.IssueID, "finding_id": input.FindingID, "parent_comment_id": input.ParentCommentID,
-		})
+		comment, err = insertComment(w, projectID, issueID, input)
+		return err
 	})
 
 	return comment, err
+}
+
+// insertComment adds a comment whose body is already validated and whose target exists, and
+// records the event. issueID is the issue the target belongs to.
+func insertComment(w *writeTx, projectID, issueID string, input NewComment) (Comment, error) {
+	if input.ParentCommentID != "" {
+		parent, err := getComment(w.ctx, w.tx, input.ParentCommentID)
+		if errors.Is(err, ErrNotFound) || (err == nil && (parent.IssueID != input.IssueID || parent.FindingID != input.FindingID)) {
+			return Comment{}, invalid("parent_comment_id", "must be a comment on the same issue or finding")
+		}
+		if err != nil {
+			return Comment{}, err
+		}
+	}
+
+	comment := Comment{
+		ID: newID(), IssueID: input.IssueID, FindingID: input.FindingID, ParentCommentID: input.ParentCommentID,
+		Body: input.Body, AuthorActorID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now,
+	}
+	_, err := w.exec(`
+		INSERT INTO comments (id, issue_id, finding_id, parent_comment_id, body, author_actor_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		comment.ID, nullString(input.IssueID), nullString(input.FindingID), nullString(input.ParentCommentID),
+		comment.Body, w.caller.ID, w.timestamp(), w.timestamp())
+	if err != nil {
+		return Comment{}, fmt.Errorf("add comment: %w", err)
+	}
+
+	return comment, w.event(projectID, TargetComment, comment.ID, "comment.added", map[string]any{
+		"issue_id": issueID, "finding_id": input.FindingID, "parent_comment_id": input.ParentCommentID,
+	})
 }
 
 // EditComment replaces a comment's body. Only the comment's author can edit it.
@@ -87,7 +95,7 @@ func (s *Store) EditComment(ctx context.Context, by Caller, commentID, body stri
 			return nil
 		}
 
-		projectID, err := commentTargetProject(w, current.IssueID, current.FindingID)
+		projectID, issueID, err := commentTarget(w, current.IssueID, current.FindingID)
 		if err != nil {
 			return err
 		}
@@ -101,7 +109,7 @@ func (s *Store) EditComment(ctx context.Context, by Caller, commentID, body stri
 		comment = current
 		comment.Body, comment.EditedAt, comment.UpdatedAt = body, &w.now, w.now
 		return w.event(projectID, TargetComment, current.ID, "comment.edited", map[string]any{
-			"issue_id": current.IssueID, "finding_id": current.FindingID,
+			"issue_id": issueID, "finding_id": current.FindingID,
 		})
 	})
 
@@ -141,26 +149,27 @@ func (s *Store) ListComments(ctx context.Context, issueID, findingID string) ([]
 	return comments, nil
 }
 
-// commentTargetProject checks that the commented issue or finding exists and returns its
-// project, which the comment's event belongs to.
-func commentTargetProject(w *writeTx, issueID, findingID string) (string, error) {
-	query := `SELECT project_id FROM issues WHERE id = ?`
+// commentTarget checks that the commented issue or finding exists and returns its project, which
+// the comment's event belongs to, and its issue, which every comment event names so the comment
+// appears in the issue's history.
+func commentTarget(w *writeTx, issueID, findingID string) (string, string, error) {
+	query := `SELECT project_id, id FROM issues WHERE id = ?`
 	target, what := issueID, "issue"
 	if findingID != "" {
-		query = `SELECT i.project_id FROM findings f JOIN review_rounds r ON r.id = f.review_round_id
+		query = `SELECT i.project_id, i.id FROM findings f JOIN review_rounds r ON r.id = f.review_round_id
 			JOIN issues i ON i.id = r.issue_id WHERE f.id = ?`
 		target, what = findingID, "finding"
 	}
 
-	var projectID string
-	err := w.tx.QueryRowContext(w.ctx, query, target).Scan(&projectID)
+	var projectID, targetIssueID string
+	err := w.tx.QueryRowContext(w.ctx, query, target).Scan(&projectID, &targetIssueID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", notFound(what)
+		return "", "", notFound(what)
 	}
 	if err != nil {
-		return "", fmt.Errorf("find comment target: %w", err)
+		return "", "", fmt.Errorf("find comment target: %w", err)
 	}
-	return projectID, nil
+	return projectID, targetIssueID, nil
 }
 
 func getComment(ctx context.Context, q querier, id string) (Comment, error) {

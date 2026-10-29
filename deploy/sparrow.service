@@ -1,0 +1,34 @@
+# Runs Super Sparrow as a systemd service. Install the binary at /usr/local/bin/sparrow, the
+# built frontend at /srv/sparrow/web, and the settings at /etc/sparrow/sparrow.env (readable by
+# root only), then: systemctl enable --now sparrow. See docs/DEPLOYMENT.md.
+[Unit]
+Description=Super Sparrow
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=sparrow
+WorkingDirectory=/var/lib/sparrow
+EnvironmentFile=/etc/sparrow/sparrow.env
+ExecStart=/usr/local/bin/sparrow serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

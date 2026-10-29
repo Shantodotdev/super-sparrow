@@ -90,6 +90,8 @@ Issue, round, and finding numbers come from counters on their parent, so a numbe
 - FR-17: Tool inputs are validated. Invalid inputs return a clear error that names the field.
 - FR-18: The CLI covers the same operations for scripts and agents without MCP.
 
+The MCP endpoint uses the streamable HTTP transport without sessions: each request is answered with JSON, and the server sends nothing unprompted.
+
 ### Interface
 
 - FR-19: Views: project issue list, issue page, review round page, open findings list, activity feed, settings for actors and tokens.
@@ -100,7 +102,7 @@ Issue, round, and finding numbers come from counters on their parent, so a numbe
 ### Import and integration
 
 - FR-23: Import projects, milestones, issues, and comments from Linear through its API.
-- FR-24: Parse imported review comments in the `## Review round` format into review rounds and findings.
+- FR-24: Parse imported review comments in the `## Review round` format into review rounds and findings. Imported issues keep their Linear numbers. Imported records are written by the system actor, each comment notes its original author and time, and an imported `later` finding creates no follow-up issue. Running an import again brings in only what is new.
 - FR-25: A GitHub webhook closes the linked issue when its pull request merges. The webhook signature is checked.
 
 ## 5. Non-functional requirements
@@ -136,6 +138,8 @@ Super Sparrow serves one team. There is no public signup and no password.
 - A token expires after 90 days. Settings shows its expiry and last use, and the person can renew or revoke it.
 - Claude Code, Codex, and the CLI send the token as a bearer token on the MCP endpoint and the API. A repository commits one MCP configuration that reads the token from the `SPARROW_TOKEN` environment variable, so no token is ever committed.
 - Every action through a token is recorded as that agent, owned by that person, such as "Claude Code (Shanto)".
+- An agent may name the model it runs in a `Sparrow-Model` header, which events record as reported.
+- Agents read project history, but not events about people, sessions, or tokens, which hold email addresses and device names.
 
 ### Roles and limits
 
@@ -161,7 +165,7 @@ The Go server runs two jobs that write to Cloudflare R2. Both take a consistent 
 
 - The sync replaces its copy only after the new upload succeeds, so a failed run never leaves R2 without a copy.
 - Both jobs record each run (start, finish, size, result) and log a failure. The settings page shows the last successful run of each.
-- The encryption public key, R2 credentials, bucket, the daily backup time, and the number of days to keep are required settings. The private key that decrypts backups is never stored on the server. Staging keeps daily backups for 30 days.
+- `SPARROW_BACKUPS` turns the jobs on or off explicitly, so a development machine runs without R2. When they are on, the encryption public key, R2 credentials, bucket, the daily backup time, and the number of days to keep are required settings. The private key that decrypts backups is never stored on the server. Staging keeps daily backups for 30 days.
 - A `restore` CLI command downloads a chosen copy, decrypts it with the private key, checks it with `PRAGMA integrity_check`, and writes it as the database file.
 
 ## 8. Deployment

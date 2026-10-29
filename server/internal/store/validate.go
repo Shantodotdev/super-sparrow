@@ -21,10 +21,12 @@ const (
 	maxEmailLength    = 254
 	maxPlanCoverage   = 2_000
 	maxReportedModel  = 100
-	defaultPageLimit  = 50
 	maximumPageLimit  = 200
 	maxLabelsPerIssue = 20
 )
+
+// DefaultPageLimit is the page size of a list request that names no limit.
+const DefaultPageLimit = 50
 
 var (
 	projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,9}$`)
@@ -140,7 +142,7 @@ func optionalHTTPURL(field, value string) (string, error) {
 func pageLimit(limit int) (int, error) {
 	switch {
 	case limit == 0:
-		return defaultPageLimit, nil
+		return DefaultPageLimit, nil
 	case limit < 0 || limit > maximumPageLimit:
 		return 0, invalid("limit", "must be between 1 and %d", maximumPageLimit)
 	}

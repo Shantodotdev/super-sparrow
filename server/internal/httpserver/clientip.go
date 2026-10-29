@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -26,8 +27,8 @@ func clientIP(r *http.Request, trusted []netip.Prefix) string {
 
 	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
 	client := remote
-	for i := len(hops) - 1; i >= 0; i-- {
-		hop, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+	for _, raw := range slices.Backward(hops) {
+		hop, err := netip.ParseAddr(strings.TrimSpace(raw))
 		if err != nil {
 			break
 		}

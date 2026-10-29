@@ -29,7 +29,15 @@ jobs:
               -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
               -o "bin/sparrow-${GITHUB_REF_NAME}-linux-${arch}" ./cmd/sparrow
           done
-      - name: Create the release with the server binaries
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Build the frontend the server serves
+        run: |
+          bun install --frozen-lockfile
+          make build-web
+          tar -czf "server/bin/sparrow-${GITHUB_REF_NAME}-web.tar.gz" -C web/dist/client .
+      - name: Create the release with the server binaries and frontend
         uses: softprops/action-gh-release@v3.0.3
         with:
           files: server/bin/sparrow-*

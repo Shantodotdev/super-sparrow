@@ -20,7 +20,7 @@ macOS needs the Xcode command line tools. Windows needs the Microsoft C++ build 
 
 ## First run
 
-1. `cp .env.example .env`. Every setting is required; the server stops and names any that is missing.
+1. `cp .env.example .env`. Every setting is required; the server stops and names any that is missing. In development, leave `SPARROW_WEB_DIR` and `SPARROW_GITHUB_WEBHOOK_SECRET` at `none` and `SPARROW_BACKUPS` at `disabled`; [DEPLOYMENT.md](DEPLOYMENT.md) covers them for a server.
 2. Set `SPARROW_RESEND_API_KEY` to a [Resend](https://resend.com/api-keys) API key. Sign-in codes and invitations are sent through Resend, so nobody can sign in without it. Until your domain is verified in Resend, keep the `onboarding@resend.dev` sender, which only delivers to your own Resend account's address.
 3. `make install` installs the Bun workspace and downloads the Go modules.
 4. `make create-owner NAME="Your Name" EMAIL=you@example.com` adds the first owner. It works only on a database with nobody in it; after that, owners invite teammates.
@@ -67,6 +67,12 @@ curl -i -c /tmp/sparrow-cookie -X POST http://127.0.0.1:8090/api/auth/verify -H 
 curl -b /tmp/sparrow-cookie http://127.0.0.1:8090/api/me
 ```
 
+## The API, agents, and the CLI
+
+[API.md](API.md) lists every endpoint. Agents connect to the MCP endpoint at `/mcp` with an agent token, and [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents) shows the configuration for Claude Code and Codex.
+
+The same `sparrow` binary is also the command-line client. With `SPARROW_URL` and `SPARROW_TOKEN` set, `server/bin/sparrow issue for-branch` finds the issue for the current git branch, and `server/bin/sparrow help` lists every command.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request. It runs the Go checks, tests, and build; the web checks, tests, and build; the repository-wide format check; and the desktop `cargo check`.
@@ -76,4 +82,4 @@ curl -b /tmp/sparrow-cookie http://127.0.0.1:8090/api/me
 1. Set the new version in `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`.
 2. Commit, then push a matching tag, such as `v0.2.0`.
 
-`.github/workflows/release.yml` then creates the GitHub Release with Linux server binaries for amd64 and arm64, and adds desktop installers for Linux, macOS (universal), and Windows. The repository is private, so only teammates with access can download them.
+`.github/workflows/release.yml` then creates the GitHub Release with Linux server binaries for amd64 and arm64 and the built frontend they serve, and adds desktop installers for Linux, macOS (universal), and Windows. The repository is private, so only teammates with access can download them.

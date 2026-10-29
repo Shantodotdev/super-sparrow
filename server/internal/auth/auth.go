@@ -213,17 +213,14 @@ func (s *Service) Wait() { s.sending.Wait() }
 // sendInBackground sends message without holding up the request. A failure is logged without
 // the message, which may hold a code.
 func (s *Service) sendInBackground(message email.Message, kind string) {
-	s.sending.Add(1)
-	go func() {
-		defer s.sending.Done()
-
+	s.sending.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), emailSendTimeout)
 		defer cancel()
 
 		if err := s.mailer.Send(ctx, message); err != nil {
 			s.logger.Error("send email failed", "kind", kind, "error", err)
 		}
-	}()
+	})
 }
 
 // Hash returns the SHA-256 hash under which a session ID or token is stored.

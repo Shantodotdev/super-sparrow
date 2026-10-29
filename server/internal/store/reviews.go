@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -178,6 +179,11 @@ func (s *Store) GetReviewRound(ctx context.Context, id string) (ReviewRound, err
 // GetReviewRoundByNumber returns an issue's review round by its number, as in /WP-142/reviews/2.
 func (s *Store) GetReviewRoundByNumber(ctx context.Context, issueID string, number int) (ReviewRound, error) {
 	return getRound(ctx, s.db, `issue_id = ? AND number = ?`, issueID, number)
+}
+
+// GetOpenReviewRound returns the issue's review round in progress, or ErrNotFound when none is.
+func (s *Store) GetOpenReviewRound(ctx context.Context, issueID string) (ReviewRound, error) {
+	return getRound(ctx, s.db, `issue_id = ? AND finished_at IS NULL`, issueID)
 }
 
 // ListReviewRounds returns an issue's review rounds in order.
@@ -359,17 +365,7 @@ func isDecision(from, to FindingStatus) bool {
 // Deciding later creates a follow-up issue in the project's backlog, or reuses the one an
 // earlier later decision created, and links it to the finding.
 func (s *Store) ChangeFindingStatus(ctx context.Context, by Caller, findingID string, change FindingChange) (Finding, error) {
-	if !change.Status.valid() {
-		return Finding{}, invalid("status", "must be open, fix, wontfix, later, fixed, or verified")
-	}
-	reason, err := optionalText("reason", change.Reason, maxTextLength)
-	if err != nil {
-		return Finding{}, err
-	}
-	if change.Status == FindingWontfix && reason == "" {
-		return Finding{}, invalid("reason", "is required for wontfix")
-	}
-	fixedIn, err := optionalCommit("fixed_in_commit", change.FixedInCommit)
+	change, err := validateFindingChange(change)
 	if err != nil {
 		return Finding{}, err
 	}
@@ -380,38 +376,120 @@ func (s *Store) ChangeFindingStatus(ctx context.Context, by Caller, findingID st
 		if err != nil {
 			return err
 		}
-		if current.Status == change.Status {
-			finding = current
-			return nil
-		}
 
-		allowed := findingTransitions[current.Status]
-		if !slices.Contains(allowed, change.Status) {
-			return fmt.Errorf("a finding cannot move from %s to %s: %w", current.Status, change.Status, ErrInvalidTransition)
-		}
-		if isDecision(current.Status, change.Status) {
-			if err := w.requireHuman("decide on findings"); err != nil {
-				return err
-			}
-		}
-
-		finding, err = applyFindingChange(w, current, change.Status, reason, fixedIn)
-		if err != nil {
-			return err
-		}
-
-		projectID, err := issueProjectID(w, current.IssueID)
-		if err != nil {
-			return err
-		}
-		return w.event(projectID, TargetFinding, current.ID, "finding.status_changed", map[string]any{
-			"issue_id": current.IssueID, "round": current.RoundNumber, "number": current.Number,
-			"from": current.Status, "to": change.Status, "reason": reason, "fixed_in_commit": fixedIn,
-			"follow_up_issue_id": finding.FollowUpIssueID,
-		})
+		finding, err = changeFindingStatus(w, current, change)
+		return err
 	})
 
 	return finding, err
+}
+
+// validateFindingChange checks a status change and returns it with its text trimmed.
+func validateFindingChange(change FindingChange) (FindingChange, error) {
+	if !change.Status.valid() {
+		return change, invalid("status", "must be open, fix, wontfix, later, fixed, or verified")
+	}
+
+	var err error
+	if change.Reason, err = optionalText("reason", change.Reason, maxTextLength); err != nil {
+		return change, err
+	}
+	if change.Status == FindingWontfix && change.Reason == "" {
+		return change, invalid("reason", "is required for wontfix")
+	}
+	if change.FixedInCommit, err = optionalCommit("fixed_in_commit", change.FixedInCommit); err != nil {
+		return change, err
+	}
+	return change, nil
+}
+
+// changeFindingStatus applies a validated change to current, checking that the move is allowed
+// and that the caller may make it, and records the event.
+func changeFindingStatus(w *writeTx, current Finding, change FindingChange) (Finding, error) {
+	if current.Status == change.Status {
+		return current, nil
+	}
+
+	allowed := findingTransitions[current.Status]
+	if !slices.Contains(allowed, change.Status) {
+		return Finding{}, fmt.Errorf("finding %s of round %d cannot move from %s to %s: %w",
+			current.Label(), current.RoundNumber, current.Status, change.Status, ErrInvalidTransition)
+	}
+	if isDecision(current.Status, change.Status) {
+		if err := w.requireHuman("decide on findings"); err != nil {
+			return Finding{}, err
+		}
+	}
+
+	finding, err := applyFindingChange(w, current, change.Status, change.Reason, change.FixedInCommit)
+	if err != nil {
+		return Finding{}, err
+	}
+
+	projectID, err := issueProjectID(w, current.IssueID)
+	if err != nil {
+		return Finding{}, err
+	}
+	err = w.event(projectID, TargetFinding, current.ID, "finding.status_changed", map[string]any{
+		"issue_id": current.IssueID, "round": current.RoundNumber, "number": current.Number,
+		"from": current.Status, "to": change.Status, "reason": change.Reason, "fixed_in_commit": change.FixedInCommit,
+		"follow_up_issue_id": finding.FollowUpIssueID,
+	})
+	return finding, err
+}
+
+// FixSummary reports the fix an agent or person made on an issue: a comment describing it, and
+// the findings it fixed, which move from fix to fixed in the given commit.
+type FixSummary struct {
+	IssueID    string
+	Summary    string
+	Commit     string
+	FindingIDs []string
+}
+
+// PostFixSummary marks the summary's findings fixed and adds the summary as a comment on the
+// issue, all in one transaction, so a refused finding leaves nothing half-reported. People and
+// agents can post fix summaries.
+func (s *Store) PostFixSummary(ctx context.Context, by Caller, input FixSummary) (Comment, []Finding, error) {
+	body, err := requiredText("summary", input.Summary, maxCommentLength)
+	if err != nil {
+		return Comment{}, nil, err
+	}
+	commit, err := requiredCommit("commit", input.Commit)
+	if err != nil {
+		return Comment{}, nil, err
+	}
+	findingIDs := uniqueSorted(input.FindingIDs)
+
+	var comment Comment
+	var fixed []Finding
+	err = s.write(ctx, by, func(w *writeTx) error {
+		issue, err := getIssue(w.ctx, w.tx, `i.id = ?`, input.IssueID)
+		if err != nil {
+			return err
+		}
+
+		for _, findingID := range findingIDs {
+			current, err := getFinding(w.ctx, w.tx, `f.id = ?`, findingID)
+			if errors.Is(err, ErrNotFound) || (err == nil && current.IssueID != issue.ID) {
+				return invalid("findings", "must all be findings of %s", issue.Key())
+			}
+			if err != nil {
+				return err
+			}
+
+			finding, err := changeFindingStatus(w, current, FindingChange{Status: FindingFixed, FixedInCommit: commit})
+			if err != nil {
+				return err
+			}
+			fixed = append(fixed, finding)
+		}
+
+		comment, err = insertComment(w, issue.ProjectID, issue.ID, NewComment{IssueID: issue.ID, Body: body})
+		return err
+	})
+
+	return comment, fixed, err
 }
 
 // applyFindingChange writes the new status and the fields that go with it.
@@ -514,8 +592,10 @@ func (s *Store) MarkDuplicate(ctx context.Context, by Caller, findingID, duplica
 		if err != nil {
 			return err
 		}
-		return w.event(projectID, TargetFinding, finding.ID, "finding.duplicate_marked",
-			map[string]any{"from": finding.DuplicateOfFindingID, "to": duplicateOfID})
+		return w.event(projectID, TargetFinding, finding.ID, "finding.duplicate_marked", map[string]any{
+			"issue_id": finding.IssueID, "round": finding.RoundNumber, "number": finding.Number,
+			"from": finding.DuplicateOfFindingID, "to": duplicateOfID,
+		})
 	})
 }
 
@@ -553,6 +633,27 @@ func checkDuplicateTarget(w *writeTx, finding Finding, duplicateOfID string) err
 // GetFinding returns the finding with the given ID.
 func (s *Store) GetFinding(ctx context.Context, id string) (Finding, error) {
 	return getFinding(ctx, s.db, `f.id = ?`, id)
+}
+
+// ParseFindingLabel reads a finding's label within its round, such as R3, r3, or 3. field names
+// the input it came from, for the error.
+func ParseFindingLabel(field, value string) (int, error) {
+	value = strings.TrimSpace(value)
+	if len(value) > 0 && (value[0] == 'R' || value[0] == 'r') {
+		value = value[1:]
+	}
+
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 1 {
+		return 0, invalid(field, "must be a finding label such as R3")
+	}
+	return number, nil
+}
+
+// GetFindingByNumber returns a finding by its issue, round number, and number within the round,
+// as in finding R3 of round 2.
+func (s *Store) GetFindingByNumber(ctx context.Context, issueID string, round, number int) (Finding, error) {
+	return getFinding(ctx, s.db, `r.issue_id = ? AND r.number = ? AND f.number = ?`, issueID, round, number)
 }
 
 // ListRoundFindings returns a round's findings, most severe first.
