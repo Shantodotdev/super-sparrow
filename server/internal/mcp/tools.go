@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
@@ -125,7 +126,8 @@ func (s *Server) toolList() []tool {
 			title: "List unresolved findings",
 			description: "List an issue's unresolved findings across all of its review rounds, most severe first, without " +
 				"duplicates. By default it lists findings waiting for a decision (open), decided to be fixed (fix), and fixed but " +
-				"not yet verified (fixed). When addressing a review, work on the findings with status fix.",
+				"not yet verified (fixed). Each finding includes its discussion. When addressing a review, work on the findings with " +
+				"status fix, and follow what the discussion says about how to fix them.",
 			schema: object([]string{"issue_key"}, map[string]any{
 				"issue_key": issueKey,
 				"statuses": array("Only list findings with these statuses.",
@@ -164,6 +166,20 @@ func (s *Server) toolList() []tool {
 				"parent_comment_id": text("The ID of the comment this replies to."),
 			}),
 			run: bind(s.addComment),
+		},
+		{
+			name:  "list_comments",
+			title: "List comments",
+			description: "List the discussion on an issue, or on one finding when round and finding are given, oldest first. " +
+				"Read a finding's discussion before fixing it: the developer may say there how they want it fixed. Each comment " +
+				"has an id; pass it to add_comment as parent_comment_id to reply.",
+			schema: object([]string{"issue_key"}, map[string]any{
+				"issue_key": issueKey,
+				"round":     integer("The finding's round number, to list a finding's comments.", 1),
+				"finding":   findingLabel,
+			}),
+			readOnly: true,
+			run:      bind(s.listComments),
 		},
 		{
 			name:  "post_fix_summary",
@@ -295,25 +311,36 @@ type roundOutput struct {
 }
 
 type findingOutput struct {
-	Round          int    `json:"round"`
-	Finding        string `json:"finding"`
-	Severity       string `json:"severity"`
-	Status         string `json:"status"`
-	Title          string `json:"title"`
-	Problem        string `json:"problem"`
-	Fix            string `json:"fix"`
-	Evidence       string `json:"evidence,omitempty"`
-	FilePath       string `json:"file_path,omitempty"`
-	Line           int    `json:"line,omitempty"`
-	CommitSHA      string `json:"commit_sha,omitempty"`
-	DecisionReason string `json:"decision_reason,omitempty"`
-	FixedInCommit  string `json:"fixed_in_commit,omitempty"`
-	FoundBy        string `json:"found_by"`
-	DecidedBy      string `json:"decided_by,omitempty"`
-	FixedBy        string `json:"fixed_by,omitempty"`
-	VerifiedBy     string `json:"verified_by,omitempty"`
-	FollowUpIssue  string `json:"follow_up_issue,omitempty"`
-	URL            string `json:"url"`
+	Round          int             `json:"round"`
+	Finding        string          `json:"finding"`
+	Severity       string          `json:"severity"`
+	Status         string          `json:"status"`
+	Title          string          `json:"title"`
+	Problem        string          `json:"problem"`
+	Fix            string          `json:"fix"`
+	Evidence       string          `json:"evidence,omitempty"`
+	FilePath       string          `json:"file_path,omitempty"`
+	Line           int             `json:"line,omitempty"`
+	CommitSHA      string          `json:"commit_sha,omitempty"`
+	DecisionReason string          `json:"decision_reason,omitempty"`
+	FixedInCommit  string          `json:"fixed_in_commit,omitempty"`
+	FoundBy        string          `json:"found_by"`
+	DecidedBy      string          `json:"decided_by,omitempty"`
+	FixedBy        string          `json:"fixed_by,omitempty"`
+	VerifiedBy     string          `json:"verified_by,omitempty"`
+	FollowUpIssue  string          `json:"follow_up_issue,omitempty"`
+	URL            string          `json:"url"`
+	Comments       []commentOutput `json:"comments"`
+}
+
+// commentOutput is one comment in a discussion. ReplyTo is the ID of the comment it answers.
+type commentOutput struct {
+	ID        string    `json:"id"`
+	Author    string    `json:"author"`
+	ReplyTo   string    `json:"reply_to,omitempty"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	Edited    bool      `json:"edited,omitempty"`
 }
 
 func (s *Server) issueURL(issue store.Issue) string {
@@ -419,7 +446,32 @@ func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findi
 			output.FollowUpIssue = followUp.Key()
 		}
 
+		comments, err := s.store.ListComments(ctx, "", f.ID)
+		if err != nil {
+			return nil, err
+		}
+		if output.Comments, err = newCommentOutputs(ctx, names, comments); err != nil {
+			return nil, err
+		}
+
 		outputs = append(outputs, output)
+	}
+	return outputs, nil
+}
+
+// newCommentOutputs names each comment's author. It always returns a list, so an empty
+// discussion reads as [] rather than null.
+func newCommentOutputs(ctx context.Context, names *actorNames, comments []store.Comment) ([]commentOutput, error) {
+	outputs := make([]commentOutput, 0, len(comments))
+	for _, comment := range comments {
+		author, err := names.name(ctx, comment.AuthorActorID)
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, commentOutput{
+			ID: comment.ID, Author: author, ReplyTo: comment.ParentCommentID, Body: comment.Body,
+			CreatedAt: comment.CreatedAt, Edited: comment.EditedAt != nil,
+		})
 	}
 	return outputs, nil
 }
@@ -469,6 +521,25 @@ func (s *Server) finding(ctx context.Context, issue store.Issue, round int, labe
 		return store.Finding{}, store.Refuse(store.ErrNotFound, "round %d of %s has no finding R%d", round, issue.Key(), number)
 	}
 	return finding, err
+}
+
+// commentedFinding returns the finding a comment tool names with round and finding, or nil when
+// it names neither, which means the issue itself. Naming only one of them is an error.
+func (s *Server) commentedFinding(ctx context.Context, issue store.Issue, round *int, label string) (*store.Finding, error) {
+	switch {
+	case label != "" && round == nil:
+		return nil, &store.ValidationError{Field: "round", Message: "is required with finding"}
+	case label == "" && round != nil:
+		return nil, &store.ValidationError{Field: "finding", Message: "is required with round"}
+	case label == "":
+		return nil, nil
+	}
+
+	finding, err := s.finding(ctx, issue, *round, label)
+	if err != nil {
+		return nil, err
+	}
+	return &finding, nil
 }
 
 // The tools.
@@ -700,17 +771,12 @@ func (s *Server) addComment(ctx context.Context, caller store.Caller, args struc
 		return nil, err
 	}
 
+	finding, err := s.commentedFinding(ctx, issue, args.Round, args.Finding)
+	if err != nil {
+		return nil, err
+	}
 	input := store.NewComment{IssueID: issue.ID, ParentCommentID: args.ParentCommentID, Body: args.Body}
-	switch {
-	case args.Finding != "" && args.Round == nil:
-		return nil, &store.ValidationError{Field: "round", Message: "is required with finding"}
-	case args.Finding == "" && args.Round != nil:
-		return nil, &store.ValidationError{Field: "finding", Message: "is required with round"}
-	case args.Finding != "":
-		finding, err := s.finding(ctx, issue, *args.Round, args.Finding)
-		if err != nil {
-			return nil, err
-		}
+	if finding != nil {
 		input.IssueID, input.FindingID = "", finding.ID
 	}
 
@@ -719,6 +785,37 @@ func (s *Server) addComment(ctx context.Context, caller store.Caller, args struc
 		return nil, err
 	}
 	return map[string]any{"comment_id": comment.ID, "issue_key": issue.Key(), "url": s.issueURL(issue)}, nil
+}
+
+func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
+	IssueKey string `json:"issue_key"`
+	Round    *int   `json:"round"`
+	Finding  string `json:"finding"`
+}) (any, error) {
+	issue, err := s.issue(ctx, args.IssueKey)
+	if err != nil {
+		return nil, err
+	}
+
+	finding, err := s.commentedFinding(ctx, issue, args.Round, args.Finding)
+	if err != nil {
+		return nil, err
+	}
+	issueID, findingID, about := issue.ID, "", issue.Key()
+	if finding != nil {
+		issueID, findingID = "", finding.ID
+		about = fmt.Sprintf("%s round %d %s", issue.Key(), finding.RoundNumber, finding.Label())
+	}
+
+	comments, err := s.store.ListComments(ctx, issueID, findingID)
+	if err != nil {
+		return nil, err
+	}
+	outputs, err := newCommentOutputs(ctx, &actorNames{store: s.store, names: map[string]string{}}, comments)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"about": about, "comments": outputs}, nil
 }
 
 func (s *Server) postFixSummary(ctx context.Context, caller store.Caller, args struct {

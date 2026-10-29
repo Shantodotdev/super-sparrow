@@ -73,7 +73,7 @@ func TestMCPHandshakeAndToolList(t *testing.T) {
 		names = append(names, tool["name"].(string))
 	}
 	want := "get_issue_for_branch,get_issue,get_plan,update_plan_checklist,start_review_round,add_finding," +
-		"finish_review_round,list_open_findings,set_finding_status,add_comment,post_fix_summary,create_issue"
+		"finish_review_round,list_open_findings,set_finding_status,add_comment,list_comments,post_fix_summary,create_issue"
 	if strings.Join(names, ",") != want {
 		t.Fatalf("tools %v", names)
 	}
@@ -157,15 +157,36 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		t.Fatalf("agent decision answered %q", text)
 	}
 	a.call(http.MethodPost, "/api/issues/WP-1/reviews/1/findings/R1/status", a.member, map[string]string{"status": "fix"}, http.StatusOK, nil)
+	a.call(http.MethodPost, "/api/issues/WP-1/reviews/1/findings/R1/comments", a.member, map[string]string{"body": "Fix it in the job, not the handler."}, http.StatusCreated, nil)
 
+	// The agent reads how the person wants it fixed, with the finding and on its own.
 	var open struct {
 		Findings []struct {
-			Status string `json:"status"`
+			Status   string                 `json:"status"`
+			Comments []commentOutputForTest `json:"comments"`
 		} `json:"findings"`
 	}
 	a.mustTool("list_open_findings", map[string]any{"issue_key": "WP-1", "statuses": []string{"fix"}}, &open)
-	if len(open.Findings) != 1 {
+	if len(open.Findings) != 1 || len(open.Findings[0].Comments) != 2 || open.Findings[0].Comments[1].Body != "Fix it in the job, not the handler." {
 		t.Fatalf("findings to fix %+v", open)
+	}
+	var thread struct {
+		About    string                 `json:"about"`
+		Comments []commentOutputForTest `json:"comments"`
+	}
+	a.mustTool("list_comments", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1"}, &thread)
+	if thread.About != "WP-1 round 1 R1" || len(thread.Comments) != 2 {
+		t.Fatalf("finding thread %+v", thread)
+	}
+	personComment := thread.Comments[1]
+	a.mustTool("add_comment", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1", "parent_comment_id": personComment.ID, "body": "Will do."}, nil)
+	a.mustTool("list_comments", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1"}, &thread)
+	if reply := thread.Comments[2]; reply.ReplyTo != personComment.ID || reply.Author != "Claude Code (Max Member)" {
+		t.Fatalf("reply %+v", reply)
+	}
+	a.mustTool("list_comments", map[string]any{"issue_key": "WP-1"}, &thread)
+	if thread.About != "WP-1" || len(thread.Comments) != 0 {
+		t.Fatalf("issue thread %+v", thread)
 	}
 	a.mustTool("post_fix_summary", map[string]any{
 		"issue_key": "WP-1", "summary": "Sent both from one job.", "commit": "e4f5a6b",
@@ -190,7 +211,7 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		kinds = append(kinds, event.Kind)
 	}
 	want := "issue.created,issue.checklist_changed,review_round.started,finding.added,comment.added,review_round.finished," +
-		"finding.status_changed,comment.added,finding.status_changed,issue.created"
+		"comment.added,finding.status_changed,comment.added,finding.status_changed,issue.created"
 	if strings.Join(kinds, ",") != want {
 		t.Fatalf("agent events %v", kinds)
 	}
@@ -213,12 +234,20 @@ func TestMCPToolErrorsNameTheArgument(t *testing.T) {
 		{"set_finding_status", map[string]any{"issue_key": "WP-1", "finding": "R1", "status": "fixed"}, "round is required"},
 		{"create_issue", map[string]any{"project_key": "WP", "title": "T", "status": "someday"}, "status must be"},
 		{"get_issue", map[string]any{"issue_key": "WP-99"}, "there is no issue WP-99"},
+		{"list_comments", map[string]any{"issue_key": "WP-1", "finding": "R1"}, "round is required with finding"},
 	} {
 		text, failed := a.tool(attempt.tool, attempt.args)
 		if !failed || !strings.Contains(text, attempt.want) {
 			t.Errorf("%s(%v) = %q (error %v), want %q", attempt.tool, attempt.args, text, failed, attempt.want)
 		}
 	}
+}
+
+type commentOutputForTest struct {
+	ID      string `json:"id"`
+	Author  string `json:"author"`
+	ReplyTo string `json:"reply_to"`
+	Body    string `json:"body"`
 }
 
 type issueOutputForTest struct {
