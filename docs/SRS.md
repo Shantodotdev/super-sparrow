@@ -86,7 +86,7 @@ Issue, round, and finding numbers come from counters on their parent, so a numbe
 
 ### Agent interface
 
-- FR-16: The MCP server exposes these tools: `get_issue_for_branch`, `get_issue`, `get_plan`, `update_plan_checklist`, `start_review_round`, `add_finding`, `finish_review_round`, `list_open_findings`, `set_finding_status`, `add_comment`, `list_comments`, `post_fix_summary`, `create_issue`. Findings that tools return include their discussion.
+- FR-16: The MCP server exposes these tools: `get_issue_for_branch`, `get_issue`, `get_plan`, `update_plan_checklist`, `start_review_round`, `add_finding`, `finish_review_round`, `list_open_findings`, `set_finding_status`, `mark_duplicate`, `add_comment`, `list_comments`, `post_fix_summary`, `create_issue`. Findings that tools return include their discussion.
 - FR-17: Tool inputs are validated. Invalid inputs return a clear error that names the field.
 - FR-18: The CLI covers the same operations for scripts and agents without MCP.
 

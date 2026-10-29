@@ -39,7 +39,7 @@ const instructions = `Super Sparrow tracks this team's issues, plans, and code r
 
 Start from the current git branch: get_issue_for_branch finds the issue, and get_plan returns the plan and its checklist. Tick checklist items with update_plan_checklist as you finish them.
 
-To review: start_review_round, then add_finding for each problem, then finish_review_round with a summary. To address a review: list_open_findings shows what the developer decided to fix, with each finding's discussion, which may say how to fix it; after fixing, post_fix_summary marks those findings fixed and explains the fix. list_comments shows an issue's or a finding's discussion and the comment IDs to reply to with add_comment. Only a person decides whether a finding is fixed, won't be fixed, or is deferred.
+To review: start_review_round, then add_finding for each problem, then finish_review_round with a summary. When a finding you added repeats one from an earlier round, mark it with mark_duplicate so the problem is decided and fixed once, through the original. To address a review: list_open_findings shows what the developer decided to fix, with each finding's discussion, which may say how to fix it; after fixing, post_fix_summary marks those findings fixed and explains the fix. list_comments shows an issue's or a finding's discussion and the comment IDs to reply to with add_comment. Only a person decides whether a finding is fixed, won't be fixed, or is deferred.
 
 Every change you make is recorded as your agent, owned by the person whose token you use.`
 

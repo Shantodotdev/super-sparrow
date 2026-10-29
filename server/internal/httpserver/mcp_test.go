@@ -73,7 +73,7 @@ func TestMCPHandshakeAndToolList(t *testing.T) {
 		names = append(names, tool["name"].(string))
 	}
 	want := "get_issue_for_branch,get_issue,get_plan,update_plan_checklist,start_review_round,add_finding," +
-		"finish_review_round,list_open_findings,set_finding_status,add_comment,list_comments,post_fix_summary,create_issue"
+		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue"
 	if strings.Join(names, ",") != want {
 		t.Fatalf("tools %v", names)
 	}
@@ -217,6 +217,64 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		"comment.added,finding.status_changed,comment.added,finding.status_changed,issue.created"
 	if strings.Join(kinds, ",") != want {
 		t.Fatalf("agent events %v", kinds)
+	}
+}
+
+func TestMCPMarksAFindingAsADuplicate(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+
+	addFinding := func(title string) {
+		a.mustTool("add_finding", map[string]any{"issue_key": "WP-1", "severity": "should_fix", "title": title, "problem": "P", "fix": "F"}, nil)
+	}
+	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "a1b2c3d"}, nil)
+	addFinding("Race between replicas")
+	a.mustTool("finish_review_round", map[string]any{"issue_key": "WP-1", "summary": "One finding."}, nil)
+	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "b2c3d4e"}, nil)
+	addFinding("Two workers send the same reply")
+
+	var marked struct {
+		Finding     string `json:"finding"`
+		DuplicateOf string `json:"duplicate_of"`
+	}
+	a.mustTool("mark_duplicate", map[string]any{"issue_key": "WP-1", "round": 2, "finding": "R1", "duplicate_of_round": 1, "duplicate_of_finding": "R1"}, &marked)
+	if marked.Finding != "R1" || marked.DuplicateOf != "round 1 R1" {
+		t.Fatalf("marked %+v", marked)
+	}
+
+	var open struct {
+		Findings []struct {
+			Round int `json:"round"`
+		} `json:"findings"`
+	}
+	a.mustTool("list_open_findings", map[string]any{"issue_key": "WP-1"}, &open)
+	if len(open.Findings) != 1 || open.Findings[0].Round != 1 {
+		t.Fatalf("open findings with a duplicate %+v", open)
+	}
+
+	// The original cannot itself become a duplicate, so duplicates never chain.
+	if text, failed := a.tool("mark_duplicate", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1", "duplicate_of_round": 2, "duplicate_of_finding": "R1"}); !failed {
+		t.Fatalf("chained duplicate answered %q", text)
+	}
+
+	marked.DuplicateOf = ""
+	a.mustTool("mark_duplicate", map[string]any{"issue_key": "WP-1", "round": 2, "finding": "R1", "clear": true}, &marked)
+	a.mustTool("list_open_findings", map[string]any{"issue_key": "WP-1"}, &open)
+	if marked.DuplicateOf != "" || len(open.Findings) != 2 {
+		t.Fatalf("after clearing: %+v, open %+v", marked, open)
+	}
+
+	for _, attempt := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{"issue_key": "WP-1", "round": 2, "finding": "R1"}, "duplicate_of_finding and duplicate_of_round are required"},
+		{map[string]any{"issue_key": "WP-1", "round": 2, "finding": "R1", "clear": true, "duplicate_of_round": 1}, "clear cannot be given"},
+		{map[string]any{"issue_key": "WP-1", "round": 2, "finding": "R1", "duplicate_of_round": 1, "duplicate_of_finding": "R9"}, "no finding R9"},
+	} {
+		if text, failed := a.tool("mark_duplicate", attempt.args); !failed || !strings.Contains(text, attempt.want) {
+			t.Errorf("mark_duplicate(%v) = %q, want %q", attempt.args, text, attempt.want)
+		}
 	}
 }
 

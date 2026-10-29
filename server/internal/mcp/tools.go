@@ -152,6 +152,23 @@ func (s *Server) toolList() []tool {
 			run: bind(s.setFindingStatus),
 		},
 		{
+			name:  "mark_duplicate",
+			title: "Mark a finding as a duplicate",
+			description: "Mark a finding as a duplicate of an earlier finding on the same issue that reports the same problem, " +
+				"such as one another reviewer already found in an earlier round. Duplicates are left out of list_open_findings, so " +
+				"the problem is decided and fixed once, through the original. A finding that others duplicate cannot itself be " +
+				"marked. Pass clear: true instead of the original to remove the mark.",
+			schema: object([]string{"issue_key", "round", "finding"}, map[string]any{
+				"issue_key":            issueKey,
+				"round":                integer("The duplicate finding's round number.", 1),
+				"finding":              text("The duplicate finding's label within its round, such as R3."),
+				"duplicate_of_round":   integer("The original finding's round number.", 1),
+				"duplicate_of_finding": text("The original finding's label within its round, such as R1."),
+				"clear":                boolean("true to remove the mark instead of setting one."),
+			}),
+			run: bind(s.markDuplicate),
+		},
+		{
 			name:  "add_comment",
 			title: "Add a comment",
 			description: "Add a markdown comment to an issue, or to one finding when round and finding are given. Pass " +
@@ -327,6 +344,7 @@ type findingOutput struct {
 	FixedBy        *actorOutput    `json:"fixed_by,omitempty"`
 	VerifiedBy     *actorOutput    `json:"verified_by,omitempty"`
 	FollowUpIssue  string          `json:"follow_up_issue,omitempty"`
+	DuplicateOf    string          `json:"duplicate_of,omitempty"`
 	URL            string          `json:"url"`
 	Comments       []commentOutput `json:"comments"`
 }
@@ -453,6 +471,13 @@ func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findi
 			if *field.target, err = names.name(ctx, field.id); err != nil {
 				return nil, err
 			}
+		}
+		if f.DuplicateOfFindingID != "" {
+			original, err := s.store.GetFinding(ctx, f.DuplicateOfFindingID)
+			if err != nil {
+				return nil, err
+			}
+			output.DuplicateOf = fmt.Sprintf("round %d %s", original.RoundNumber, original.Label())
 		}
 		if f.FollowUpIssueID != "" {
 			followUp, err := s.store.GetIssue(ctx, f.FollowUpIssueID)
@@ -772,6 +797,56 @@ func (s *Server) setFindingStatus(ctx context.Context, caller store.Caller, args
 		return nil, err
 	}
 
+	outputs, err := s.newFindingOutputs(ctx, issue, []store.Finding{finding})
+	if err != nil {
+		return nil, err
+	}
+	return outputs[0], nil
+}
+
+func (s *Server) markDuplicate(ctx context.Context, caller store.Caller, args struct {
+	IssueKey           string `json:"issue_key"`
+	Round              *int   `json:"round"`
+	Finding            string `json:"finding"`
+	DuplicateOfRound   *int   `json:"duplicate_of_round"`
+	DuplicateOfFinding string `json:"duplicate_of_finding"`
+	Clear              bool   `json:"clear"`
+}) (any, error) {
+	if args.Round == nil {
+		return nil, &store.ValidationError{Field: "round", Message: "is required"}
+	}
+	named := args.DuplicateOfRound != nil || args.DuplicateOfFinding != ""
+	switch {
+	case args.Clear && named:
+		return nil, &store.ValidationError{Field: "clear", Message: "cannot be given with duplicate_of_round and duplicate_of_finding"}
+	case !args.Clear && (args.DuplicateOfRound == nil || args.DuplicateOfFinding == ""):
+		return nil, &store.ValidationError{Field: "duplicate_of_finding", Message: "and duplicate_of_round are required, or pass clear: true"}
+	}
+
+	issue, err := s.issue(ctx, args.IssueKey)
+	if err != nil {
+		return nil, err
+	}
+	finding, err := s.finding(ctx, issue, *args.Round, args.Finding)
+	if err != nil {
+		return nil, err
+	}
+	originalID := ""
+	if !args.Clear {
+		original, err := s.finding(ctx, issue, *args.DuplicateOfRound, args.DuplicateOfFinding)
+		if err != nil {
+			return nil, err
+		}
+		originalID = original.ID
+	}
+
+	if err := s.store.MarkDuplicate(ctx, caller, finding.ID, originalID); err != nil {
+		return nil, err
+	}
+	finding, err = s.store.GetFinding(ctx, finding.ID)
+	if err != nil {
+		return nil, err
+	}
 	outputs, err := s.newFindingOutputs(ctx, issue, []store.Finding{finding})
 	if err != nil {
 		return nil, err
