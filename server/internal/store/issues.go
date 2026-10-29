@@ -395,15 +395,20 @@ func setIssueLabels(w *writeTx, current Issue, labelIDs []string) error {
 }
 
 // UpdatePlanChecklist ticks or unticks checklist items in an issue's plan, keyed by their index
-// as checklist.Items numbers them. It changes only those lines, so it never overwrites an edit
-// someone else made to the rest of the plan. People and agents can tick items.
-func (s *Store) UpdatePlanChecklist(ctx context.Context, by Caller, issueID string, changes map[int]bool) (Issue, error) {
+// as checklist.Items numbers them. Each change names the item's text as the caller read it, and
+// is refused with ErrConflict when the item at that index has other text because the plan was
+// edited since. It changes only those lines, so it never overwrites an edit someone else made to
+// the rest of the plan. People and agents can tick items.
+func (s *Store) UpdatePlanChecklist(ctx context.Context, by Caller, issueID string, changes map[int]checklist.Change) (Issue, error) {
 	if len(changes) == 0 {
 		return Issue{}, invalid("items", "must name at least one item")
 	}
-	for index := range changes {
+	for index, change := range changes {
 		if index < 0 {
 			return Issue{}, invalid("items", "indexes must not be negative")
+		}
+		if strings.TrimSpace(change.Text) == "" {
+			return Issue{}, invalid("items", "each item needs the text it had when you read the plan")
 		}
 	}
 
@@ -415,6 +420,9 @@ func (s *Store) UpdatePlanChecklist(ctx context.Context, by Caller, issueID stri
 		}
 
 		plan, err := checklist.Set(current.Plan, changes)
+		if changed, ok := errors.AsType[*checklist.ItemChangedError](err); ok {
+			return Refuse(ErrConflict, "%s's plan changed: %s", current.Key(), changed.Message)
+		}
 		if err != nil {
 			return invalid("items", "%s", err.Error())
 		}

@@ -128,7 +128,10 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 	if len(plan.Checklist) != 2 {
 		t.Fatalf("plan %+v", plan)
 	}
-	a.mustTool("update_plan_checklist", map[string]any{"issue_key": "WP-1", "items": []map[string]any{{"index": 0, "checked": true}}}, nil)
+	a.mustTool("update_plan_checklist", map[string]any{"issue_key": "WP-1", "items": []map[string]any{{"index": 0, "checked": true, "text": "Migration"}}}, nil)
+	if text, failed := a.tool("update_plan_checklist", map[string]any{"issue_key": "WP-1", "items": []map[string]any{{"index": 0, "checked": true, "text": "Store"}}}); !failed || !strings.Contains(text, "it is item 1 now") {
+		t.Fatalf("a tick on the wrong item answered %q", text)
+	}
 
 	// Review it.
 	var round struct {

@@ -61,13 +61,15 @@ func (s *Server) toolList() []tool {
 		{
 			name:  "update_plan_checklist",
 			title: "Tick plan checklist items",
-			description: "Tick or untick items in an issue's plan checklist, by the index get_plan reports. Only those lines " +
-				"change, so edits others made to the plan are kept. Returns the updated checklist.",
+			description: "Tick or untick items in an issue's plan checklist, by the index and text get_plan reports. Only those " +
+				"lines change, so edits others made to the plan are kept. If the plan was edited since you read it and the item " +
+				"is no longer at that index, nothing changes and the error says where it is now. Returns the updated checklist.",
 			schema: object([]string{"issue_key", "items"}, map[string]any{
 				"issue_key": issueKey,
-				"items": array("The items to change.", object([]string{"index", "checked"}, map[string]any{
+				"items": array("The items to change.", object([]string{"index", "checked", "text"}, map[string]any{
 					"index":   integer("The item's index from get_plan.", 0),
 					"checked": boolean("true to tick the item, false to untick it."),
+					"text":    text("The item's text from get_plan, which shows the change is for that item."),
 				})),
 			}),
 			run: bind(s.updatePlanChecklist),
@@ -612,8 +614,9 @@ func (s *Server) getPlan(ctx context.Context, _ store.Caller, args struct {
 func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, args struct {
 	IssueKey string `json:"issue_key"`
 	Items    []struct {
-		Index   *int  `json:"index"`
-		Checked *bool `json:"checked"`
+		Index   *int    `json:"index"`
+		Checked *bool   `json:"checked"`
+		Text    *string `json:"text"`
 	} `json:"items"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
@@ -621,12 +624,12 @@ func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, a
 		return nil, err
 	}
 
-	changes := map[int]bool{}
+	changes := map[int]checklist.Change{}
 	for _, item := range args.Items {
-		if item.Index == nil || item.Checked == nil {
-			return nil, &store.ValidationError{Field: "items", Message: "each item needs an index and checked"}
+		if item.Index == nil || item.Checked == nil || item.Text == nil {
+			return nil, &store.ValidationError{Field: "items", Message: "each item needs an index, checked, and its text"}
 		}
-		changes[*item.Index] = *item.Checked
+		changes[*item.Index] = checklist.Change{Checked: *item.Checked, Text: *item.Text}
 	}
 
 	issue, err = s.store.UpdatePlanChecklist(ctx, caller, issue.ID, changes)

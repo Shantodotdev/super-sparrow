@@ -3,6 +3,7 @@ package httpserver
 import (
 	"net/http"
 
+	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
@@ -158,10 +159,12 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// checklistChange is one item to tick or untick, by its index in the plan's checklist.
+// checklistChange is one item to tick or untick, by its index in the plan's checklist and the
+// text it had when the caller read it.
 type checklistChange struct {
-	Index   *int  `json:"index"`
-	Checked *bool `json:"checked"`
+	Index   *int    `json:"index"`
+	Checked *bool   `json:"checked"`
+	Text    *string `json:"text"`
 }
 
 // updateChecklist ticks or unticks plan checklist items without rewriting the rest of the plan.
@@ -190,13 +193,13 @@ func (s *server) updateChecklist(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func checklistChanges(items []checklistChange) (map[int]bool, error) {
-	changes := map[int]bool{}
+func checklistChanges(items []checklistChange) (map[int]checklist.Change, error) {
+	changes := map[int]checklist.Change{}
 	for _, item := range items {
-		if item.Index == nil || item.Checked == nil {
-			return nil, &store.ValidationError{Field: "items", Message: "each item needs an index and checked"}
+		if item.Index == nil || item.Checked == nil || item.Text == nil {
+			return nil, &store.ValidationError{Field: "items", Message: "each item needs an index, checked, and its text"}
 		}
-		changes[*item.Index] = *item.Checked
+		changes[*item.Index] = checklist.Change{Checked: *item.Checked, Text: *item.Text}
 	}
 	return changes, nil
 }

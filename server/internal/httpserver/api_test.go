@@ -179,11 +179,13 @@ func TestIssuesListUpdateAndBranchLookup(t *testing.T) {
 	var checked struct {
 		Issue issueView `json:"issue"`
 	}
-	a.call(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 1, "checked": true}}}, http.StatusOK, &checked)
+	a.call(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 1, "checked": true, "text": "Store"}}}, http.StatusOK, &checked)
 	if !checked.Issue.Checklist[1].Checked || checked.Issue.ChecklistProgress.Done != 1 {
 		t.Fatalf("checklist %+v", checked.Issue.Checklist)
 	}
-	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 9, "checked": true}}}), "items")
+	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 9, "checked": true, "text": "Store"}}}), "items")
+	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 1, "checked": true}}}), "items")
+	wantStatus(t, a.request(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 0, "checked": true, "text": "Store"}}}), http.StatusConflict)
 
 	// The tick moved the plan to revision 2, so an edit of revision 1 is refused with 409.
 	if checked.Issue.PlanRevision != 2 {

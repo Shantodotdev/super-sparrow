@@ -250,15 +250,37 @@ func (r *runner) planCheck(ctx context.Context, args []string) (json.RawMessage,
 		return nil, usageError("plan check needs an issue key and at least one item index")
 	}
 
+	issuePath := "/api/issues/" + url.PathEscape(positional[0])
+
+	// The API ticks an item only when it names the item's text, so read the checklist the indexes
+	// refer to. A command line has no earlier read to compare with, so this is the plan as it is now.
+	raw, err := r.client.do(ctx, http.MethodGet, issuePath, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var current struct {
+		Issue struct {
+			Checklist []struct {
+				Text string `json:"text"`
+			} `json:"checklist"`
+		} `json:"issue"`
+	}
+	if err := json.Unmarshal(raw, &current); err != nil {
+		return nil, fmt.Errorf("read the checklist: %w", err)
+	}
+
 	items := make([]map[string]any, 0, len(positional)-1)
 	for _, value := range positional[1:] {
 		index, err := strconv.Atoi(value)
 		if err != nil || index < 0 {
 			return nil, usageError(fmt.Sprintf("item index %q must be a whole number", value))
 		}
-		items = append(items, map[string]any{"index": index, "checked": !*uncheck})
+		if index >= len(current.Issue.Checklist) {
+			return nil, usageError(fmt.Sprintf("%s has no checklist item %d; it has %d", positional[0], index, len(current.Issue.Checklist)))
+		}
+		items = append(items, map[string]any{"index": index, "checked": !*uncheck, "text": current.Issue.Checklist[index].Text})
 	}
-	return r.client.do(ctx, http.MethodPatch, "/api/issues/"+url.PathEscape(positional[0])+"/checklist", nil, map[string]any{"items": items})
+	return r.client.do(ctx, http.MethodPatch, issuePath+"/checklist", nil, map[string]any{"items": items})
 }
 
 func (r *runner) reviewStart(ctx context.Context, args []string) (json.RawMessage, error) {

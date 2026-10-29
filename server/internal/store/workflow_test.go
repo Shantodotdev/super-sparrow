@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 )
 
 func TestUpdateIssueChangesFieldsStatusAndLabelsTogether(t *testing.T) {
@@ -41,7 +43,7 @@ func TestUpdatePlanChecklistTicksOnlyNamedItems(t *testing.T) {
 		ProjectID: project.ID, Title: "Plan", Status: IssueTodo, Plan: "- [ ] One\n- [ ] Two",
 	})).must(t)
 
-	updated := got(tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]bool{1: true})).must(t)
+	updated := got(tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]checklist.Change{1: {Checked: true, Text: "Two"}})).must(t)
 	if updated.Plan != "- [ ] One\n- [x] Two" {
 		t.Fatalf("plan = %q", updated.Plan)
 	}
@@ -49,8 +51,30 @@ func TestUpdatePlanChecklistTicksOnlyNamedItems(t *testing.T) {
 		t.Errorf("last event %s by %s", event.Kind, event.ActorID)
 	}
 
-	_, err := tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]bool{2: true})
+	_, err := tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]checklist.Change{2: {Checked: true, Text: "Three"}})
 	wantInvalid(t, err, "items")
+	_, err = tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]checklist.Change{0: {Checked: true}})
+	wantInvalid(t, err, "items")
+}
+
+func TestUpdatePlanChecklistRefusesAnItemThatMoved(t *testing.T) {
+	tm := newTeam(t)
+	project := tm.project(t, "WP")
+	issue := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{
+		ProjectID: project.ID, Title: "Plan", Status: IssueTodo, Plan: "- [ ] One\n- [ ] Two",
+	})).must(t)
+
+	// The agent read the plan; then the person added an item at the top.
+	got(tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{Plan: Change("- [ ] Zero\n- [ ] One\n- [ ] Two"), PlanRevision: 1})).must(t)
+
+	_, err := tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]checklist.Change{1: {Checked: true, Text: "Two"}})
+	wantErr(t, err, ErrConflict)
+	if !strings.Contains(Explain(err), "it is item 2 now") {
+		t.Errorf("conflict says %q", Explain(err))
+	}
+	if current := got(tm.store.GetIssue(tm.ctx, issue.ID)).must(t); current.Plan != "- [ ] Zero\n- [ ] One\n- [ ] Two" {
+		t.Errorf("a refused tick changed the plan to %q", current.Plan)
+	}
 }
 
 func TestPostFixSummaryMarksFindingsFixedAndComments(t *testing.T) {

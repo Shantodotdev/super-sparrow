@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 )
 
 func TestIssueNumbersIncreasePerProject(t *testing.T) {
@@ -246,7 +248,7 @@ func TestPlanEditsMadeOnAnOldRevisionAreRefused(t *testing.T) {
 	}
 
 	// The agent ticks an item while the person edits the plan they loaded at revision 1.
-	ticked := got(tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]bool{0: true})).must(t)
+	ticked := got(tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]checklist.Change{0: {Checked: true, Text: "Migration"}})).must(t)
 	if ticked.PlanRevision != 2 {
 		t.Fatalf("ticking moved the revision to %d, want 2", ticked.PlanRevision)
 	}
