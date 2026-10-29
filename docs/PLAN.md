@@ -15,6 +15,8 @@ Done in the initial scaffold.
 
 ## 2. Data model
 
+Done. The schema is in `server/migrations/`; the data access layer is `server/internal/store`.
+
 1. Write migrations for actors, tokens, projects, milestones, and issues.
 2. Write migrations for review rounds, findings, comments, and events.
 3. Build the data access layer.

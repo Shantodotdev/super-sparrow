@@ -33,25 +33,30 @@ CLI / scripts ───────HTTP─────────┘
 
 ## 3. Data model
 
-All tables have `id`, `created_at`, and `updated_at`. Super Sparrow serves one team, so there are no workspaces or tenants. Work is divided by project.
+All tables have `id`, `created_at`, and `updated_at`, except events, which never change. IDs are UUIDv7. Super Sparrow serves one team, so there are no workspaces or tenants. Work is divided by project.
 
-- **Actor:** kind (`human` or `agent`), display name, disabled at. Humans also have an email and a role (`owner` or `member`). Agents also have an agent name (`claude-code`, `codex`) and the human who owns them. Every write records its actor.
+The schema lives in `server/migrations/`, and `server/internal/store` is the only code that reads or writes it. CHECK constraints, foreign keys, and triggers enforce the rules below in the database as well as in Go.
+
+- **Actor:** kind (`human`, `agent`, or `system`), display name, disabled at. Humans also have an email and a role (`owner` or `member`). Agents also have an agent name (`claude-code`, `codex`) and the human who owns them. One built-in system actor records actions no person or agent took, such as creating the first owner. Every write records its actor. Disabling a person also disables their agents and revokes their sessions and tokens. The team always keeps at least one active owner.
 - **Session:** human actor, hashed session ID, device label, last seen, expires at, revoked at.
 - **Sign-in code:** email, hashed code, expires at, failed attempts, used at.
 - **Token:** agent actor, hashed secret, label, last used, expires at, revoked at. Only the hash is stored.
 - **Project:** key (`WP`), name, next issue number.
-- **Milestone:** project, name, order, status.
-- **Issue:** project, number (shown as `WP-142`), title, plan (markdown), status, label set, parent issue, milestone, assignee, branch name, pull request URL.
-- **Review round:** issue, round number, reviewed range (from commit, to commit), whether uncommitted changes were included, plan coverage note, summary, author actor.
-- **Finding:** round, number within the round (R1, R2), severity, title, problem, fix, evidence, file path, line, commit, status, decision reason, found by actor, fixed by actor, fixed in commit, verified by actor, duplicate-of finding, follow-up issue.
+- **Milestone:** project, name, position, status (`planned`, `active`, `done`).
+- **Label:** project, name. Names are unique within a project.
+- **Issue:** project, number (shown as `WP-142`), title, plan (markdown), status, label set, parent issue, milestone, assignee, branch name, pull request URL, created by, completed at. The parent, milestone, and labels must be in the same project, and parent links never form a cycle. A branch name belongs to at most one issue per project.
+- **Review round:** issue, round number, reviewed range (from commit, to commit), whether uncommitted changes were included, plan coverage note, summary, author actor, finished at. An issue has at most one round in progress. A round without a from commit starts at the previous round's to commit. A finished round takes no new findings.
+- **Finding:** round, number within the round (R1, R2), severity, title, problem, fix, evidence, file path, line, commit, status, decision reason, decided by actor, found by actor, fixed by actor, fixed in commit, verified by actor, duplicate-of finding, follow-up issue. A duplicate points to a finding on the same issue, and duplicates never chain.
 - **Comment:** target (issue or finding), body (markdown), author actor, parent comment.
-- **Event:** target, kind, actor, reported model, payload (JSON), sequence number. Append-only. The reported model is whatever the agent says it is; the server cannot verify it.
+- **Event:** project, target, kind, actor, reported model, payload (JSON), sequence number. Append-only: database triggers refuse updates and deletes. Every change writes its event in the same transaction. Events keep their project as a plain value, so a project's history outlives its deletion. The reported model is whatever the agent says it is; the server cannot verify it.
+
+Issue, round, and finding numbers come from counters on their parent, so a number is never reused.
 
 ### Statuses
 
 - **Issue:** Backlog, Todo, In Progress, In Review, Done, Canceled.
 - **Finding severity:** Blocking, Should fix, Nit.
-- **Finding status:** Open → Fix, Wontfix, or Later → Fixed → Verified. Later creates a follow-up issue linked to the finding. Wontfix requires a reason.
+- **Finding status:** Open → Fix, Wontfix, or Later. Fix → Fixed → Verified. Only a person decides Fix, Wontfix, or Later, or withdraws a decision back to Open. Agents and people can mark a finding Fixed or Verified, and a fix that did not hold moves from Fixed back to Fix. Later creates one follow-up issue in the backlog, linked to the finding. Wontfix requires a reason.
 
 ## 4. Functional requirements
 
