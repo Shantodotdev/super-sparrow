@@ -19,11 +19,11 @@ Out of scope for version 1: documents, secrets, CI/CD, cycles, estimates, roadma
 | CLI        | Go, same repository, calls the HTTP API        | For scripts, hooks, and agents without MCP                       |
 | Frontend   | TanStack Start (React) in SPA mode             | Type-safe routing and data loading; builds to static files       |
 | Live views | Server-Sent Events                             | One-way updates are all the interface needs                      |
-| Desktop    | Tauri v2 wrapping the same frontend build      | Native app with low resource use                                 |
+| Desktop    | Tauri v2 window that loads the server's page   | Native app with low resource use; never out of date              |
 
-The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app loads the same frontend and talks to the same server.
+The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app opens the server's URL in its window, so it always runs the current frontend and signs in exactly like the browser. Tauri grants the tray, notification, and shortcut features to that URL only.
 
-The frontend runs TanStack Start in SPA mode: it builds to static files, so the Go server can serve them and Tauri can bundle them. It uses no server functions or server-side rendering. The Go API is the only backend, and TanStack Query handles data fetching and caching.
+The frontend runs TanStack Start in SPA mode: it builds to static files that the Go server serves. It uses no server functions or server-side rendering. The Go API is the only backend, and TanStack Query handles data fetching and caching.
 
 ```
 Browser / Tauri app ──HTTP + SSE──┐
@@ -33,18 +33,19 @@ CLI / scripts ───────HTTP─────────┘
 
 ## 3. Data model
 
-All tables have `id`, `created_at`, and `updated_at`. Records that belong to a workspace carry `workspace_id`, and every query on them filters by it.
+All tables have `id`, `created_at`, and `updated_at`. Super Sparrow serves one team, so there are no workspaces or tenants. Work is divided by project.
 
-- **Workspace:** name, slug. Version 1 runs one workspace, but the column exists so more can be added later.
-- **Actor:** kind (`human` or `agent`), display name, and for agents: agent name (`claude-code`, `codex`), model, and the human it works for. Every write records its actor.
-- **Token:** actor, hashed secret, label, created by, last used, revoked at. Only the hash is stored.
+- **Actor:** kind (`human` or `agent`), display name, disabled at. Humans also have an email and a role (`owner` or `member`). Agents also have an agent name (`claude-code`, `codex`) and the human who owns them. Every write records its actor.
+- **Session:** human actor, hashed session ID, device label, last seen, expires at, revoked at.
+- **Sign-in code:** email, hashed code, expires at, failed attempts, used at.
+- **Token:** agent actor, hashed secret, label, last used, expires at, revoked at. Only the hash is stored.
 - **Project:** key (`WP`), name, next issue number.
 - **Milestone:** project, name, order, status.
 - **Issue:** project, number (shown as `WP-142`), title, plan (markdown), status, label set, parent issue, milestone, assignee, branch name, pull request URL.
 - **Review round:** issue, round number, reviewed range (from commit, to commit), whether uncommitted changes were included, plan coverage note, summary, author actor.
 - **Finding:** round, number within the round (R1, R2), severity, title, problem, fix, evidence, file path, line, commit, status, decision reason, found by actor, fixed by actor, fixed in commit, verified by actor, duplicate-of finding, follow-up issue.
 - **Comment:** target (issue or finding), body (markdown), author actor, parent comment.
-- **Event:** target, kind, actor, payload (JSON), sequence number. Append-only.
+- **Event:** target, kind, actor, reported model, payload (JSON), sequence number. Append-only. The reported model is whatever the agent says it is; the server cannot verify it.
 
 ### Statuses
 
@@ -75,7 +76,7 @@ All tables have `id`, `created_at`, and `updated_at`. Records that belong to a w
 ### Identity and history
 
 - FR-13: Every write records its actor. The interface shows the actor's name and an agent badge.
-- FR-14: Humans create agent tokens. Each token belongs to one agent actor and can be revoked.
+- FR-14: Each person creates their own agent tokens. A token belongs to one agent actor owned by that person, expires after 90 days, and can be renewed or revoked.
 - FR-15: Every change writes an event. Issues and findings show their event history.
 
 ### Agent interface
@@ -105,13 +106,41 @@ All tables have `id`, `created_at`, and `updated_at`. Records that belong to a w
 - NFR-4 Recovery: restoring from the latest sync and from any daily backup into a fresh server is documented and tested before launch.
 - NFR-5 Configuration: every setting comes from environment variables. The server refuses to start when a required setting is missing or malformed. No defaults in code.
 
-## 6. Security
+## 6. Authentication and security
 
-- Humans sign in with email and password (argon2id hashes) and get a session cookie. Agents use bearer tokens.
-- Workspace identity comes from the authenticated session or token, never from request input.
-- Comments, plans, findings, and imported content are untrusted. Markdown is sanitized before rendering. Agent tools never execute content.
-- Roles in version 1: owner, member, agent. Agents cannot create tokens, change roles, or delete projects.
+Super Sparrow serves one team. There is no public signup and no password.
+
+### People
+
+- The first owner is created with a server command. After that, an owner adds a teammate by name and email, and Resend sends them an invitation email.
+- Sign-in is by email only. A person enters their email, Resend sends a 6-digit code, and they enter it on the same screen. A code works in the browser and in the desktop app, where a link would open the wrong window.
+- A code expires after 10 minutes, works once, and is stored only as a hash. Five wrong attempts cancel it.
+- The sign-in screen shows the same message whether or not the email belongs to a teammate, so it never reveals who has an account. Codes are sent only to active teammates.
+- Code requests are rate-limited per email and per IP address.
+- A successful sign-in creates a session stored in the database. The browser gets a `Secure`, `HttpOnly`, `SameSite=Lax` cookie. A session lasts 30 days and renews while in use.
+- Settings lists each person's signed-in devices, with sign-out for one device or all of them.
+- Disabling a teammate ends all their sessions and revokes all their agent tokens at once.
+- The Resend API key, the sender address, and the server's public URL are required settings.
+
+### Agents
+
+- Each person creates their own agent tokens in settings, one per agent and machine, such as "Shanto · Claude Code · laptop". The token is shown once.
+- Tokens start with `ssp_` so secret scanners can recognize them. Only a SHA-256 hash is stored.
+- A token expires after 90 days. Settings shows its expiry and last use, and the person can renew or revoke it.
+- Claude Code, Codex, and the CLI send the token as a bearer token on the MCP endpoint and the API. A repository commits one MCP configuration that reads the token from the `SPARROW_TOKEN` environment variable, so no token is ever committed.
+- Every action through a token is recorded as that agent, owned by that person, such as "Claude Code (Shanto)".
+
+### Roles and limits
+
+- Owners add and disable teammates, delete projects, and can revoke anyone's tokens.
+- Members do all day-to-day work and manage their own tokens.
+- Agents can read and write issues, plans, reviews, findings, and comments. They cannot create tokens, manage people, or delete projects.
+- Actor identity comes from the session or token, never from request input.
 - Rate limits apply per token.
+
+### Other
+
+- Comments, plans, findings, and imported content are untrusted. Markdown is sanitized before rendering. Agent tools never execute content.
 - Backups are encrypted before they leave the server.
 
 ## 7. Backups
@@ -132,5 +161,6 @@ The Go server runs two jobs that write to Cloudflare R2. Both take a consistent 
 
 - One binary, run as a systemd service or one Docker Compose service.
 - Behind the existing reverse proxy with HTTPS.
-- Releases are built by CI as versioned binaries and desktop installers.
+- GitHub Actions builds versioned server binaries and the desktop installers for Linux, macOS, and Windows, and publishes them to GitHub Releases when a version tag is pushed.
+- The repository is private, so only team members with repository access can download the installers.
 - Database migrations run at startup, in order, inside a transaction, and are recorded in a migrations table.

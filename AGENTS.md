@@ -12,12 +12,14 @@ Use these instructions when working on Super Sparrow. [PRODUCT.md](PRODUCT.md) e
 ## Boundaries that must hold
 
 - SQLite is the source of truth. A write is committed before the API responds, and every change writes its event in the same transaction.
-- Derive the workspace (`workspace_id`) and the actor from the authenticated session or agent token. Require `workspace_id` explicitly in every query on workspace-owned records. Never take workspace or actor identity from request bodies, tool arguments, or model output.
+- Super Sparrow serves one team. There are no workspaces or tenants; work is divided by project.
+- Derive the actor from the authenticated session or agent token. Never take actor identity from request bodies, tool arguments, or model output.
 - Every write records its actor. Never attribute an agent's action to a human, or one agent's action to another.
-- Store only hashes of agent tokens. Never log, return, or store a token in plain text after it is created.
+- Sign-in is by emailed code only: no passwords and no public signup. Store only hashes of sign-in codes, session IDs, and agent tokens. Never log, return, or store them in plain text after they are created.
 - Agents cannot create tokens, change roles, or delete projects. Enforce this on the server, not in the interface.
 - Treat plans, comments, findings, imports, webhooks, and MCP tool arguments as untrusted input. Validate them at the boundary, sanitize markdown before rendering, and never execute their content.
-- The Go server is the only backend. The frontend runs TanStack Start in SPA mode, with no server functions or server-side rendering, so the same build runs in the browser and in Tauri.
+- The Go server is the only backend. The frontend runs TanStack Start in SPA mode, with no server functions or server-side rendering, and the Tauri app loads the server's page.
+- Desktop installers are built by GitHub Actions and published to GitHub Releases. Never commit build output.
 - Backups are encrypted before they leave the server.
 
 ## Code quality and comments

@@ -13,20 +13,24 @@ Steps to build the first version of Super Sparrow, in order. Requirements are in
 
 ## 2. Data model
 
-1. Write migrations for workspaces, actors, tokens, projects, milestones, and issues.
+1. Write migrations for actors, tokens, projects, milestones, and issues.
 2. Write migrations for review rounds, findings, comments, and events.
-3. Build the data access layer, with `workspace_id` required on every query for workspace-owned records.
+3. Build the data access layer.
 4. Write each change and its event in the same transaction.
 5. Add tests for issue numbering, round and finding numbering, and status transitions.
 
 ## 3. Authentication and identity
 
-1. Add human sign-in with email and password, argon2id hashing, and session cookies.
-2. Add agent tokens: create, list, revoke, stored as hashes only.
-3. Add middleware that resolves the actor and workspace from the session or token.
-4. Enforce the owner, member, and agent roles.
-5. Add per-token rate limits.
-6. Add a command to create the first workspace and owner.
+1. Add the Resend email client, with the API key and sender address as required settings.
+2. Add email sign-in codes: request, send, verify, expire after 10 minutes, cancel after five wrong attempts, and store only hashes.
+3. Add rate limits on code requests per email and per IP address.
+4. Add database sessions with secure cookies, 30-day renewal, and sign-out for one device or all.
+5. Add a command to create the first owner.
+6. Add teammate invitations by email, and disabling a teammate, which ends their sessions and revokes their tokens.
+7. Add agent tokens with the `ssp_` prefix: create, list, renew, revoke, 90-day expiry, and SHA-256 hashes only.
+8. Add middleware that resolves the actor from the session or token.
+9. Enforce the owner, member, and agent permissions.
+10. Add per-token rate limits.
 
 ## 4. HTTP API
 
@@ -37,7 +41,7 @@ Steps to build the first version of Super Sparrow, in order. Requirements are in
 5. Add endpoints for comments and the event history.
 6. Validate every request body and return errors that name the field.
 7. Add the Server-Sent Events stream for live updates.
-8. Add API tests for every endpoint, including tests that one workspace can't read another's data.
+8. Add API tests for every endpoint, including tests that agents are refused owner-only actions.
 
 ## 5. Agent interface
 
@@ -52,23 +56,23 @@ Steps to build the first version of Super Sparrow, in order. Requirements are in
 ## 6. Web interface
 
 1. Set up TanStack Start (React) in SPA mode with TanStack Router, TanStack Query, the API client, and the event stream.
-2. Build sign-in.
+2. Build the email sign-in screen: enter email, then the 6-digit code.
 3. Build the review round page with finding cards, threads, and keyboard decisions.
 4. Build the issue page with the plan, checklist, review rounds, open findings, and history.
 5. Build the project board, grouped by status and filtered by milestone.
 6. Build the activity feed, with actor names and agent badges.
-7. Build settings for actors and agent tokens.
+7. Build settings for teammates, signed-in devices, and agent tokens.
 8. Add the command palette and keyboard shortcuts.
 9. Sanitize all rendered markdown.
 10. Serve the built frontend from the Go server.
 
 ## 7. Desktop app
 
-1. Wrap the frontend build in Tauri v2.
-2. Add server address setup and sign-in.
+1. Create the Tauri v2 app that opens the server's URL in its window.
+2. Add first-run setup for the server address, and grant native features to that address only.
 3. Add the tray icon and native notifications for new findings and decisions.
 4. Add the global shortcut to open an issue by key.
-5. Build installers for Linux, macOS, and Windows in CI.
+5. Add a GitHub Actions workflow that builds the installers for Linux, macOS, and Windows and publishes them to GitHub Releases when a version tag is pushed.
 
 ## 8. Integrations
 
@@ -92,7 +96,8 @@ Steps to build the first version of Super Sparrow, in order. Requirements are in
 ## 10. Switch over
 
 1. Update WP Agent's `AGENTS.md`, `docs/REVIEW.md`, and its `plan`, `review`, and `address-review` skills to use the tool.
-2. Create agent tokens for each teammate's Claude Code and Codex.
-3. Install the desktop app for the team.
-4. Run new features through the tool and keep Linear read-only for history.
-5. Collect what slows the team down and plan the next version from it.
+2. Invite each teammate, and have each one create tokens for their Claude Code and Codex.
+3. Commit the shared MCP configuration, which reads `SPARROW_TOKEN`, to each repository that uses Super Sparrow.
+4. Install the desktop app for the team from GitHub Releases.
+5. Run new features through the tool and keep Linear read-only for history.
+6. Collect what slows the team down and plan the next version from it.
