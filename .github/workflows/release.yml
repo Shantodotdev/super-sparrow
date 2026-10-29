@@ -1,0 +1,78 @@
+name: Release
+
+# Push a tag such as v0.2.0 to build and publish a release. The tag must match the version in
+# desktop/src-tauri/tauri.conf.json.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  server:
+    name: Server binaries
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Build Linux binaries
+        working-directory: server
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "bin/sparrow-${GITHUB_REF_NAME}-linux-${arch}" ./cmd/sparrow
+          done
+      - name: Create the release with the server binaries
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          files: server/bin/sparrow-*
+          generate_release_notes: true
+
+  desktop:
+    name: Desktop (${{ matrix.platform }})
+    needs: server
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-24.04
+            args: ""
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Install the Linux libraries Tauri builds against
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev libssl-dev
+      - name: Add both macOS targets for the universal build
+        if: matrix.platform == 'macos-latest'
+        working-directory: desktop/src-tauri
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: desktop/src-tauri
+      - run: bun install --frozen-lockfile
+      - name: Build and upload the installers
+        uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tauriScript: bunx tauri
+          tagName: ${{ github.ref_name }}
+          args: ${{ matrix.args }}
