@@ -1,12 +1,12 @@
 # Plan
 
-Steps to build the first version of Tracker, in order. Requirements are in [SRS.md](SRS.md). Start using the tool for its own development as soon as the agent tools work.
+Steps to build the first version of Super Sparrow, in order. Requirements are in [SRS.md](SRS.md). Start using the tool for its own development as soon as the agent tools work.
 
 ## 1. Foundation
 
-1. Create the repository with `server/` (Go), `web/` (frontend), and `desktop/` (Tauri).
-2. Add an `AGENTS.md` with the coding rules, checks, and the review workflow.
-3. Set up CI to run lint, type checks, and tests for Go and the frontend.
+1. Create the `server/` (Go), `web/` (TanStack Start), and `desktop/` (Tauri) folders.
+2. Add a Makefile with `check-go`, `test-go`, `check-web`, `test-web`, `format`, and `dev` targets, as AGENTS.md describes.
+3. Set up CI to run those checks and tests.
 4. Write the configuration loader. It reads environment variables and stops the server when a required one is missing or malformed.
 5. Set up SQLite in WAL mode with an ordered migration runner.
 6. Add structured logging and a health check endpoint.
@@ -51,7 +51,7 @@ Steps to build the first version of Tracker, in order. Requirements are in [SRS.
 
 ## 6. Web interface
 
-1. Set up the frontend with routing, the API client, and the event stream.
+1. Set up TanStack Start (React) in SPA mode with TanStack Router, TanStack Query, the API client, and the event stream.
 2. Build sign-in.
 3. Build the review round page with finding cards, threads, and keyboard decisions.
 4. Build the issue page with the plan, checklist, review rounds, open findings, and history.
@@ -79,11 +79,15 @@ Steps to build the first version of Tracker, in order. Requirements are in [SRS.
 
 ## 9. Deployment and backups
 
-1. Write the systemd units or Docker Compose file for the server and Litestream.
-2. Configure Litestream to replicate the encrypted database to R2.
-3. Deploy to the staging server behind the reverse proxy with HTTPS.
-4. Restore from R2 into a fresh machine and document the steps.
-5. Measure memory and response times against the SRS limits.
+1. Write the systemd unit or Docker Compose file for the server.
+2. Build the backup jobs: a consistent copy with `VACUUM INTO`, compression, age encryption, and upload to R2.
+3. Schedule the hourly sync, which replaces its copy only after a successful upload.
+4. Schedule the daily backup, with dated copies and deletion of copies older than the configured number of days.
+5. Record each backup run and show the last successful sync and backup in settings.
+6. Add the `restore` CLI command, with an integrity check before it writes the database file.
+7. Deploy to the staging server behind the reverse proxy with HTTPS.
+8. Restore both the latest sync and a daily backup into a fresh machine, and document the steps.
+9. Measure memory and response times against the SRS limits.
 
 ## 10. Switch over
 

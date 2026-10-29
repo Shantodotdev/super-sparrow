@@ -1,6 +1,6 @@
 # Software requirements specification
 
-This document defines the requirements and architecture of Tracker (working name), the first version. [PRODUCT.md](PRODUCT.md) explains what the product is and why it exists.
+This document defines the requirements and architecture of the first version of Super Sparrow. [PRODUCT.md](PRODUCT.md) explains what the product is and why it exists.
 
 ## 1. Scope
 
@@ -14,18 +14,20 @@ Out of scope for version 1: documents, secrets, CI/CD, cycles, estimates, roadma
 | ---------- | ---------------------------------------------- | ---------------------------------------------------------------- |
 | Server     | Go, one binary                                 | Low memory, fast builds, simple deployment, agents write it well |
 | Database   | SQLite in WAL mode                             | No separate database process; enough for a small team            |
-| Backups    | Litestream to Cloudflare R2, encrypted         | Continuous backups with point-in-time restore                    |
+| Backups    | Built into the Go server, encrypted, to R2     | Hourly sync and daily full backups, no extra process             |
 | Agent API  | MCP server (streamable HTTP) inside the binary | Claude Code and Codex connect with no glue code                  |
 | CLI        | Go, same repository, calls the HTTP API        | For scripts, hooks, and agents without MCP                       |
-| Frontend   | SolidJS or Svelte, built with Vite             | Small bundle, fast rendering                                     |
+| Frontend   | TanStack Start (React) in SPA mode             | Type-safe routing and data loading; builds to static files       |
 | Live views | Server-Sent Events                             | One-way updates are all the interface needs                      |
 | Desktop    | Tauri v2 wrapping the same frontend build      | Native app with low resource use                                 |
 
 The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app loads the same frontend and talks to the same server.
 
+The frontend runs TanStack Start in SPA mode: it builds to static files, so the Go server can serve them and Tauri can bundle them. It uses no server functions or server-side rendering. The Go API is the only backend, and TanStack Query handles data fetching and caching.
+
 ```
 Browser / Tauri app ──HTTP + SSE──┐
-Claude Code / Codex ──MCP─────────┼──> Go server ──> SQLite ──Litestream──> R2
+Claude Code / Codex ──MCP─────────┼──> Go server ──> SQLite ──hourly sync + daily backup──> R2
 CLI / scripts ───────HTTP─────────┘
 ```
 
@@ -99,8 +101,8 @@ All tables have `id`, `created_at`, and `updated_at`. Records that belong to a w
 
 - NFR-1 Performance: API reads under 50 ms at the 95th percentile on the staging server. The issue and review pages render in under 200 ms.
 - NFR-2 Resources: the server idles under 100 MB of RAM. The desktop app idles under 150 MB.
-- NFR-3 Durability: an accepted write is committed to SQLite before the response returns. Litestream replication lag stays under 10 seconds.
-- NFR-4 Recovery: restoring from R2 into a fresh server is documented and tested before launch.
+- NFR-3 Durability: an accepted write is committed to SQLite before the response returns. A server loss loses at most one hour of data.
+- NFR-4 Recovery: restoring from the latest sync and from any daily backup into a fresh server is documented and tested before launch.
 - NFR-5 Configuration: every setting comes from environment variables. The server refuses to start when a required setting is missing or malformed. No defaults in code.
 
 ## 6. Security
@@ -112,9 +114,23 @@ All tables have `id`, `created_at`, and `updated_at`. Records that belong to a w
 - Rate limits apply per token.
 - Backups are encrypted before they leave the server.
 
-## 7. Deployment
+## 7. Backups
 
-- One binary plus Litestream, run as two systemd services or one Docker Compose stack.
+The Go server runs two jobs that write to Cloudflare R2. Both take a consistent copy of the database with SQLite's `VACUUM INTO`, never by copying the live file, then compress it, encrypt it with [age](https://age-encryption.org), and upload it.
+
+| Job          | When       | What it keeps in R2                                       | Protects against                                   |
+| ------------ | ---------- | --------------------------------------------------------- | -------------------------------------------------- |
+| Sync         | Every hour | One copy, replaced each hour                              | Losing the server: at most one hour of data lost   |
+| Daily backup | Once a day | A dated full copy, kept for the configured number of days | Mistakes the sync would copy, such as a bad delete |
+
+- The sync replaces its copy only after the new upload succeeds, so a failed run never leaves R2 without a copy.
+- Both jobs record each run (start, finish, size, result) and log a failure. The settings page shows the last successful run of each.
+- The encryption public key, R2 credentials, bucket, the daily backup time, and the number of days to keep are required settings. The private key that decrypts backups is never stored on the server. Staging keeps daily backups for 30 days.
+- A `restore` CLI command downloads a chosen copy, decrypts it with the private key, checks it with `PRAGMA integrity_check`, and writes it as the database file.
+
+## 8. Deployment
+
+- One binary, run as a systemd service or one Docker Compose service.
 - Behind the existing reverse proxy with HTTPS.
 - Releases are built by CI as versioned binaries and desktop installers.
 - Database migrations run at startup, in order, inside a transaction, and are recorded in a migrations table.
