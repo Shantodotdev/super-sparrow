@@ -1,0 +1,15 @@
+# Dependencies and builds
+node_modules/
+dist/
+.output/
+.tanstack/
+*.tsbuildinfo
+routeTree.gen.ts
+bun.lock
+
+# Desktop build output and generated files
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Local data
+data/

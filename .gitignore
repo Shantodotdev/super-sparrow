@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.output/
+.tanstack/
+*.tsbuildinfo
+web/src/routeTree.gen.ts
+server/bin/
+
+# Desktop build output and generated files
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# Local database, sync, and backup files
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDE and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+
+# Claude Code local-only files
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Logs and test output
+*.log
+coverage.out
