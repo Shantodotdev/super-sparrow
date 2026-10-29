@@ -49,6 +49,37 @@ function IssuesPage() {
       items.includes(group) ? items.filter((item) => item !== group) : [...items, group],
     );
 
+  const switchView = (nextView: "list" | "board") => {
+    if ((view === "board") === (nextView === "board")) return;
+
+    const updateView = async () => {
+      await navigate({ search: { view: nextView === "board" ? "board" : undefined } });
+    };
+    const pageDocument = document as Document & {
+      startViewTransition?: (updateCallback: () => Promise<void>) => {
+        finished: Promise<void>;
+      };
+    };
+
+    if (!pageDocument.startViewTransition) {
+      void updateView();
+      return;
+    }
+
+    document.documentElement.dataset.issueViewDirection = nextView;
+    const transition = pageDocument.startViewTransition(updateView);
+    void transition.finished.then(
+      () => {
+        if (document.documentElement.dataset.issueViewDirection === nextView)
+          delete document.documentElement.dataset.issueViewDirection;
+      },
+      () => {
+        if (document.documentElement.dataset.issueViewDirection === nextView)
+          delete document.documentElement.dataset.issueViewDirection;
+      },
+    );
+  };
+
   return (
     <>
       <div className="issues-toolbar" ref={toolbarRef}>
@@ -81,14 +112,14 @@ function IssuesPage() {
               <button
                 type="button"
                 aria-pressed={view !== "board"}
-                onClick={() => void navigate({ search: { view: undefined } })}
+                onClick={() => switchView("list")}
               >
                 <Icon name="list" /> List
               </button>
               <button
                 type="button"
                 aria-pressed={view === "board"}
-                onClick={() => void navigate({ search: { view: "board" } })}
+                onClick={() => switchView("board")}
               >
                 <Columns3 aria-hidden="true" className="icon" /> Board
               </button>

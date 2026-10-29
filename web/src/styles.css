@@ -602,6 +602,7 @@ select {
   margin-top: 10px;
 }
 .list-content {
+  view-transition-name: issue-view-content;
   padding: 15px 26px 50px;
 }
 .list-content > section + section {
@@ -1501,6 +1502,11 @@ select {
   .custom-select-menu {
     animation: none;
   }
+  ::view-transition-group(issue-view-content),
+  ::view-transition-old(issue-view-content),
+  ::view-transition-new(issue-view-content) {
+    animation: none;
+  }
 }
 .icon {
   display: inline-block;
@@ -1629,6 +1635,56 @@ select {
   width: 15px;
   height: 15px;
 }
+@keyframes issue-view-exit-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes issue-view-enter-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes issue-view-exit-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes issue-view-enter-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+::view-transition-group(issue-view-content) {
+  overflow: hidden;
+}
+:root[data-issue-view-direction="board"]::view-transition-old(issue-view-content) {
+  animation: issue-view-exit-left 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+:root[data-issue-view-direction="board"]::view-transition-new(issue-view-content) {
+  animation: issue-view-enter-right 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+:root[data-issue-view-direction="list"]::view-transition-old(issue-view-content) {
+  animation: issue-view-exit-right 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+:root[data-issue-view-direction="list"]::view-transition-new(issue-view-content) {
+  animation: issue-view-enter-left 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+:root[data-issue-view-direction] {
+  view-transition-name: none;
+}
 .main-area:has(> .issue-board) {
   display: flex;
   flex-direction: column;
@@ -1637,6 +1693,7 @@ select {
   overflow: hidden;
 }
 .issue-board {
+  view-transition-name: issue-view-content;
   display: flex;
   flex: 1;
   min-height: 0;
