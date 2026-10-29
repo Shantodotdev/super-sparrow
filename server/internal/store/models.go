@@ -144,6 +144,11 @@ type Issue struct {
 	CompletedAt     *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	// UnresolvedFindings counts the issue's findings across its rounds whose status is one of
+	// UnresolvedFindingStatuses, leaving out duplicates. CommentCount counts the comments on the
+	// issue itself, not on its findings. Both are read with the issue.
+	UnresolvedFindings int
+	CommentCount       int
 }
 
 // Key returns the issue's key, such as WP-142.
@@ -228,6 +233,10 @@ type Finding struct {
 	FollowUpIssueID      string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	// IssueKey is the key of the finding's issue, such as WP-142, and CommentCount the number of
+	// comments on the finding. Both are read with the finding.
+	IssueKey     string
+	CommentCount int
 }
 
 // Label returns the finding's short name within its round, such as R3.

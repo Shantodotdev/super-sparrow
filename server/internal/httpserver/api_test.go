@@ -293,6 +293,35 @@ func TestReviewLoopThroughTheAPI(t *testing.T) {
 		t.Fatalf("open findings %+v", open.Findings)
 	}
 
+	// The project's list has the same findings, with the issues they belong to and their counts.
+	a.call(http.MethodPost, "/api/issues/WP-1/reviews/1/findings/R2/comments", a.member, map[string]string{"body": "Thanks."}, http.StatusCreated, nil)
+	var projectFindings struct {
+		Findings []findingView `json:"findings"`
+		Issues   []issueView   `json:"issues"`
+	}
+	a.call(http.MethodGet, "/api/projects/WP/findings?status=open,fix,fixed", a.member, nil, http.StatusOK, &projectFindings)
+	if len(projectFindings.Findings) != 1 || projectFindings.Findings[0].IssueKey != "WP-1" || projectFindings.Findings[0].CommentCount != 1 {
+		t.Fatalf("project findings %+v", projectFindings.Findings)
+	}
+	if len(projectFindings.Issues) != 1 || projectFindings.Issues[0].Key != "WP-1" ||
+		projectFindings.Issues[0].UnresolvedFindings != 1 || projectFindings.Issues[0].CommentCount != 1 {
+		t.Fatalf("project findings' issues %+v", projectFindings.Issues)
+	}
+	a.call(http.MethodGet, "/api/projects/WP/findings", a.member, nil, http.StatusOK, &projectFindings)
+	if len(projectFindings.Findings) != 2 {
+		t.Fatalf("all project findings %+v", projectFindings.Findings)
+	}
+	wantField(t, a.request(http.MethodGet, "/api/projects/WP/findings?status=bogus", a.member, nil), "status")
+	a.call(http.MethodGet, "/api/projects/XX/findings", a.member, nil, http.StatusNotFound, nil)
+
+	var list struct {
+		Issues []issueView `json:"issues"`
+	}
+	a.call(http.MethodGet, "/api/projects/WP/issues", a.member, nil, http.StatusOK, &list)
+	if first := list.Issues[len(list.Issues)-1]; first.Key != "WP-1" || first.UnresolvedFindings != 1 || first.CommentCount != 1 {
+		t.Fatalf("issue list counts %+v", first)
+	}
+
 	// A second round can mark its finding as a duplicate of one from the first.
 	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{"to_commit": "e4f5a6b"}, http.StatusCreated, nil)
 	a.call(http.MethodPost, "/api/issues/WP-1/reviews/2/findings", a.agent, map[string]any{"severity": "nit", "title": "Again", "problem": "P", "fix": "F"}, http.StatusCreated, nil)

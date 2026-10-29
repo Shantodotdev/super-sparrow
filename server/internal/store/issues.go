@@ -16,7 +16,10 @@ import (
 const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.plan_revision, i.status, i.parent_issue_id,
 	i.milestone_id, i.assignee_actor_id, i.branch_name, i.pull_request_url,
 	(SELECT group_concat(label_id) FROM issue_labels WHERE issue_id = i.id),
-	i.created_by_actor_id, i.completed_at, i.created_at, i.updated_at`
+	i.created_by_actor_id, i.completed_at, i.created_at, i.updated_at,
+	(SELECT count(*) FROM findings f JOIN review_rounds r ON r.id = f.review_round_id
+		WHERE r.issue_id = i.id AND f.status IN ('open', 'fix', 'fixed') AND f.duplicate_of_finding_id IS NULL),
+	(SELECT count(*) FROM comments c WHERE c.issue_id = i.id)`
 
 const issueFrom = ` FROM issues i JOIN projects p ON p.id = i.project_id `
 
@@ -667,7 +670,7 @@ func scanIssue(row scanner) (Issue, error) {
 
 	err := row.Scan(&issue.ID, &issue.ProjectID, &issue.ProjectKey, &issue.Number, &issue.Title, &issue.Plan,
 		&issue.PlanRevision, &issue.Status, &parent, &milestone, &assignee, &branch, &pullRequest, &labels,
-		&issue.CreatedByID, &completed, &created, &updated)
+		&issue.CreatedByID, &completed, &created, &updated, &issue.UnresolvedFindings, &issue.CommentCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Issue{}, notFound("issue")
 	}

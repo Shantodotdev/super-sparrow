@@ -17,12 +17,19 @@ const roundColumns = `id, issue_id, number, from_commit, to_commit, includes_unc
 const findingColumns = `f.id, f.review_round_id, r.issue_id, r.number, f.number, f.severity, f.title, f.problem, f.fix,
 	f.evidence, f.file_path, f.line, f.commit_sha, f.status, f.decision_reason, f.decided_by_actor_id, f.decided_at,
 	f.found_by_actor_id, f.fixed_by_actor_id, f.fixed_in_commit, f.fixed_at, f.verified_by_actor_id, f.verified_at,
-	f.duplicate_of_finding_id, f.follow_up_issue_id, f.created_at, f.updated_at`
+	f.duplicate_of_finding_id, f.follow_up_issue_id, f.created_at, f.updated_at, p.key || '-' || i.number,
+	(SELECT count(*) FROM comments c WHERE c.finding_id = f.id)`
 
-const findingFrom = ` FROM findings f JOIN review_rounds r ON r.id = f.review_round_id `
+const findingFrom = ` FROM findings f JOIN review_rounds r ON r.id = f.review_round_id
+	JOIN issues i ON i.id = r.issue_id JOIN projects p ON p.id = i.project_id `
 
-// Findings are listed most severe first, then by number.
-const findingOrder = ` ORDER BY r.number, CASE f.severity WHEN 'blocking' THEN 0 WHEN 'should_fix' THEN 1 ELSE 2 END, f.number`
+// UnresolvedFindingStatuses are the finding statuses that still need work: waiting for a
+// decision, decided fix, or fixed and waiting for verification. Issue.UnresolvedFindings counts
+// findings in them.
+var UnresolvedFindingStatuses = []FindingStatus{FindingOpen, FindingFix, FindingFixed}
+
+// findingOrder follows ORDER BY: findings by round, most severe first, then by number.
+const findingOrder = ` r.number, CASE f.severity WHEN 'blocking' THEN 0 WHEN 'should_fix' THEN 1 ELSE 2 END, f.number`
 
 // NewReviewRound describes a review round to start on an issue.
 type NewReviewRound struct {
@@ -661,21 +668,38 @@ func (s *Store) GetFindingByNumber(ctx context.Context, issueID string, round, n
 
 // ListRoundFindings returns a round's findings, most severe first.
 func (s *Store) ListRoundFindings(ctx context.Context, roundID string) ([]Finding, error) {
-	return listFindings(ctx, s.db, `f.review_round_id = ?`, roundID)
+	return listFindings(ctx, s.db, `f.review_round_id = ? ORDER BY`+findingOrder, roundID)
 }
 
 // ListIssueFindings returns the findings of every round of an issue whose status is one of
 // statuses, or all of them when statuses is empty. Duplicates are left out when excludeDuplicates
 // is true, as the list of open findings across rounds needs.
 func (s *Store) ListIssueFindings(ctx context.Context, issueID string, statuses []FindingStatus, excludeDuplicates bool) ([]Finding, error) {
-	where := `r.issue_id = ?`
-	args := []any{issueID}
+	where, args, err := findingFilter(`r.issue_id = ?`, []any{issueID}, statuses, excludeDuplicates)
+	if err != nil {
+		return nil, err
+	}
+	return listFindings(ctx, s.db, where+` ORDER BY`+findingOrder, args...)
+}
 
+// ListProjectFindings returns the findings of every issue in a project, filtered like
+// ListIssueFindings and grouped by issue, newest issue first, as the project's open findings
+// list shows them.
+func (s *Store) ListProjectFindings(ctx context.Context, projectID string, statuses []FindingStatus, excludeDuplicates bool) ([]Finding, error) {
+	where, args, err := findingFilter(`i.project_id = ?`, []any{projectID}, statuses, excludeDuplicates)
+	if err != nil {
+		return nil, err
+	}
+	return listFindings(ctx, s.db, where+` ORDER BY i.number DESC,`+findingOrder, args...)
+}
+
+// findingFilter adds the status and duplicate filters to where and its args.
+func findingFilter(where string, args []any, statuses []FindingStatus, excludeDuplicates bool) (string, []any, error) {
 	if len(statuses) > 0 {
 		placeholders := make([]string, len(statuses))
 		for index, status := range statuses {
 			if !status.valid() {
-				return nil, invalid("statuses", "contains an unknown status %q", status)
+				return "", nil, invalid("statuses", "contains an unknown status %q", status)
 			}
 			placeholders[index] = "?"
 			args = append(args, status)
@@ -685,12 +709,11 @@ func (s *Store) ListIssueFindings(ctx context.Context, issueID string, statuses 
 	if excludeDuplicates {
 		where += ` AND f.duplicate_of_finding_id IS NULL`
 	}
-
-	return listFindings(ctx, s.db, where, args...)
+	return where, args, nil
 }
 
 func listFindings(ctx context.Context, q querier, where string, args ...any) ([]Finding, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+findingColumns+findingFrom+`WHERE `+where+findingOrder, args...)
+	rows, err := q.QueryContext(ctx, `SELECT `+findingColumns+findingFrom+`WHERE `+where, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list findings: %w", err)
 	}
@@ -725,7 +748,7 @@ func scanFinding(row scanner) (Finding, error) {
 	err := row.Scan(&f.ID, &f.ReviewRoundID, &f.IssueID, &f.RoundNumber, &f.Number, &f.Severity, &f.Title, &f.Problem,
 		&f.Fix, &f.Evidence, &filePath, &line, &commit, &f.Status, &reason, &decidedBy, &decidedAt,
 		&f.FoundByActorID, &fixedBy, &fixedIn, &fixedAt, &verifiedBy, &verifiedAt, &duplicateOf, &followUp,
-		&created, &updated)
+		&created, &updated, &f.IssueKey, &f.CommentCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Finding{}, notFound("finding")
 	}

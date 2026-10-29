@@ -127,22 +127,68 @@ func (s *server) listIssueFindings(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	includeDuplicates, err := queryBool(r, "include_duplicates")
+	statuses, includeDuplicates, err := findingQuery(r)
 	if err != nil {
 		return err
+	}
+	findings, err := s.store.ListIssueFindings(r.Context(), issue.ID, statuses, !includeDuplicates)
+	if err != nil {
+		return renameField(err, "statuses", "status")
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"findings": newFindingViews(findings)})
+	return nil
+}
+
+// listProjectFindings returns the findings of every issue in a project, grouped by issue, newest
+// issue first, with a summary of each issue they belong to. It filters like listIssueFindings.
+func (s *server) listProjectFindings(w http.ResponseWriter, r *http.Request) error {
+	project, err := s.projectFromPath(r)
+	if err != nil {
+		return err
+	}
+	statuses, includeDuplicates, err := findingQuery(r)
+	if err != nil {
+		return err
+	}
+
+	findings, err := s.store.ListProjectFindings(r.Context(), project.ID, statuses, !includeDuplicates)
+	if err != nil {
+		return renameField(err, "statuses", "status")
+	}
+
+	issues := []issueView{}
+	seen := map[string]bool{}
+	for _, finding := range findings {
+		if seen[finding.IssueID] {
+			continue
+		}
+		seen[finding.IssueID] = true
+
+		issue, err := s.store.GetIssue(r.Context(), finding.IssueID)
+		if err != nil {
+			return err
+		}
+		issues = append(issues, newIssueSummaryView(issue))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"findings": newFindingViews(findings), "issues": issues})
+	return nil
+}
+
+// findingQuery reads the finding list filters: ?status, a comma-separated list of statuses, and
+// ?include_duplicates.
+func findingQuery(r *http.Request) ([]store.FindingStatus, bool, error) {
+	includeDuplicates, err := queryBool(r, "include_duplicates")
+	if err != nil {
+		return nil, false, err
 	}
 
 	var statuses []store.FindingStatus
 	for _, status := range queryList(r, "status") {
 		statuses = append(statuses, store.FindingStatus(status))
 	}
-	findings, err := s.store.ListIssueFindings(r.Context(), issue.ID, statuses, !includeDuplicates)
-	if err != nil {
-		return err
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"findings": newFindingViews(findings)})
-	return nil
+	return statuses, includeDuplicates, nil
 }
 
 func (s *server) getFinding(w http.ResponseWriter, r *http.Request) error {

@@ -115,27 +115,29 @@ type progressView struct {
 // issueView is an issue. Plan and Checklist are filled only when one issue is fetched, so lists
 // stay small; ChecklistProgress is always there.
 type issueView struct {
-	ID                string           `json:"id"`
-	Key               string           `json:"key"`
-	ProjectID         string           `json:"project_id"`
-	ProjectKey        string           `json:"project_key"`
-	Number            int              `json:"number"`
-	Title             string           `json:"title"`
-	Plan              *string          `json:"plan,omitempty"`
-	PlanRevision      int              `json:"plan_revision"`
-	Checklist         []checklist.Item `json:"checklist,omitempty"`
-	ChecklistProgress progressView     `json:"checklist_progress"`
-	Status            string           `json:"status"`
-	ParentIssueID     string           `json:"parent_issue_id"`
-	MilestoneID       string           `json:"milestone_id"`
-	AssigneeActorID   string           `json:"assignee_actor_id"`
-	BranchName        string           `json:"branch_name"`
-	PullRequestURL    string           `json:"pull_request_url"`
-	LabelIDs          []string         `json:"label_ids"`
-	CreatedByActorID  string           `json:"created_by_actor_id"`
-	CompletedAt       *time.Time       `json:"completed_at"`
-	CreatedAt         time.Time        `json:"created_at"`
-	UpdatedAt         time.Time        `json:"updated_at"`
+	ID                 string           `json:"id"`
+	Key                string           `json:"key"`
+	ProjectID          string           `json:"project_id"`
+	ProjectKey         string           `json:"project_key"`
+	Number             int              `json:"number"`
+	Title              string           `json:"title"`
+	Plan               *string          `json:"plan,omitempty"`
+	PlanRevision       int              `json:"plan_revision"`
+	Checklist          []checklist.Item `json:"checklist,omitempty"`
+	ChecklistProgress  progressView     `json:"checklist_progress"`
+	Status             string           `json:"status"`
+	ParentIssueID      string           `json:"parent_issue_id"`
+	MilestoneID        string           `json:"milestone_id"`
+	AssigneeActorID    string           `json:"assignee_actor_id"`
+	BranchName         string           `json:"branch_name"`
+	PullRequestURL     string           `json:"pull_request_url"`
+	LabelIDs           []string         `json:"label_ids"`
+	CreatedByActorID   string           `json:"created_by_actor_id"`
+	UnresolvedFindings int              `json:"unresolved_findings"`
+	CommentCount       int              `json:"comment_count"`
+	CompletedAt        *time.Time       `json:"completed_at"`
+	CreatedAt          time.Time        `json:"created_at"`
+	UpdatedAt          time.Time        `json:"updated_at"`
 }
 
 func newIssueSummaryView(issue store.Issue) issueView {
@@ -152,6 +154,7 @@ func newIssueSummaryView(issue store.Issue) issueView {
 		Title: issue.Title, PlanRevision: issue.PlanRevision, ChecklistProgress: progress, Status: string(issue.Status), ParentIssueID: issue.ParentIssueID,
 		MilestoneID: issue.MilestoneID, AssigneeActorID: issue.AssigneeActorID, BranchName: issue.BranchName,
 		PullRequestURL: issue.PullRequestURL, LabelIDs: issue.LabelIDs, CreatedByActorID: issue.CreatedByID,
+		UnresolvedFindings: issue.UnresolvedFindings, CommentCount: issue.CommentCount,
 		CompletedAt: issue.CompletedAt, CreatedAt: issue.CreatedAt, UpdatedAt: issue.UpdatedAt,
 	}
 }
@@ -189,6 +192,7 @@ type findingView struct {
 	ID                   string     `json:"id"`
 	ReviewRoundID        string     `json:"review_round_id"`
 	IssueID              string     `json:"issue_id"`
+	IssueKey             string     `json:"issue_key"`
 	Round                int        `json:"round"`
 	Number               int        `json:"number"`
 	Label                string     `json:"label"`
@@ -212,19 +216,20 @@ type findingView struct {
 	VerifiedAt           *time.Time `json:"verified_at"`
 	DuplicateOfFindingID string     `json:"duplicate_of_finding_id"`
 	FollowUpIssueID      string     `json:"follow_up_issue_id"`
+	CommentCount         int        `json:"comment_count"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 func newFindingView(f store.Finding) findingView {
 	return findingView{
-		ID: f.ID, ReviewRoundID: f.ReviewRoundID, IssueID: f.IssueID, Round: f.RoundNumber, Number: f.Number,
+		ID: f.ID, ReviewRoundID: f.ReviewRoundID, IssueID: f.IssueID, IssueKey: f.IssueKey, Round: f.RoundNumber, Number: f.Number,
 		Label: f.Label(), Severity: string(f.Severity), Title: f.Title, Problem: f.Problem, Fix: f.Fix,
 		Evidence: f.Evidence, FilePath: f.FilePath, Line: f.Line, CommitSHA: f.CommitSHA, Status: string(f.Status),
 		DecisionReason: f.DecisionReason, DecidedByActorID: f.DecidedByActorID, DecidedAt: f.DecidedAt,
 		FoundByActorID: f.FoundByActorID, FixedByActorID: f.FixedByActorID, FixedInCommit: f.FixedInCommit,
 		FixedAt: f.FixedAt, VerifiedByActorID: f.VerifiedByActorID, VerifiedAt: f.VerifiedAt,
-		DuplicateOfFindingID: f.DuplicateOfFindingID, FollowUpIssueID: f.FollowUpIssueID,
+		DuplicateOfFindingID: f.DuplicateOfFindingID, FollowUpIssueID: f.FollowUpIssueID, CommentCount: f.CommentCount,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 	}
 }

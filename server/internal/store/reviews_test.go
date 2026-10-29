@@ -331,3 +331,44 @@ func TestIssueFindingsAreOrderedBySeverityWithinRounds(t *testing.T) {
 		t.Errorf("order = %v, want %v", got, want)
 	}
 }
+
+func TestListProjectFindingsGroupsByIssueAndCounts(t *testing.T) {
+	tm := newTeam(t)
+	r := tm.reviewed(t)
+	tm.addFinding(t, r.round.ID, SeverityNit)
+
+	newer := tm.issue(t, r.issue.ProjectID, "Newer")
+	newerRound := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: newer.ID, ToCommit: "b2c3d4e"})).must(t)
+	newerFinding := tm.addFinding(t, newerRound.ID, SeverityShouldFix)
+	got(tm.store.AddComment(tm.ctx, tm.member, NewComment{FindingID: newerFinding.ID, Body: "Why?"})).must(t)
+	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, newerFinding.ID, FindingChange{Status: FindingWontfix, Reason: "On purpose"})).must(t)
+
+	// Another project's findings stay out.
+	tm.reviewedIn(t, "XX")
+
+	all := got(tm.store.ListProjectFindings(tm.ctx, r.issue.ProjectID, nil, true)).must(t)
+	var order []string
+	for _, finding := range all {
+		order = append(order, finding.IssueKey+" "+finding.Label())
+	}
+	if strings.Join(order, ", ") != "WP-2 R1, WP-1 R1, WP-1 R2" {
+		t.Fatalf("project findings %v", order)
+	}
+	if all[0].CommentCount != 1 || all[1].CommentCount != 0 {
+		t.Errorf("comment counts %d and %d", all[0].CommentCount, all[1].CommentCount)
+	}
+
+	unresolved := got(tm.store.ListProjectFindings(tm.ctx, r.issue.ProjectID, UnresolvedFindingStatuses, true)).must(t)
+	if len(unresolved) != 2 || unresolved[0].IssueKey != "WP-1" {
+		t.Errorf("unresolved findings %+v", unresolved)
+	}
+	if issue := got(tm.store.GetIssue(tm.ctx, r.issue.ID)).must(t); issue.UnresolvedFindings != 2 {
+		t.Errorf("WP-1 has %d unresolved findings, want 2", issue.UnresolvedFindings)
+	}
+	if issue := got(tm.store.GetIssue(tm.ctx, newer.ID)).must(t); issue.UnresolvedFindings != 0 {
+		t.Errorf("WP-2 has %d unresolved findings, want 0 after wontfix", issue.UnresolvedFindings)
+	}
+
+	_, err := tm.store.ListProjectFindings(tm.ctx, r.issue.ProjectID, []FindingStatus{"someday"}, true)
+	wantInvalid(t, err, "statuses")
+}

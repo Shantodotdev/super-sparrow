@@ -121,6 +121,7 @@ func New(opts Options) http.Handler {
 	s.route("POST /api/projects/{key}/labels", signedIn, s.createLabel)
 
 	s.route("GET /api/projects/{key}/issues", signedIn, s.listIssues)
+	s.route("GET /api/projects/{key}/findings", signedIn, s.listProjectFindings)
 	s.route("POST /api/projects/{key}/issues", signedIn, s.createIssue)
 	s.route("GET /api/issues/for-branch", signedIn, s.issueForBranch)
 	s.route("GET /api/issues/{key}", signedIn, s.getIssue)

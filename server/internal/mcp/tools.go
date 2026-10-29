@@ -24,10 +24,6 @@ type tool struct {
 	run         func(ctx context.Context, caller store.Caller, args json.RawMessage) (any, error)
 }
 
-// unresolvedStatuses are the finding statuses that still need work: waiting for a decision,
-// decided fix, or fixed and waiting for verification.
-var unresolvedStatuses = []store.FindingStatus{store.FindingOpen, store.FindingFix, store.FindingFixed}
-
 func (s *Server) toolList() []tool {
 	return []tool{
 		{
@@ -358,10 +354,6 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 	if err != nil {
 		return issueOutput{}, err
 	}
-	unresolved, err := s.store.ListIssueFindings(ctx, issue.ID, unresolvedStatuses, true)
-	if err != nil {
-		return issueOutput{}, err
-	}
 
 	items := checklist.Items(issue.Plan)
 	done := 0
@@ -375,7 +367,7 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 		Key: issue.Key(), Title: issue.Title, Status: string(issue.Status), URL: s.issueURL(issue),
 		BranchName: issue.BranchName, PullRequestURL: issue.PullRequestURL,
 		Checklist:    fmt.Sprintf("%d of %d items done", done, len(items)),
-		ReviewRounds: make([]roundOutput, 0, len(rounds)), UnresolvedFindings: len(unresolved),
+		ReviewRounds: make([]roundOutput, 0, len(rounds)), UnresolvedFindings: issue.UnresolvedFindings,
 	}
 	for _, round := range rounds {
 		output.ReviewRounds = append(output.ReviewRounds, s.newRoundOutput(issue, round, nil))
@@ -734,7 +726,7 @@ func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args stru
 		return nil, err
 	}
 
-	statuses := unresolvedStatuses
+	statuses := store.UnresolvedFindingStatuses
 	if len(args.Statuses) > 0 {
 		statuses = nil
 		for _, status := range args.Statuses {
