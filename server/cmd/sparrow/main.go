@@ -254,7 +254,11 @@ func serve(ctx context.Context) error {
 			WebDir:              cfg.WebDir,
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,
 		}),
+		// Request bodies are at most a megabyte, so a slow sender is cut off after the read timeout.
+		// There is no write timeout, because event streams stay open for as long as a page is.
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 	server.RegisterOnShutdown(func() { close(stopStreams) })
 

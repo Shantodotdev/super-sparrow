@@ -3,6 +3,7 @@ package httpserver
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"io"
 	"log/slog"
@@ -63,6 +64,30 @@ func TestFrontendServesFilesAndFallsBackToIndex(t *testing.T) {
 	api := a.request(http.MethodGet, "/api/nothing-here", a.member, nil)
 	if api.Code != http.StatusNotFound || !strings.Contains(api.Header().Get("Content-Type"), "json") {
 		t.Errorf("unknown API path: status %d, type %q", api.Code, api.Header().Get("Content-Type"))
+	}
+}
+
+func TestShellPageAllowsOnlyItsOwnInlineScripts(t *testing.T) {
+	a := newAPITeam(t)
+	dir := t.TempDir()
+	inline := `self.$_TSR={buffer:[]};`
+	shell := `<!doctype html><script data-tsr-stream-part="">` + inline + `</script>` +
+		`<script type="module" async="" src="/assets/index.js"></script><script></script>`
+	if err := os.WriteFile(filepath.Join(dir, ShellFile), []byte(shell), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.withOptions(dir)
+
+	response := a.request(http.MethodGet, "/WP-1", "", nil)
+	policy := response.Header().Get("Content-Security-Policy")
+	sum := sha256.Sum256([]byte(inline))
+	want := "script-src 'self' 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "';"
+	if response.Code != http.StatusOK || !strings.Contains(policy, want) || strings.Contains(policy, "unsafe-inline") ||
+		!strings.Contains(policy, "frame-ancestors 'none'") {
+		t.Fatalf("status %d, policy %q, want %q in it", response.Code, policy, want)
+	}
+	if response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Errorf("shell served as %q", response.Header().Get("Content-Type"))
 	}
 }
 

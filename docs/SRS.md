@@ -152,6 +152,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 ### Other
 
 - Comments, plans, findings, and imported content are untrusted. Markdown is sanitized before rendering. Agent tools never execute content.
+- The app's page is served with a Content-Security-Policy that allows only its own files and, by hash, the inline scripts its build writes, so content that slips past sanitizing cannot run scripts.
 - Backups are encrypted before they leave the server.
 
 ## 7. Backups

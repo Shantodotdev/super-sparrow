@@ -976,8 +976,12 @@ func (s *Server) createIssue(ctx context.Context, caller store.Caller, args stru
 	}
 	if args.ParentIssueKey != "" {
 		parent, err := s.store.GetIssueByKey(ctx, args.ParentIssueKey)
-		if err != nil || parent.ProjectID != project.ID {
+		_, malformed := errors.AsType[*store.ValidationError](err)
+		switch {
+		case malformed, errors.Is(err, store.ErrNotFound), err == nil && parent.ProjectID != project.ID:
 			return nil, &store.ValidationError{Field: "parent_issue_key", Message: "must be an issue of project " + project.Key}
+		case err != nil:
+			return nil, err
 		}
 		input.ParentIssueID = parent.ID
 	}

@@ -295,6 +295,8 @@ func TestMCPToolErrorsNameTheArgument(t *testing.T) {
 		{"set_finding_status", map[string]any{"issue_key": "WP-1", "finding": "R1", "status": "fixed"}, "round is required"},
 		{"create_issue", map[string]any{"project_key": "WP", "title": "T", "status": "someday"}, "status must be"},
 		{"get_issue", map[string]any{"issue_key": "WP-99"}, "there is no issue WP-99"},
+		{"create_issue", map[string]any{"project_key": "WP", "title": "T", "status": "backlog", "parent_issue_key": "WP-99"}, "parent_issue_key must be an issue of project WP"},
+		{"create_issue", map[string]any{"project_key": "WP", "title": "T", "status": "backlog", "parent_issue_key": "not a key"}, "parent_issue_key must be an issue of project WP"},
 		{"list_comments", map[string]any{"issue_key": "WP-1", "finding": "R1"}, "round is required with finding"},
 	} {
 		text, failed := a.tool(attempt.tool, attempt.args)
