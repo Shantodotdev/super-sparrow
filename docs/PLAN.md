@@ -65,7 +65,7 @@ Done. Secrets and emails are in `server/internal/auth` and `server/internal/emai
 2. Build the email sign-in screen: enter email, then the 6-digit code.
 3. Build the review round page with finding cards, threads, and keyboard decisions.
 4. Build the issue page with the plan, checklist, review rounds, open findings, and history.
-5. Build the project board, grouped by status and filtered by milestone.
+5. Build the project issue list, grouped by status and filtered by milestone.
 6. Build the activity feed, with actor names and agent badges.
 7. Build settings for teammates, signed-in devices, and agent tokens.
 8. Add the command palette and keyboard shortcuts.
