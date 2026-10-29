@@ -54,11 +54,11 @@ The `make` targets above are created in the first step of PLAN.md. Until they ex
 
 ## Actions requiring a direct request
 
-- Never commit directly on the `main` branch. Always create and switch to a dedicated task branch first. If the current branch is `main`, do not commit; ask the user if it is okay to create a branch.
+- Committing directly on the `main` branch is allowed. Use a task branch when the developer asks for one or for a pull request.
 - Name task branches `feat/<short-name>`, `fix/<short-name>`, or `chore/<short-name>`. Once Super Sparrow tracks its own issues, include the issue key: `feat/ss-42-review-page`.
 - Never run `git commit` unless the user's latest prompt explicitly requests a commit. After implementation, leave changes for review.
 - Never credit an AI tool in commit messages or PR descriptions: no `Co-Authored-By` trailers for Claude, Codex, or other agents, and no "Generated with" lines, even if your tooling suggests them.
-- Never push directly to `main`. A user request to make, create, or open a pull request authorizes pushing the task branch and creating the PR without additional confirmation. Otherwise, push only when the user explicitly requests it.
+- Push only when the user explicitly requests it, to `main` or to a task branch. A user request to make, create, or open a pull request authorizes pushing the task branch and creating the PR without additional confirmation.
 - Never merge a pull request. Human developers review and merge.
 - Do not run `git reset --hard`, `git push --force`, or `git clean -f`.
 
