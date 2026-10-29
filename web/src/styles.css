@@ -106,9 +106,9 @@ h2 {
   white-space: nowrap;
 }
 .brand-mark {
-  color: #6681ff;
-  font-size: 27px;
-  line-height: 1;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
 }
 kbd {
   font-size: 11px;
@@ -494,8 +494,8 @@ select {
   width: min(100% - 40px, 390px);
 }
 .signin-icon {
-  color: #7890ff;
-  font-size: 36px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 22px;
 }
 .signin-card h1 {
@@ -520,7 +520,7 @@ select {
   }
   .brand {
     font-size: 0;
-    padding: 0 9px;
+    padding: 0 5px;
   }
   .nav-heading,
   .projects-empty,
@@ -1434,16 +1434,6 @@ select {
   flex: 0 0 auto;
   vertical-align: -3px;
 }
-.icon.brand-mark {
-  width: 25px;
-  height: 25px;
-  color: #6681ff;
-}
-.icon.signin-icon {
-  width: 36px;
-  height: 36px;
-  color: #7890ff;
-}
 .icon.project-logo {
   width: 19px;
   height: 19px;
@@ -1455,12 +1445,6 @@ select {
 .icon.custom-select-chevron {
   width: 14px;
   height: 14px;
-}
-@media (max-width: 700px) {
-  .icon.brand-mark {
-    width: 25px;
-    height: 25px;
-  }
 }
 
 .issues-toolbar,

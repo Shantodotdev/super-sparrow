@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
-import { Icon } from "../components/icon";
 
 export const Route = createFileRoute("/signin")({
   staticData: { bare: true },
@@ -29,10 +28,10 @@ function SignInPage() {
   return (
     <div className="signin-page">
       <div className="signin-brand">
-        <Icon name="bird" className="brand-mark" /> Super Sparrow
+        <img src="/logo.png" className="brand-mark" alt="" /> Super Sparrow
       </div>
       <form className="signin-card" onSubmit={submit}>
-        <Icon name="bird" className="signin-icon" />
+        <img src="/logo.png" className="signin-icon" alt="" />
         <h1>{sent ? "Check your email" : "Welcome to Super Sparrow"}</h1>
         <p className="muted">
           {sent

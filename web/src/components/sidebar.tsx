@@ -13,7 +13,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <Icon name="bird" className="brand-mark" /> Super Sparrow
+        <img src="/logo.png" className="brand-mark" alt="" /> Super Sparrow
       </div>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <NavItem to="/issues" icon="circle-user-round" label="My issues" />
