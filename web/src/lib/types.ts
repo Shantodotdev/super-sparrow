@@ -2,10 +2,16 @@ export type NavSection = "issues" | "activity" | "milestones" | "findings" | "se
 
 export type IssueStatus = "In Review" | "In Progress" | "Todo" | "Backlog" | "Done" | "Canceled";
 
+/** The priority levels shown in the frontend issue preview. */
+export type IssuePriority = "Urgent" | "High" | "Medium" | "Low";
+
+export const issuePriorities: IssuePriority[] = ["Urgent", "High", "Medium", "Low"];
+
 export type Issue = {
   key: string;
   title: string;
   status: IssueStatus;
+  priority: IssuePriority;
   labels: string[];
   assignee: string;
   findings: number;

@@ -42,6 +42,7 @@ export function useCreateIssue() {
         key,
         title: values.title,
         status: values.status as IssueStatus,
+        priority: values.priority,
         labels: values.labels,
         assignee: values.assignee,
         findings: 0,

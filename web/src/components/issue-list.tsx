@@ -34,34 +34,48 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
               aria-expanded={!isCollapsed}
               onClick={() => onToggleGroup(status)}
             >
-              <Icon name={isCollapsed ? "chevron-right" : "chevron-down"} />
+              <Icon name="chevron-down" className="group-heading-chevron" />
               <span className={`status-icon status-${slugify(status)}`}>
                 <Icon name={statusIcon[status]} />
               </span>
               <strong>{status}</strong>
               <span className="count">{rows.length}</span>
             </button>
-            {!isCollapsed &&
-              rows.map((issue) => (
-                <Link
-                  className="issue-grid issue-row"
-                  key={issue.key}
-                  to="/$issue"
-                  params={{ issue: issue.key }}
-                >
-                  <span className="issue-key">{issue.key}</span>
-                  <span className="issue-title">{issue.title}</span>
-                  <LabelChips labels={issue.labels} />
-                  <span
-                    className="issue-assignee"
-                    role="img"
-                    aria-label={`Assigned to ${issue.assignee}`}
-                    title={issue.assignee}
+            <div className="issue-group-content" aria-hidden={isCollapsed} inert={isCollapsed}>
+              <div className="issue-group-content-inner">
+                {rows.map((issue) => (
+                  <Link
+                    className="issue-grid issue-row"
+                    key={issue.key}
+                    to="/$issue"
+                    params={{ issue: issue.key }}
                   >
-                    <Avatar name={issue.assignee} />
-                  </span>
-                </Link>
-              ))}
+                    <span
+                      className={`issue-priority-icon issue-priority--${issue.priority.toLowerCase()}`}
+                      role="img"
+                      aria-label={`${issue.priority} priority`}
+                      title={`${issue.priority} priority`}
+                    >
+                      <span aria-hidden="true" />
+                      <span aria-hidden="true" />
+                      <span aria-hidden="true" />
+                      <span aria-hidden="true" />
+                    </span>
+                    <span className="issue-key">{issue.key}</span>
+                    <span className="issue-title">{issue.title}</span>
+                    <LabelChips labels={issue.labels} />
+                    <span
+                      className="issue-assignee"
+                      role="img"
+                      aria-label={`Assigned to ${issue.assignee}`}
+                      title={issue.assignee}
+                    >
+                      <Avatar name={issue.assignee} />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
           </section>
         );
       })}

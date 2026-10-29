@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "./icon";
 import { Select } from "./select";
 import { Modal } from "./modal";
+import { issuePriorities, type IssuePriority } from "../lib/types";
 
 export type NewIssueValues = {
   title: string;
   plan: string;
   status: string;
+  priority: IssuePriority;
   assignee: string;
   milestone: string;
   labels: string[];
@@ -35,6 +37,7 @@ export function NewIssueModal({
   const [title, setTitle] = useState("");
   const [plan, setPlan] = useState("");
   const [status, setStatus] = useState("Backlog");
+  const [priority, setPriority] = useState<IssuePriority>("Medium");
   const [assignee, setAssignee] = useState("Unassigned");
   const [milestone, setMilestone] = useState("No milestone");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
@@ -48,6 +51,7 @@ export function NewIssueModal({
     setTitle("");
     setPlan("");
     setStatus("Backlog");
+    setPriority("Medium");
     setAssignee("Unassigned");
     setMilestone("No milestone");
     setSelectedLabels([]);
@@ -71,6 +75,7 @@ export function NewIssueModal({
       title: title.trim(),
       plan: plan.trim(),
       status,
+      priority,
       assignee,
       milestone,
       labels: selectedLabels,
@@ -82,6 +87,7 @@ export function NewIssueModal({
     setTitle("");
     setPlan("");
     setStatus("Backlog");
+    setPriority("Medium");
     setAssignee("Unassigned");
     setMilestone("No milestone");
     setSelectedLabels([]);
@@ -126,6 +132,14 @@ export function NewIssueModal({
           placeholder="Add a description or plan..."
         />
         <div className="new-issue-properties">
+          <Select
+            variant="chip"
+            icon="triangle-alert"
+            label="Priority"
+            value={priority}
+            onChange={(value) => setPriority(value as IssuePriority)}
+            options={issuePriorities.map((item) => ({ value: item, label: item }))}
+          />
           <Select
             variant="chip"
             icon="circle-dashed"

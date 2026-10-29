@@ -625,7 +625,7 @@ select {
 }
 .issue-grid {
   display: grid;
-  grid-template-columns: 90px minmax(210px, 1fr) 280px 60px;
+  grid-template-columns: 20px 90px minmax(210px, 1fr) 230px 60px;
   gap: 15px;
   align-items: center;
 }
@@ -642,6 +642,28 @@ select {
   border-radius: 8px;
   padding: 8px 12px;
   text-align: left;
+}
+.group-heading-chevron {
+  transition: transform 180ms ease;
+}
+.group-heading[aria-expanded="false"] .group-heading-chevron {
+  transform: rotate(-90deg);
+}
+.issue-group-content {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  opacity: 1;
+  transition:
+    grid-template-rows 220ms ease,
+    opacity 180ms ease;
+}
+.issue-group-content[aria-hidden="true"] {
+  grid-template-rows: minmax(0, 0fr);
+  opacity: 0;
+}
+.issue-group-content-inner {
+  min-height: 0;
+  overflow: hidden;
 }
 .group-heading--in-review {
   background: #2b2634;
@@ -699,6 +721,55 @@ select {
   gap: 14px;
   color: #aebed4;
   font-size: 14px;
+}
+.issue-priority-icon {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 18px;
+  height: 16px;
+}
+.issue-priority-icon > span {
+  flex: 0 0 3px;
+  border-radius: 2px 2px 0 0;
+  background: currentColor;
+  opacity: 0.22;
+}
+.issue-priority-icon > span:nth-child(1) {
+  height: 4px;
+}
+.issue-priority-icon > span:nth-child(2) {
+  height: 7px;
+}
+.issue-priority-icon > span:nth-child(3) {
+  height: 11px;
+}
+.issue-priority-icon > span:nth-child(4) {
+  height: 15px;
+}
+.issue-priority--urgent {
+  color: #ff8585;
+}
+.issue-priority--urgent > span {
+  opacity: 1;
+}
+.issue-priority--high {
+  color: #f2ad67;
+}
+.issue-priority--high > span:nth-child(-n + 3) {
+  opacity: 1;
+}
+.issue-priority--medium {
+  color: #d8c66d;
+}
+.issue-priority--medium > span:nth-child(-n + 2) {
+  opacity: 1;
+}
+.issue-priority--low {
+  color: #9ba9bc;
+}
+.issue-priority--low > span:first-child {
+  opacity: 1;
 }
 .issue-title {
   color: #eef0f5;
@@ -1211,7 +1282,7 @@ select {
 }
 @media (max-width: 1100px) {
   .issue-grid {
-    grid-template-columns: 90px minmax(180px, 1fr) 220px 60px;
+    grid-template-columns: 20px 90px minmax(180px, 1fr) 170px 60px;
   }
   .issue-layout {
     grid-template-columns: minmax(0, 1fr) 310px;
@@ -1247,7 +1318,7 @@ select {
     padding: 16px;
   }
   .issue-grid {
-    min-width: 640px;
+    min-width: 660px;
   }
   .issue-layout,
   .review-split {
@@ -1416,7 +1487,9 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .nav-item,
   .project-button,
-  .issue-row {
+  .issue-row,
+  .group-heading-chevron,
+  .issue-group-content {
     transition: none;
   }
   .custom-select-trigger,
