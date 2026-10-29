@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the local setup page. Native features for the server's page are granted to its address when first-run setup is built.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
