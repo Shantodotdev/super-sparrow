@@ -1919,3 +1919,47 @@ select {
     transition: none;
   }
 }
+
+.issue-layout .issue-icon-goal {
+  color: #7c9dff;
+}
+.issue-layout .issue-icon-approach,
+.issue-layout .issue-icon-branch {
+  color: #b28aff;
+}
+.issue-layout .issue-icon-warning {
+  color: #e8ae62;
+}
+.issue-layout .issue-icon-checklist {
+  color: #61c99d;
+}
+.issue-layout .issue-icon-comments {
+  color: #7bbdcf;
+}
+.issue-layout .issue-icon-review {
+  color: #a38af1;
+}
+.issue-layout .issue-icon-pull-request {
+  color: #7fcd9c;
+}
+.issue-status {
+  --issue-status-color: #98a9c3;
+}
+.issue-status.status-in-review {
+  --issue-status-color: #a574ff;
+}
+.issue-status.status-in-progress {
+  --issue-status-color: #4c7aff;
+}
+.issue-status.status-done {
+  --issue-status-color: #44ce91;
+}
+.issue-status.status-backlog {
+  --issue-status-color: #a9b6c8;
+}
+.issue-status .custom-select-trigger > .icon:first-child {
+  color: var(--issue-status-color);
+}
+.issue-status .custom-select-value {
+  flex: 1;
+}

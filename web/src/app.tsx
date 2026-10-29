@@ -48,6 +48,15 @@ type Finding = {
   problem: string;
   file: string;
 };
+type ReviewRound = {
+  issue: string;
+  number: number;
+  from: string;
+  to: string;
+  date: string;
+  author: string;
+  summary: string;
+};
 const initialIssues: Issue[] = [
   {
     key: "SP-142",
@@ -353,6 +362,74 @@ const initialIssues: Issue[] = [
 const initialFindings: Finding[] = [
   {
     id: "R1",
+    issue: "SP-154",
+    round: 2,
+    title: "Concurrent decisions can overwrite one another",
+    severity: "Blocking",
+    author: "Codex",
+    status: "Open",
+    problem:
+      "Two reviewers can submit decisions at the same time, and the later update silently replaces the first decision.",
+    file: "server/internal/store/findings.go:118",
+  },
+  {
+    id: "R2",
+    issue: "SP-154",
+    round: 2,
+    title: "Show a useful message when a decision is stale",
+    severity: "Should fix",
+    author: "Claude Code",
+    status: "Open",
+    problem:
+      "A reviewer who submits an outdated decision needs to see the latest state before trying again.",
+    file: "web/src/components/finding-actions.tsx:64",
+  },
+  {
+    id: "R1",
+    issue: "SP-154",
+    round: 1,
+    title: "Record the actor on each decision",
+    severity: "Should fix",
+    author: "Claude Code",
+    status: "Verified",
+    problem: "The decision history needs to identify the reviewer responsible for each change.",
+    file: "server/internal/store/events.go:82",
+  },
+  {
+    id: "R1",
+    issue: "SP-142",
+    round: 1,
+    title: "Limit failed code verification attempts",
+    severity: "Blocking",
+    author: "Claude Code",
+    status: "Verified",
+    problem: "Repeated invalid code attempts should be limited to protect sign-in sessions.",
+    file: "server/internal/auth/codes.go:74",
+  },
+  {
+    id: "R2",
+    issue: "SP-142",
+    round: 1,
+    title: "Keep the code field accessible",
+    severity: "Should fix",
+    author: "Codex",
+    status: "Fixed",
+    problem: "The verification input needs an accessible label and clear error feedback.",
+    file: "web/src/routes/sign-in.tsx:37",
+  },
+  {
+    id: "R1",
+    issue: "SP-153",
+    round: 1,
+    title: "Preserve filters when switching views",
+    severity: "Should fix",
+    author: "Codex",
+    status: "Open",
+    problem: "Switching between list and board should not clear the active issue filters.",
+    file: "web/src/routes/issues.tsx:51",
+  },
+  {
+    id: "R1",
     issue: "SP-142",
     round: 2,
     title: "Session can expire during sign-in",
@@ -398,6 +475,62 @@ const initialFindings: Finding[] = [
     file: "web/src/routes/sign-in.tsx:32",
   },
 ];
+const reviewRounds: ReviewRound[] = [
+  {
+    issue: "SP-154",
+    number: 2,
+    from: "d35a2cf",
+    to: "8b7e13a",
+    date: "Nov 8, 2024",
+    author: "Codex",
+    summary: "Reviewed concurrent decision handling and feedback for conflicting updates.",
+  },
+  {
+    issue: "SP-154",
+    number: 1,
+    from: "a17c021",
+    to: "d35a2cf",
+    date: "Nov 7, 2024",
+    author: "Claude Code",
+    summary: "Reviewed the initial decision flow and its audit history.",
+  },
+  {
+    issue: "SP-142",
+    number: 2,
+    from: "a3f9c2d",
+    to: "7b4e1aa",
+    date: "Nov 6, 2024",
+    author: "Codex",
+    summary: "Reviewed sign-in expiry, branch validation, and related interface updates.",
+  },
+  {
+    issue: "SP-142",
+    number: 1,
+    from: "6fa81d0",
+    to: "a3f9c2d",
+    date: "Nov 4, 2024",
+    author: "Claude Code",
+    summary: "Reviewed code verification and the sign-in form.",
+  },
+  {
+    issue: "SP-144",
+    number: 1,
+    from: "2e89b11",
+    to: "5c3bd14",
+    date: "Nov 5, 2024",
+    author: "Claude Code",
+    summary: "Reviewed error messages for unsuccessful sign-in.",
+  },
+  {
+    issue: "SP-153",
+    number: 1,
+    from: "019ac41",
+    to: "27d9a8c",
+    date: "Nov 7, 2024",
+    author: "Codex",
+    summary: "Reviewed the issue list filters and view switching.",
+  },
+];
 const statuses: IssueStatus[] = ["In Review", "In Progress", "Todo", "Backlog", "Done", "Canceled"];
 const statusIcon: Record<IssueStatus, IconName> = {
   "In Review": "circle-dot",
@@ -431,6 +564,7 @@ export function PageView({ page }: { page: Page }) {
     return (
       <IssuePage
         issue={currentIssue}
+        findings={findings.filter((item) => item.issue === currentIssue.key)}
         go={go}
         availableLabels={[
           ...new Set([...initialIssues, ...issues].flatMap((item) => item.labels)),
@@ -778,7 +912,7 @@ function Avatar({ name }: { name: string }) {
     return (
       <img
         className="agent-icon"
-        src={`/brands/${name === "Codex" ? "codex" : "claude"}.svg`}
+        src={name === "Codex" ? "/brands/codex.png" : "/brands/claude.svg"}
         alt=""
       />
     );
@@ -1086,12 +1220,14 @@ function Filter({
 }
 function IssuePage({
   issue,
+  findings,
   go,
   onStatus,
   availableLabels,
   onLabels,
 }: {
   issue: Issue;
+  findings: Finding[];
   go: (page: Page, issue?: string, round?: string) => void;
   onStatus: (status: IssueStatus) => void;
   availableLabels: string[];
@@ -1100,6 +1236,7 @@ function IssuePage({
   const [editingLabels, setEditingLabels] = useState(false);
   const [tab, setTab] = useState("Plan");
   const [checks, setChecks] = useState([true, true, false, false, false]);
+  const rounds = reviewRounds.filter((round) => round.issue === issue.key);
   return (
     <div className="issue-layout">
       <div className="issue-body">
@@ -1108,8 +1245,13 @@ function IssuePage({
         </div>
         <h1>{issue.title}</h1>
         <div className="issue-meta">
-          <Icon name="circle-dot" /> &nbsp;{issue.key}　 ·　 <Icon name="git-branch" /> &nbsp;
-          feat/sp-142-email-code　 ·　 <Icon name="message-square" /> &nbsp; 8 comments
+          <Icon
+            name={statusIcon[issue.status]}
+            className={`status-${issue.status.toLowerCase().replace(" ", "-")}`}
+          />{" "}
+          &nbsp;{issue.key}　 ·　 <Icon name="git-branch" className="issue-icon-branch" /> &nbsp;
+          feat/sp-142-email-code　 ·　{" "}
+          <Icon name="message-square" className="issue-icon-comments" /> &nbsp; 8 comments
         </div>
         {issue.plan === undefined && (
           <p className="issue-summary">
@@ -1123,7 +1265,7 @@ function IssuePage({
               className={tab === name ? "selected" : ""}
               onClick={() => setTab(name)}
             >
-              {name} {name === "Review rounds" && <span className="count">2</span>}
+              {name} {name === "Review rounds" && <span className="count">{rounds.length}</span>}
             </button>
           ))}
         </div>
@@ -1132,7 +1274,7 @@ function IssuePage({
         ) : tab === "Plan" ? (
           <div className="plan">
             <section>
-              <Icon name="target" className="plan-icon" />
+              <Icon name="target" className="plan-icon issue-icon-goal" />
               <div>
                 <h2>Goal</h2>
                 <p>
@@ -1142,7 +1284,7 @@ function IssuePage({
               </div>
             </section>
             <section>
-              <Icon name="list" className="plan-icon" />
+              <Icon name="list" className="plan-icon issue-icon-approach" />
               <div>
                 <h2>Approach</h2>
                 <ol>
@@ -1154,7 +1296,7 @@ function IssuePage({
               </div>
             </section>
             <section>
-              <Icon name="triangle-alert" className="plan-icon" />
+              <Icon name="triangle-alert" className="plan-icon issue-icon-warning" />
               <div>
                 <h2>Edge cases</h2>
                 <ul>
@@ -1165,7 +1307,7 @@ function IssuePage({
               </div>
             </section>
             <section>
-              <Icon name="square-check" className="plan-icon" />
+              <Icon name="square-check" className="plan-icon issue-icon-checklist" />
               <div>
                 <h2>Checklist</h2>
                 {[
@@ -1193,22 +1335,7 @@ function IssuePage({
           </div>
         ) : tab === "Review rounds" ? (
           <div className="inline-list">
-            {[2, 1].map((round) => (
-              <button
-                className="round-row"
-                key={round}
-                onClick={() => go("review", issue.key, String(round))}
-              >
-                <Icon name="file-text" />
-                <span>
-                  <strong>Round {round}</strong>
-                  <small>
-                    {round === 2 ? 3 : 4} findings · Nov {round === 2 ? "5" : "4"}, 2024
-                  </small>
-                </span>
-                <Icon name="chevron-right" />
-              </button>
-            ))}
+            <ReviewRoundList rounds={rounds} findings={findings} go={go} />
           </div>
         ) : (
           <div className="inline-list">
@@ -1226,52 +1353,42 @@ function IssuePage({
       </div>
       <aside className="properties">
         <h3>Status</h3>
-        <Select
-          label="Status"
-          value={issue.status}
-          onChange={(value) => onStatus(value as IssueStatus)}
-          options={statuses.map((status) => ({ value: status, label: status }))}
-        />
+        <div className={`issue-status status-${issue.status.toLowerCase().replace(" ", "-")}`}>
+          <Select
+            label="Status"
+            value={issue.status}
+            icon={statusIcon[issue.status]}
+            onChange={(value) => onStatus(value as IssueStatus)}
+            options={statuses.map((status) => ({ value: status, label: status }))}
+          />
+        </div>
         <h3>Assignee</h3>
         <div className="property">
           <Person name={issue.assignee} />
         </div>
         <h3>Milestone</h3>
         <div className="property">
-          <Icon name="target" /> &nbsp;{issue.milestone}
+          <Icon name="target" className="issue-icon-goal" /> &nbsp;{issue.milestone}
         </div>
         <h3>Branch</h3>
         <div className="property">
-          <Icon name="git-branch" /> &nbsp; feat/sp-142-email-code
+          <Icon name="git-branch" className="issue-icon-branch" /> &nbsp; feat/sp-142-email-code
         </div>
         <h3>Pull request</h3>
         <div className="property">
-          <Icon name="github" /> &nbsp; <span className="link-blue">#324</span> &nbsp; Add email
-          code sign-in
+          <Icon name="github" className="issue-icon-pull-request" /> &nbsp;{" "}
+          <span className="link-blue">#324</span> &nbsp; Add email code sign-in
         </div>
         <div className="property-section">
           <div className="section-heading">
             <strong>Review rounds</strong>
-            <button className="text-link" onClick={() => go("review", issue.key)}>
-              View all →
-            </button>
+            {rounds.length > 0 && (
+              <button className="text-link" onClick={() => setTab("Review rounds")}>
+                View all →
+              </button>
+            )}
           </div>
-          {[2, 1].map((round) => (
-            <button
-              className="round-row"
-              key={round}
-              onClick={() => go("review", issue.key, String(round))}
-            >
-              <Icon name="file-text" />
-              <span>
-                <strong>Round {round}</strong>
-                <small>
-                  {round === 2 ? 3 : 4} findings · Nov {round === 2 ? "5" : "4"}, 2024
-                </small>
-              </span>
-              <Icon name="chevron-right" />
-            </button>
-          ))}
+          <ReviewRoundList rounds={rounds} findings={findings} go={go} />
         </div>
         <div className="property-section">
           <div className="section-heading">
@@ -1295,6 +1412,36 @@ function IssuePage({
     </div>
   );
 }
+function ReviewRoundList({
+  rounds,
+  findings,
+  go,
+}: {
+  rounds: ReviewRound[];
+  findings: Finding[];
+  go: (page: Page, issue?: string, round?: string) => void;
+}) {
+  if (!rounds.length) return <p className="muted small">No review rounds yet.</p>;
+  return rounds.map((round) => {
+    const count = findings.filter((finding) => finding.round === round.number).length;
+    return (
+      <button
+        className="round-row"
+        key={round.number}
+        onClick={() => go("review", round.issue, String(round.number))}
+      >
+        <Icon name="file-text" className="issue-icon-review" />
+        <span>
+          <strong>Round {round.number}</strong>
+          <small>
+            {count} {count === 1 ? "finding" : "findings"} · {round.date} · {round.author}
+          </small>
+        </span>
+        <Icon name="chevron-right" />
+      </button>
+    );
+  });
+}
 function Review({
   issue,
   findings,
@@ -1310,7 +1457,11 @@ function Review({
   const round = useRouterState({
     select: (state) => state.location.pathname.split("/").at(-1) ?? "2",
   });
-  const selectedFinding = findings[selected] ?? findings[0];
+  const rounds = reviewRounds.filter((item) => item.issue === issue.key);
+  const currentRound = rounds.find((item) => String(item.number) === round);
+  const roundFindings = findings.filter((item) => String(item.round) === round);
+  const selectedFinding = roundFindings[selected] ?? roundFindings[0];
+  useEffect(() => setSelected(0), [issue.key, round]);
   return (
     <>
       <header className="review-header">
@@ -1322,11 +1473,17 @@ function Review({
           <div>
             <h1>Review round {round}</h1>
             <p className="issue-meta">
-              <Icon name="git-branch" /> &nbsp; a3f9c2d &nbsp; <Icon name="arrow-right" /> &nbsp;
-              7b4e1aa　 ·　 <Icon name="clock" /> &nbsp; Nov 5, 2024 – Nov 6, 2024
+              {currentRound && (
+                <>
+                  <Icon name="git-branch" /> &nbsp; {currentRound.from} &nbsp;{" "}
+                  <Icon name="arrow-right" /> &nbsp;
+                  {currentRound.to}　 ·　 <Icon name="clock" /> &nbsp; {currentRound.date} ·{" "}
+                  {currentRound.author}
+                </>
+              )}
             </p>
             <p className="issue-summary">
-              Adds sign-in with email code, branch creation flow, and related UI updates.
+              {currentRound?.summary ?? "This review round is not available in the preview."}
             </p>
           </div>
           <div className="review-actions">
@@ -1334,10 +1491,10 @@ function Review({
               label="Review round"
               value={round}
               onChange={(value) => go("review", issue.key, value)}
-              options={[
-                { value: "2", label: "Round 2" },
-                { value: "1", label: "Round 1" },
-              ]}
+              options={rounds.map((item) => ({
+                value: String(item.number),
+                label: `Round ${item.number}`,
+              }))}
             />
             <button className="text-button" onClick={() => go("findings")}>
               {findings.filter((item) => item.status === "Open").length} open findings　
@@ -1349,11 +1506,11 @@ function Review({
       <div className="review-split">
         <div>
           <div className="review-tab">
-            Findings <span className="count">{findings.length}</span>
+            Findings <span className="count">{roundFindings.length}</span>
           </div>
-          {round === "2" ? (
+          {roundFindings.length ? (
             <div className="finding-cards">
-              {findings.map((item, index) => (
+              {roundFindings.map((item, index) => (
                 <button
                   className={`finding-card ${index === selected ? "selected" : ""}`}
                   key={item.id}
@@ -1384,12 +1541,16 @@ function Review({
           ) : (
             <div className="empty-state">
               <h2>No findings in this preview</h2>
-              <p>Choose round 2 to see the example review.</p>
+              <p>There are no findings for this round.</p>
             </div>
           )}
         </div>
-        {round === "2" && selectedFinding && (
-          <FindingDetail finding={selectedFinding} decide={decide} />
+        {selectedFinding && (
+          <FindingDetail
+            key={`${selectedFinding.issue}-${selectedFinding.round}-${selectedFinding.id}`}
+            finding={selectedFinding}
+            decide={decide}
+          />
         )}
       </div>
     </>
@@ -1405,6 +1566,9 @@ function FindingDetail({
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [comments, setComments] = useState<string[]>([]);
+  const date = reviewRounds.find(
+    (round) => round.issue === finding.issue && round.number === finding.round,
+  )?.date;
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (
@@ -1430,36 +1594,29 @@ function FindingDetail({
       </div>
       <p className="detail-author">
         Found by <Person name={finding.author} />{" "}
-        <span className="muted"> · &nbsp; Nov 6, 2024</span>
+        {date && <span className="muted"> · &nbsp; {date}</span>}
       </p>
       <h3>Problem</h3>
       <p>{finding.problem}</p>
       <h3>Evidence</h3>
       <div className="evidence">
         <Icon name="file-text" /> &nbsp; {finding.file}
-        <div className="code-sample">
-          42　 <span>const</span> session = <span>await</span> getSession();
-          <br />
-          43　 if (session.expiresAt &lt; Date.now()) {"{"}
-          <br />
-          44　　 throw new SessionExpiredError();
-        </div>
       </div>
       <h3>Discussion</h3>
       <div className="discussion">
-        <Avatar name="Claude Code" />
+        <Avatar name={finding.author} />
         <p>
-          <strong>Claude Code</strong> <small>Nov 6, 2024, 11:28 AM</small>
+          <strong>{finding.author}</strong> <small>{date}</small>
           <br />
-          We should handle expiration gracefully.
+          Please review the behavior described above.
         </p>
       </div>
       <div className="discussion">
         <Avatar name="Shanto" />
         <p>
-          <strong>Shanto</strong> <small>Nov 6, 2024, 12:01 PM</small>
+          <strong>Shanto</strong> <small>{date}</small>
           <br />
-          Agreed. Let’s show a helpful message if it expires.
+          Thanks, I’ll take a look.
         </p>
       </div>
       {comments.map((item, i) => (
