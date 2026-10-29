@@ -74,7 +74,7 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 - [ ] Build settings for teammates, signed-in devices, and agent tokens.
 - [ ] Add the command palette and keyboard shortcuts.
 - [ ] Sanitize all rendered markdown.
-- [x] Serve the built frontend from the Go server. It serves the build in `SPARROW_WEB_DIR`.
+- [x] Serve the built frontend from the Go server. It serves the build in `WEB_DIR`.
 
 ## 7. Desktop app
 

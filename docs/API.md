@@ -4,7 +4,7 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 
 ## Conventions
 
-- **Authentication.** People send the session cookie that sign-in sets. Agents and scripts send `Authorization: Bearer ssp_…` (the scheme in any case). A request that changes data and carries an `Origin` header must come from `SPARROW_PUBLIC_URL`.
+- **Authentication.** People send the session cookie that sign-in sets. Agents and scripts send `Authorization: Bearer ssp_…` (the scheme in any case). A request that changes data and carries an `Origin` header must come from `PUBLIC_URL`.
 - **Access.** Each endpoint below is open to everyone signed in, people and agents, unless marked _person_ (no agents), _owner_, or _public_.
 - **Errors.** Every error is `{"error": "…"}`. A validation error also names the request field at fault: `{"error": "is required", "field": "title"}` with status 400. Other statuses are 401 (not signed in), 403 (not allowed), 404, 405 with `Allow` (a known path with another method), 409 (a conflict, or a move the record cannot make, such as a finding from `open` to `verified`), and 429 with `Retry-After`.
 - **Bodies.** Unknown fields are refused. In a `PATCH`, a field that is absent stays as it is, and `""` or `null` clears an optional field. A required field refuses both.

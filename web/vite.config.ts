@@ -22,9 +22,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
   if (command === "build" || isPreview) return { plugins };
 
   const env = { ...loadEnv(mode, repositoryRoot, ""), ...process.env } as Record<string, string>;
-  const port = Number(requireSetting(env, "SPARROW_WEB_PORT"));
+  const port = Number(requireSetting(env, "WEB_PORT"));
   if (!Number.isInteger(port) || port <= 0)
-    throw new Error("SPARROW_WEB_PORT must be a port number");
+    throw new Error("WEB_PORT must be a port number");
 
   return {
     plugins,
@@ -33,7 +33,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
       port,
       strictPort: true,
       // The browser calls the API on the same origin, as it does in production.
-      proxy: { "/api": `http://${requireSetting(env, "SPARROW_LISTEN_ADDR")}` },
+      proxy: { "/api": `http://${requireSetting(env, "LISTEN_ADDR")}` },
     },
   };
 });

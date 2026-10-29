@@ -47,7 +47,7 @@ install:
 create-owner: env-file
 	@test -n "$(NAME)" && test -n "$(EMAIL)" || { echo 'usage: make create-owner NAME="Your Name" EMAIL=you@example.com'; exit 1; }
 	cd server && go build -o bin/sparrow ./cmd/sparrow
-	@$(LOAD_ENV) && mkdir -p "$$(dirname "$$SPARROW_DATABASE_PATH")" && ./server/bin/sparrow create-owner --name "$(NAME)" --email "$(EMAIL)"
+	@$(LOAD_ENV) && mkdir -p "$$(dirname "$$DATABASE_PATH")" && ./server/bin/sparrow create-owner --name "$(NAME)" --email "$(EMAIL)"
 
 env-file:
 	@test -f .env || { echo ".env is missing: run cp .env.example .env"; exit 1; }
@@ -58,7 +58,7 @@ dev: env-file
 
 dev-server: env-file
 	cd server && go build -o bin/sparrow ./cmd/sparrow
-	@$(LOAD_ENV) && mkdir -p "$$(dirname "$$SPARROW_DATABASE_PATH")" && ./server/bin/sparrow serve
+	@$(LOAD_ENV) && mkdir -p "$$(dirname "$$DATABASE_PATH")" && ./server/bin/sparrow serve
 
 dev-web: env-file
 	bun --filter @super-sparrow/web dev

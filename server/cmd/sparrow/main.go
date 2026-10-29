@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"filippo.io/age"
 	"github.com/shantodotdev/super-sparrow/server/internal/auth"
 	"github.com/shantodotdev/super-sparrow/server/internal/backup"
 	"github.com/shantodotdev/super-sparrow/server/internal/cli"
@@ -39,10 +37,11 @@ const usage = `Usage: sparrow <command>
 Server commands (read the server settings from the environment):
   serve                                     Apply migrations and run the server
   create-owner --name NAME --email EMAIL    Add the team's first owner
-  import-linear --project NAME [--team KEY] Import a Linear project (needs SPARROW_LINEAR_API_KEY)
-  restore --list                            List the backup copies in R2 (needs the SPARROW_R2_ settings)
-  restore --copy sync|daily/YYYY-MM-DD --identity KEY_FILE --database PATH
-                                            Restore a copy into a new database file
+  import-linear --project NAME [--team KEY] Import a Linear project (needs LINEAR_API_KEY)
+  restore --list                            List the backup copies in R2 (needs the R2_ settings)
+  restore --copy sync|daily/YYYY-MM-DD --database PATH
+                                            Restore a copy into a new database file (also
+                                            needs BACKUP_ENCRYPTION_KEY)
   version                                   Print the version
 
 ` + cli.Usage
@@ -129,7 +128,7 @@ func createOwner(ctx context.Context, args []string) error {
 	return nil
 }
 
-// importLinear imports one Linear project with the API key in SPARROW_LINEAR_API_KEY, which only
+// importLinear imports one Linear project with the API key in LINEAR_API_KEY, which only
 // this command needs, and prints what it brought in.
 func importLinear(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("import-linear", flag.ContinueOnError)
@@ -142,9 +141,9 @@ func importLinear(ctx context.Context, args []string) error {
 		return errors.New("usage: sparrow import-linear --project NAME [--team KEY]")
 	}
 
-	apiKey := strings.TrimSpace(os.Getenv("SPARROW_LINEAR_API_KEY"))
+	apiKey := strings.TrimSpace(os.Getenv("LINEAR_API_KEY"))
 	if !strings.HasPrefix(apiKey, "lin_api_") {
-		return errors.New("SPARROW_LINEAR_API_KEY is required: a Linear personal API key, which starts with lin_api_")
+		return errors.New("LINEAR_API_KEY is required: a Linear personal API key, which starts with lin_api_")
 	}
 
 	_, db, st, err := openStore(ctx)
@@ -163,12 +162,12 @@ func importLinear(ctx context.Context, args []string) error {
 }
 
 // restore lists the backup copies, or restores one into a new database file. It needs only the
-// R2 settings and the private key file, so it runs on a fresh machine without the server's settings.
+// R2 settings and the backup encryption key, so it runs on a fresh machine without the server's
+// other settings.
 func restore(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
 	list := flags.Bool("list", false, "list the copies in the bucket")
 	copyName := flags.String("copy", "", "sync, daily/YYYY-MM-DD, or a key from --list")
-	identityPath := flags.String("identity", "", "the age private key file that decrypts backups")
 	target := flags.String("database", "", "where to write the restored database; it must not exist")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -181,20 +180,20 @@ func restore(ctx context.Context, args []string) error {
 	bucket := backup.NewR2Bucket(r2.AccountID, r2.AccessKeyID, r2.SecretAccessKey, r2.Bucket)
 
 	if *list {
-		if flags.NArg() != 0 || *copyName != "" || *identityPath != "" || *target != "" {
+		if flags.NArg() != 0 || *copyName != "" || *target != "" {
 			return errors.New("usage: sparrow restore --list")
 		}
 		return listCopies(ctx, bucket)
 	}
-	if flags.NArg() != 0 || *copyName == "" || *identityPath == "" || *target == "" {
-		return errors.New("usage: sparrow restore --copy sync|daily/YYYY-MM-DD --identity KEY_FILE --database PATH")
+	if flags.NArg() != 0 || *copyName == "" || *target == "" {
+		return errors.New("usage: sparrow restore --copy sync|daily/YYYY-MM-DD --database PATH")
+	}
+	encryptionKey, err := config.LoadBackupKey(os.Getenv)
+	if err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 
 	key, err := backup.ResolveCopy(*copyName)
-	if err != nil {
-		return err
-	}
-	identities, err := readIdentities(*identityPath)
 	if err != nil {
 		return err
 	}
@@ -203,7 +202,7 @@ func restore(ctx context.Context, args []string) error {
 		return fmt.Errorf("resolve --database: %w", err)
 	}
 
-	size, err := backup.Restore(ctx, bucket, key, identities, path)
+	size, err := backup.Restore(ctx, bucket, key, encryptionKey, path)
 	if err != nil {
 		return err
 	}
@@ -222,20 +221,6 @@ func listCopies(ctx context.Context, bucket *backup.Bucket) error {
 		}
 	}
 	return nil
-}
-
-func readIdentities(path string) ([]age.Identity, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open --identity: %w", err)
-	}
-	defer file.Close()
-
-	identities, err := age.ParseIdentities(io.LimitReader(file, 1<<20))
-	if err != nil {
-		return nil, fmt.Errorf("read --identity as an age private key file: %w", err)
-	}
-	return identities, nil
 }
 
 // serve migrates the database and serves HTTP until ctx ends, running the backup jobs alongside
@@ -277,18 +262,18 @@ func serve(ctx context.Context) error {
 	var jobs sync.WaitGroup
 	if cfg.Backups != nil {
 		runner := backup.NewRunner(backup.Options{
-			Store:     st,
-			Bucket:    backup.NewR2Bucket(cfg.Backups.R2.AccountID, cfg.Backups.R2.AccessKeyID, cfg.Backups.R2.SecretAccessKey, cfg.Backups.R2.Bucket),
-			Recipient: cfg.Backups.Recipient,
-			WorkDir:   filepath.Dir(cfg.DatabasePath),
-			KeepDays:  cfg.Backups.KeepDays,
-			DailyAt:   cfg.Backups.DailyAt,
-			Logger:    logger,
-			Now:       time.Now,
+			Store:         st,
+			Bucket:        backup.NewR2Bucket(cfg.Backups.R2.AccountID, cfg.Backups.R2.AccessKeyID, cfg.Backups.R2.SecretAccessKey, cfg.Backups.R2.Bucket),
+			EncryptionKey: cfg.Backups.EncryptionKey,
+			WorkDir:       filepath.Dir(cfg.DatabasePath),
+			KeepDays:      cfg.Backups.KeepDays,
+			DailyAt:       cfg.Backups.DailyAt,
+			Logger:        logger,
+			Now:           time.Now,
 		})
 		jobs.Go(func() { runner.Run(jobsCtx) })
 	} else {
-		logger.Warn("backups are disabled; set SPARROW_BACKUPS=enabled on any server that holds real data")
+		logger.Info("backups are off in development; set the BACKUP_ and R2_ settings to run them")
 	}
 	defer func() {
 		stopJobs()
