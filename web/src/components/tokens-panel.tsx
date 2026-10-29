@@ -1,0 +1,60 @@
+import type { AgentToken } from "../lib/types";
+import { Icon } from "./icon";
+import { Person } from "./person";
+
+type TokensPanelProps = {
+  tokens: AgentToken[];
+  onCreate: () => void;
+  onRevoke: (id: string) => void;
+};
+
+/** The agent token table. */
+export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Agent tokens</h2>
+          <p className="muted">Manage the tokens your agents use to connect.</p>
+        </div>
+        <button className="primary" onClick={onCreate}>
+          <Icon name="plus" /> &nbsp; Create token
+        </button>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Owned by</th>
+              <th>Agent</th>
+              <th>Expires</th>
+              <th>Last used</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tokens.map((token) => (
+              <tr key={token.id}>
+                <td>
+                  <strong>{token.label}</strong>
+                </td>
+                <td>{token.owner}</td>
+                <td>
+                  <Person name={token.agent} />
+                </td>
+                <td>{token.expires}</td>
+                <td>{token.lastUsed}</td>
+                <td>
+                  <button className="text-button" onClick={() => onRevoke(token.id)}>
+                    Revoke
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}

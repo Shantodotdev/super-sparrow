@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { ApiError } from "./lib/api";
+import type { NavSection } from "./lib/types";
 import { routeTree } from "./routeTree.gen";
 
 /** Retries only failures that may be transient; a 4xx answer will not change on retry. */
@@ -28,5 +29,11 @@ export function getRouter() {
 declare module "@tanstack/react-router" {
   interface Register {
     router: ReturnType<typeof getRouter>;
+  }
+
+  /** Lets a page route name its sidebar section, or opt out of the app shell with `bare`. */
+  interface StaticDataRouteOption {
+    section?: NavSection;
+    bare?: boolean;
   }
 }

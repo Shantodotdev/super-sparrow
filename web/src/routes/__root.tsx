@@ -1,7 +1,8 @@
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { HeadContent, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import appCss from "../styles.css?url";
-import { App } from "../app";
+import { AppShell } from "../components/app-shell";
+import { ToastProvider } from "../components/toast";
 
 /** The HTML shell around every page, with the shared query client from the router context. */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -36,7 +37,9 @@ function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ToastProvider>
+        <AppShell />
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

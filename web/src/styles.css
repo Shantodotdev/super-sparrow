@@ -198,17 +198,20 @@ kbd {
   gap: 26px;
   margin-top: 20px;
 }
-.tabs button {
+.tabs button,
+.tabs a {
   position: relative;
   background: none;
   border: 0;
   color: #9eabbd;
   padding: 0 5px 16px;
 }
-.tabs button.selected {
+.tabs button.selected,
+.tabs a.selected {
   color: #f5f6fa;
 }
-.tabs button.selected::after {
+.tabs button.selected::after,
+.tabs a.selected::after {
   content: "";
   height: 3px;
   background: #426fff;
@@ -412,7 +415,7 @@ td strong {
   padding: 10px;
   color: #94a1b3;
 }
-.palette button {
+.palette a {
   display: flex;
   justify-content: space-between;
   width: 100%;
@@ -422,10 +425,10 @@ td strong {
   padding: 12px;
   text-align: left;
 }
-.palette button:hover {
+.palette a:hover {
   background: #202631;
 }
-.palette button span {
+.palette a span {
   color: #8290a5;
 }
 .modal {
@@ -769,13 +772,15 @@ select {
   width: 26px;
   height: 26px;
 }
-.breadcrumb button {
+.breadcrumb button,
+.breadcrumb a {
   background: none;
   border: 0;
   padding: 0;
   color: inherit;
 }
 .breadcrumb button:hover,
+.breadcrumb a:hover,
 .text-link:hover {
   color: #d2e0ff;
 }
