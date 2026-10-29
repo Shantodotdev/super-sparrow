@@ -22,9 +22,10 @@ macOS needs the Xcode command line tools. Windows needs the Microsoft C++ build 
 
 1. `cp .env.example .env`. Every setting is required; the server stops and names any that is missing. In development, leave `SPARROW_WEB_DIR` and `SPARROW_GITHUB_WEBHOOK_SECRET` at `none` and `SPARROW_BACKUPS` at `disabled`; [DEPLOYMENT.md](DEPLOYMENT.md) covers them for a server.
 2. Set `SPARROW_RESEND_API_KEY` to a [Resend](https://resend.com/api-keys) API key. Sign-in codes and invitations are sent through Resend, so nobody can sign in without it. Until your domain is verified in Resend, keep the `onboarding@resend.dev` sender, which only delivers to your own Resend account's address.
-3. `make install` installs the Bun workspace and downloads the Go modules.
-4. `make create-owner NAME="Your Name" EMAIL=you@example.com` adds the first owner. It works only on a database with nobody in it; after that, owners invite teammates.
-5. `make dev` builds and runs the Go server and the web dev server together. The web dev server forwards `/api` to the Go server, as production does on one address.
+3. Set `SPARROW_SIGN_IN_CODE_KEY` to the output of `openssl rand -hex 32`.
+4. `make install` installs the Bun workspace and downloads the Go modules.
+5. `make create-owner NAME="Your Name" EMAIL=you@example.com` adds the first owner. It works only on a database with nobody in it; after that, owners invite teammates.
+6. `make dev` builds and runs the Go server and the web dev server together. The web dev server forwards `/api` to the Go server, as production does on one address.
 
 The server creates the SQLite database at `SPARROW_DATABASE_PATH` and applies the migrations in `server/migrations/` when it starts.
 

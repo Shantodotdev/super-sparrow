@@ -261,7 +261,7 @@ func decodeArgs(raw json.RawMessage, dst any) error {
 	case errors.Is(err, io.EOF):
 		return &store.ValidationError{Field: "arguments", Message: "are required"}
 	case errors.As(err, &typeErr):
-		return &store.ValidationError{Field: typeErr.Field, Message: "must be a " + typeErr.Type.String()}
+		return store.TypeMismatch(typeErr.Field, typeErr.Type)
 	case strings.HasPrefix(err.Error(), "json: unknown field "):
 		field := strings.Trim(strings.TrimPrefix(err.Error(), "json: unknown field "), `"`)
 		return &store.ValidationError{Field: field, Message: "is not an argument of this tool"}
@@ -436,7 +436,7 @@ func (s *Server) issue(ctx context.Context, key string) (store.Issue, error) {
 		return store.Issue{}, &store.ValidationError{Field: "issue_key", Message: validation.Message}
 	}
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Issue{}, fmt.Errorf("there is no issue %s: %w", strings.ToUpper(key), store.ErrNotFound)
+		return store.Issue{}, store.Refuse(store.ErrNotFound, "there is no issue %s", strings.ToUpper(key))
 	}
 	return issue, err
 }
@@ -446,14 +446,14 @@ func (s *Server) round(ctx context.Context, issue store.Issue, number *int) (sto
 	if number == nil {
 		round, err := s.store.GetOpenReviewRound(ctx, issue.ID)
 		if errors.Is(err, store.ErrNotFound) {
-			return store.ReviewRound{}, fmt.Errorf("%s has no review round in progress; start one with start_review_round: %w", issue.Key(), store.ErrNotFound)
+			return store.ReviewRound{}, store.Refuse(store.ErrNotFound, "%s has no review round in progress; start one with start_review_round", issue.Key())
 		}
 		return round, err
 	}
 
 	round, err := s.store.GetReviewRoundByNumber(ctx, issue.ID, *number)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.ReviewRound{}, fmt.Errorf("%s has no review round %d: %w", issue.Key(), *number, store.ErrNotFound)
+		return store.ReviewRound{}, store.Refuse(store.ErrNotFound, "%s has no review round %d", issue.Key(), *number)
 	}
 	return round, err
 }
@@ -466,7 +466,7 @@ func (s *Server) finding(ctx context.Context, issue store.Issue, round int, labe
 
 	finding, err := s.store.GetFindingByNumber(ctx, issue.ID, round, number)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Finding{}, fmt.Errorf("round %d of %s has no finding R%d: %w", round, issue.Key(), number, store.ErrNotFound)
+		return store.Finding{}, store.Refuse(store.ErrNotFound, "round %d of %s has no finding R%d", round, issue.Key(), number)
 	}
 	return finding, err
 }
@@ -478,7 +478,7 @@ func (s *Server) getIssueForBranch(ctx context.Context, _ store.Caller, args str
 }) (any, error) {
 	issue, err := s.store.FindIssueForBranch(ctx, args.Branch)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("no issue matches branch %q; name the branch after the issue key, as in feat/wp-142-short-name: %w", args.Branch, store.ErrNotFound)
+		return nil, store.Refuse(store.ErrNotFound, "no issue matches branch %q; name the branch after the issue key, as in feat/wp-142-short-name", args.Branch)
 	}
 	if err != nil {
 		return nil, err
@@ -734,9 +734,6 @@ func (s *Server) postFixSummary(ctx context.Context, caller store.Caller, args s
 	if err != nil {
 		return nil, err
 	}
-	if len(args.Findings) == 0 {
-		return nil, &store.ValidationError{Field: "findings", Message: "must list at least one finding; use add_comment for a summary that fixes none"}
-	}
 
 	findingIDs := make([]string, 0, len(args.Findings))
 	for _, ref := range args.Findings {
@@ -775,7 +772,7 @@ func (s *Server) createIssue(ctx context.Context, caller store.Caller, args stru
 	}
 	project, err := s.store.GetProjectByKey(ctx, args.ProjectKey)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("there is no project %s: %w", strings.ToUpper(args.ProjectKey), store.ErrNotFound)
+		return nil, store.Refuse(store.ErrNotFound, "there is no project %s", strings.ToUpper(args.ProjectKey))
 	}
 	if err != nil {
 		return nil, err

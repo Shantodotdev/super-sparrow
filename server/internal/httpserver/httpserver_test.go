@@ -86,7 +86,7 @@ func newFixture(t *testing.T) *fixture {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publicURL, _ := url.Parse(origin)
 	mailer := &fakeMailer{}
-	service := auth.New(st, mailer, publicURL, logger, time.Now)
+	service := auth.New(st, mailer, publicURL, []byte("test-sign-in-code-key-0123456789"), logger, time.Now)
 
 	handler := New(Options{Logger: logger, DB: db, Store: st, Auth: service, PublicURL: publicURL, Now: time.Now})
 	return &fixture{t: t, handler: handler, store: st, auth: service, mailer: mailer, owner: owner}

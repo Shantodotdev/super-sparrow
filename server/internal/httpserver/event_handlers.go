@@ -25,7 +25,11 @@ func (s *server) listEvents(w http.ResponseWriter, r *http.Request) error {
 	}
 	filter.TargetType = store.TargetType(r.URL.Query().Get("target_type"))
 	filter.TargetID = r.URL.Query().Get("target_id")
-	filter.ActorID = r.URL.Query().Get("actor")
+	if filter.ActorID = r.URL.Query().Get("actor"); filter.ActorID != "" {
+		if _, err := s.store.GetActor(r.Context(), filter.ActorID); err != nil {
+			return err
+		}
+	}
 	return s.writeEvents(w, r, filter)
 }
 
@@ -84,7 +88,7 @@ func eventPage(r *http.Request) (int64, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	limit, err := queryInt(r, "limit")
+	limit, err := queryLimit(r)
 	return int64(after), limit, err
 }
 

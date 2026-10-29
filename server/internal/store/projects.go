@@ -218,24 +218,24 @@ func (s *Store) CreateMilestone(ctx context.Context, by Caller, input NewMilesto
 	return milestone, err
 }
 
-// UpdateMilestone changes a milestone's name, status, or position. Only a person can change
-// milestones.
-func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID string, update MilestoneUpdate) error {
+// UpdateMilestone changes a milestone's name, status, or position and returns it. Only a person
+// can change milestones.
+func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID string, update MilestoneUpdate) (Milestone, error) {
 	if update.Name.Set {
 		name, err := requiredText("name", update.Name.Value, maxNameLength)
 		if err != nil {
-			return err
+			return Milestone{}, err
 		}
 		update.Name.Value = name
 	}
 	if update.Status.Set && !update.Status.Value.valid() {
-		return invalid("status", "must be planned, active, or done")
+		return Milestone{}, invalid("status", "must be planned, active, or done")
 	}
 	if update.Position.Set && update.Position.Value < 0 {
-		return invalid("position", "must not be negative")
+		return Milestone{}, invalid("position", "must not be negative")
 	}
 
-	return s.write(ctx, by, func(w *writeTx) error {
+	err := s.write(ctx, by, func(w *writeTx) error {
 		if err := w.requireHuman("change milestones"); err != nil {
 			return err
 		}
@@ -271,6 +271,10 @@ func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID stri
 
 		return w.event(current.ProjectID, TargetMilestone, current.ID, "milestone.updated", changes)
 	})
+	if err != nil {
+		return Milestone{}, err
+	}
+	return scanMilestone(s.db.QueryRowContext(ctx, `SELECT `+milestoneColumns+` FROM milestones WHERE id = ?`, milestoneID))
 }
 
 // ListMilestones returns a project's milestones in position order.

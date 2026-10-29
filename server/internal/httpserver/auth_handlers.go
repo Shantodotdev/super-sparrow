@@ -37,7 +37,7 @@ func (s *server) verifyCode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	signIn, err := s.auth.VerifyCode(r.Context(), body.Email, body.Code, deviceLabel(r.UserAgent()))
+	signIn, err := s.auth.VerifyCode(r.Context(), body.Email, body.Code, deviceLabel(r.UserAgent()), clientIP(r, s.trustedProxies))
 	if err != nil {
 		return err
 	}

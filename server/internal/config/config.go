@@ -19,7 +19,10 @@ import (
 	"filippo.io/age"
 )
 
-const minWebhookSecretLength = 20
+const (
+	minWebhookSecretLength = 20
+	minCodeKeyLength       = 32
+)
 
 var r2AccountPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
@@ -33,6 +36,9 @@ type Config struct {
 	ResendAPIKey string
 	// EmailFrom is the sender of every email, such as "Super Sparrow <sparrow@example.com>".
 	EmailFrom string
+	// SignInCodeKey is the secret sign-in codes are hashed with. It stays out of the database, so
+	// a copy of the database does not let anyone work out a code.
+	SignInCodeKey []byte
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header names the client's
 	// address. It is empty when the server is reached directly.
 	TrustedProxies []netip.Prefix
@@ -116,6 +122,13 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	problems = append(problems, err)
 	cfg.EmailFrom = emailFrom
+
+	codeKey, err := required(getenv, "SPARROW_SIGN_IN_CODE_KEY")
+	if err == nil && len(codeKey) < minCodeKeyLength {
+		err = fmt.Errorf("SPARROW_SIGN_IN_CODE_KEY must be at least %d characters, such as the output of openssl rand -hex 32", minCodeKeyLength)
+	}
+	problems = append(problems, err)
+	cfg.SignInCodeKey = []byte(codeKey)
 
 	trustedProxies, err := required(getenv, "SPARROW_TRUSTED_PROXIES")
 	if err == nil {

@@ -207,7 +207,7 @@ func TestMCPToolErrorsNameTheArgument(t *testing.T) {
 	}{
 		{"get_issue", map[string]any{}, "issue_key is required"},
 		{"get_issue", map[string]any{"issue_key": "WP-1", "extra": true}, "extra is not an argument"},
-		{"get_issue", map[string]any{"issue_key": 5}, "issue_key must be a string"},
+		{"get_issue", map[string]any{"issue_key": 5}, "issue_key must be text"},
 		{"add_finding", map[string]any{"issue_key": "WP-1", "severity": "nit", "title": "T", "problem": "P", "fix": "F"}, "no review round in progress"},
 		{"start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "nope"}, "to_commit must be a commit SHA"},
 		{"set_finding_status", map[string]any{"issue_key": "WP-1", "finding": "R1", "status": "fixed"}, "round is required"},

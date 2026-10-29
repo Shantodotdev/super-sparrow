@@ -3,6 +3,7 @@ package store
 import (
 	"net/mail"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
@@ -21,7 +22,7 @@ const (
 	maxEmailLength    = 254
 	maxPlanCoverage   = 2_000
 	maxReportedModel  = 100
-	maximumPageLimit  = 200
+	MaximumPageLimit  = 200
 	maxLabelsPerIssue = 20
 )
 
@@ -143,8 +144,32 @@ func pageLimit(limit int) (int, error) {
 	switch {
 	case limit == 0:
 		return DefaultPageLimit, nil
-	case limit < 0 || limit > maximumPageLimit:
-		return 0, invalid("limit", "must be between 1 and %d", maximumPageLimit)
+	case limit < 0 || limit > MaximumPageLimit:
+		return 0, invalid("limit", "must be between 1 and %d", MaximumPageLimit)
 	}
 	return limit, nil
+}
+
+// TypeMismatch reports a JSON value of the wrong type for field, naming the expected type in
+// words rather than as a Go type.
+func TypeMismatch(field string, expected reflect.Type) *ValidationError {
+	for expected.Kind() == reflect.Pointer {
+		expected = expected.Elem()
+	}
+
+	description := "a JSON object"
+	switch expected.Kind() {
+	case reflect.String:
+		description = "text"
+	case reflect.Bool:
+		description = "true or false"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		description = "a whole number"
+	case reflect.Float32, reflect.Float64:
+		description = "a number"
+	case reflect.Slice, reflect.Array:
+		description = "a list"
+	}
+	return &ValidationError{Field: field, Message: "must be " + description}
 }

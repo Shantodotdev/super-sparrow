@@ -22,11 +22,15 @@ func (s *server) listIssues(w http.ResponseWriter, r *http.Request) error {
 	if filter.BeforeNumber, err = queryInt(r, "before"); err != nil {
 		return err
 	}
-	if filter.Limit, err = queryInt(r, "limit"); err != nil {
+	if filter.Limit, err = queryLimit(r); err != nil {
 		return err
 	}
 
 	issues, err := s.store.ListIssues(r.Context(), filter)
+	if err != nil {
+		return renameField(err, "statuses", "status")
+	}
+	nextBefore, err := s.nextIssuePage(r, filter, issues)
 	if err != nil {
 		return err
 	}
@@ -35,12 +39,24 @@ func (s *server) listIssues(w http.ResponseWriter, r *http.Request) error {
 	for _, issue := range issues {
 		views = append(views, newIssueSummaryView(issue))
 	}
-	var nextBefore *int
-	if len(issues) == pageSize(filter.Limit) {
-		nextBefore = &issues[len(issues)-1].Number
-	}
 	writeJSON(w, http.StatusOK, map[string]any{"issues": views, "next_before": nextBefore})
 	return nil
+}
+
+// nextIssuePage returns the ?before value of the page after issues, or nil when no issue is
+// left. A full page may be the last one, so it looks for one more issue to tell.
+func (s *server) nextIssuePage(r *http.Request, filter store.IssueFilter, issues []store.Issue) (*int, error) {
+	if len(issues) < pageSize(filter.Limit) {
+		return nil, nil
+	}
+
+	last := issues[len(issues)-1].Number
+	filter.BeforeNumber, filter.Limit = last, 1
+	more, err := s.store.ListIssues(r.Context(), filter)
+	if err != nil || len(more) == 0 {
+		return nil, err
+	}
+	return &last, nil
 }
 
 func (s *server) createIssue(w http.ResponseWriter, r *http.Request) error {
@@ -98,7 +114,7 @@ func (s *server) issueForBranch(w http.ResponseWriter, r *http.Request) error {
 }
 
 // updateIssue changes the fields the body names. A field that is absent stays as it is; an
-// empty string clears an optional field, and label_ids replaces the whole set.
+// empty string or null clears an optional field, and label_ids replaces the whole set.
 func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Title           *string   `json:"title"`
@@ -111,7 +127,8 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 		PullRequestURL  *string   `json:"pull_request_url"`
 		LabelIDs        *[]string `json:"label_ids"`
 	}
-	if err := decodeJSON(w, r, &body); err != nil {
+	nulls, err := decodeUpdate(w, r, &body)
+	if err != nil {
 		return err
 	}
 
@@ -121,13 +138,13 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	update := store.IssueUpdate{
-		Title: optionalField(body.Title), Plan: optionalField(body.Plan), ParentIssueID: optionalField(body.ParentIssueID),
-		MilestoneID: optionalField(body.MilestoneID), AssigneeActorID: optionalField(body.AssigneeActorID),
-		BranchName: optionalField(body.BranchName), PullRequestURL: optionalField(body.PullRequestURL),
-		LabelIDs: optionalField(body.LabelIDs),
+		Title: patch(body.Title, nulls["title"]), Plan: patch(body.Plan, nulls["plan"]),
+		ParentIssueID: patch(body.ParentIssueID, nulls["parent_issue_id"]), MilestoneID: patch(body.MilestoneID, nulls["milestone_id"]),
+		AssigneeActorID: patch(body.AssigneeActorID, nulls["assignee_actor_id"]), BranchName: patch(body.BranchName, nulls["branch_name"]),
+		PullRequestURL: patch(body.PullRequestURL, nulls["pull_request_url"]), LabelIDs: patch(body.LabelIDs, nulls["label_ids"]),
 	}
-	if body.Status != nil {
-		update.Status = store.Change(store.IssueStatus(*body.Status))
+	if status := patch(body.Status, nulls["status"]); status.Set {
+		update.Status = store.Change(store.IssueStatus(status.Value))
 	}
 
 	issue, err = s.store.UpdateIssue(r.Context(), identityFrom(r.Context()).caller(), issue.ID, update)

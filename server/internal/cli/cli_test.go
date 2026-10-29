@@ -53,7 +53,7 @@ func cliServer(t *testing.T) (map[string]string, *store.Store, store.Caller) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server := httptest.NewUnstartedServer(nil)
 	publicURL, _ := url.Parse("http://" + server.Listener.Addr().String())
-	service := auth.New(st, noMail{}, publicURL, logger, time.Now)
+	service := auth.New(st, noMail{}, publicURL, []byte("test-sign-in-code-key-0123456789"), logger, time.Now)
 	server.Config.Handler = httpserver.New(httpserver.Options{
 		Logger: logger, DB: db, Store: st, Auth: service, PublicURL: publicURL, Now: time.Now, Version: "test",
 	})

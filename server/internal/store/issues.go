@@ -21,7 +21,7 @@ const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.st
 const issueFrom = ` FROM issues i JOIN projects p ON p.id = i.project_id `
 
 var (
-	issueKeyPattern       = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,9})-([0-9]{1,9})$`)
+	issueKeyPattern       = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]{1,9})-([1-9][0-9]{0,8})$`)
 	branchIssueKeyPattern = regexp.MustCompile(`(?i)(?:^|[/_.-])([a-z][a-z0-9]{1,9})-([0-9]{1,9})(?:$|[/_.-])`)
 )
 

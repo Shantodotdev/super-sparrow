@@ -4,10 +4,10 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 
 ## Conventions
 
-- **Authentication.** People send the session cookie that sign-in sets. Agents and scripts send `Authorization: Bearer ssp_…`. A request that changes data and carries an `Origin` header must come from `SPARROW_PUBLIC_URL`.
+- **Authentication.** People send the session cookie that sign-in sets. Agents and scripts send `Authorization: Bearer ssp_…` (the scheme in any case). A request that changes data and carries an `Origin` header must come from `SPARROW_PUBLIC_URL`.
 - **Access.** Each endpoint below is open to everyone signed in, people and agents, unless marked _person_ (no agents), _owner_, or _public_.
-- **Errors.** Every error is `{"error": "…"}`. A validation error also names the request field at fault: `{"error": "is required", "field": "title"}` with status 400. Other statuses are 401 (not signed in), 403 (not allowed), 404, 409 (a conflict, or a move the record cannot make, such as a finding from `open` to `verified`), and 429 with `Retry-After`.
-- **Bodies.** Unknown fields are refused. In a `PATCH`, a field that is absent stays as it is, and `""` clears an optional field.
+- **Errors.** Every error is `{"error": "…"}`. A validation error also names the request field at fault: `{"error": "is required", "field": "title"}` with status 400. Other statuses are 401 (not signed in), 403 (not allowed), 404, 405 with `Allow` (a known path with another method), 409 (a conflict, or a move the record cannot make, such as a finding from `open` to `verified`), and 429 with `Retry-After`.
+- **Bodies.** Unknown fields are refused. In a `PATCH`, a field that is absent stays as it is, and `""` or `null` clears an optional field. A required field refuses both.
 - **Keys.** Projects are addressed by key (`WP`), issues by key (`WP-142`), rounds by number, and findings by label within their round (`R3`, `r3`, or `3`). Keys are matched without regard to case.
 - **Times** are RFC 3339 in UTC. Unset IDs and text are `""`, and unset times are `null`.
 
@@ -17,7 +17,7 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 | ------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
 | `GET /api/health`               | public | `{"status": "ok"}` when the database answers                                                  |
 | `POST /api/auth/code`           | public | `{email}`; emails a code to an active teammate, with the same answer either way               |
-| `POST /api/auth/verify`         | public | `{email, code}`; sets the session cookie and returns `{actor}`                                |
+| `POST /api/auth/verify`         | public | `{email, code}`; sets the session cookie and returns `{actor}`. Ten checks per IP an hour     |
 | `POST /api/auth/sign-out`       | person | Ends this browser's session                                                                   |
 | `GET /api/me`                   |        | `{actor}`, the caller                                                                         |
 | `GET /api/sessions`             | person | The caller's signed-in devices, with `current` marking this one                               |
@@ -42,20 +42,20 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 | `DELETE /api/projects/{key}`          | owner  | Deletes the project and everything in it; its history stays |
 | `GET /api/projects/{key}/milestones`  |        | `{milestones}` in position order                            |
 | `POST /api/projects/{key}/milestones` | person | `{name, status}`: `planned`, `active`, or `done`            |
-| `PATCH /api/milestones/{id}`          | person | `{name?, status?, position?}`                               |
+| `PATCH /api/milestones/{id}`          | person | `{name?, status?, position?}`; returns `{milestone}`        |
 | `GET /api/projects/{key}/labels`      |        | `{labels}` in name order                                    |
 | `POST /api/projects/{key}/labels`     |        | `{name}`                                                    |
 
 ## Issues and plans
 
-| Method and path                      | What it does                                                                                                                                                                             |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/projects/{key}/issues`     | `{issues, next_before}`, newest first. Filters: `?status=todo,in_progress`, `?milestone=<id>`, `?assignee=<id>`. Pages: `?limit=` (up to 200, 50 by default) and `?before=<next_before>` |
-| `POST /api/projects/{key}/issues`    | `{title, status, plan?, parent_issue_id?, milestone_id?, assignee_actor_id?, branch_name?, pull_request_url?, label_ids?}`                                                               |
-| `GET /api/issues/{key}`              | `{issue}` with its `plan` and `checklist`                                                                                                                                                |
-| `GET /api/issues/for-branch?branch=` | The issue that records the branch, or whose key the branch name contains                                                                                                                 |
-| `PATCH /api/issues/{key}`            | Any of the creation fields plus `status`; `label_ids` replaces the set. All of it applies in one transaction                                                                             |
-| `PATCH /api/issues/{key}/checklist`  | `{items: [{index, checked}]}`; ticks plan checklist items by index without rewriting the rest of the plan                                                                                |
+| Method and path                      | What it does                                                                                                                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/projects/{key}/issues`     | `{issues, next_before}`, newest first. Filters: `?status=todo,in_progress`, `?milestone=<id>`, `?assignee=<id>`. Pages: `?limit=` (1 to 200, 50 by default) and `?before=<next_before>`, which is `null` on the last page |
+| `POST /api/projects/{key}/issues`    | `{title, status, plan?, parent_issue_id?, milestone_id?, assignee_actor_id?, branch_name?, pull_request_url?, label_ids?}`                                                                                                |
+| `GET /api/issues/{key}`              | `{issue}` with its `plan` and `checklist`                                                                                                                                                                                 |
+| `GET /api/issues/for-branch?branch=` | The issue that records the branch, or whose key the branch name contains                                                                                                                                                  |
+| `PATCH /api/issues/{key}`            | Any of the creation fields plus `status`; `label_ids` replaces the set. All of it applies in one transaction                                                                                                              |
+| `PATCH /api/issues/{key}/checklist`  | `{items: [{index, checked}]}`; ticks plan checklist items by index without rewriting the rest of the plan                                                                                                                 |
 
 Issue statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and `canceled`. Lists leave out `plan` and `checklist`, and every issue carries `checklist_progress: {done, total}`.
 
@@ -72,7 +72,7 @@ Issue statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and `c
 | `GET /api/issues/{key}/reviews/{round}/findings/{finding}` | `{finding}`                                                                                                                      |
 | `POST …/findings/{finding}/status`                         | `{status, reason?, fixed_in_commit?}`; returns `{finding, follow_up_issue}`                                                      |
 | `PUT …/findings/{finding}/duplicate`                       | `{duplicate_of_finding_id}`, a finding on the same issue, or `""` to clear                                                       |
-| `POST /api/issues/{key}/fix-summary`                       | `{summary, commit, findings: [{round, finding}]}`; marks the findings fixed and comments, all at once                            |
+| `POST /api/issues/{key}/fix-summary`                       | `{summary, commit, findings: [{round, finding}]}`; marks at least one finding fixed and comments, all at once                    |
 
 A finding moves `open` → `fix`, `wontfix` (needs a `reason`), or `later`, and only a person makes those decisions or withdraws one back to `open`. Then `fix` → `fixed` → `verified`, and `fixed` → `fix` when a fix did not hold; agents can make these moves. Deciding `later` creates a follow-up issue in the backlog and returns it as `follow_up_issue`.
 
@@ -104,4 +104,4 @@ The browser's `EventSource` reconnects by itself and sends `Last-Event-ID`, and 
 
 ## Agents
 
-`POST /mcp` is the MCP endpoint for agent tokens. See [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). `POST /api/webhooks/github` receives GitHub webhooks when the webhook is set up.
+`POST /mcp` is the MCP endpoint for agent tokens. See [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). `POST /api/webhooks/github` receives GitHub webhooks when the webhook is set up. It answers deliveries without a well-formed signature, and events other than `ping` and `pull_request`, before reading their body, and takes bodies up to 1 MiB.

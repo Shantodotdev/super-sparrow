@@ -81,7 +81,8 @@ func TestProjectsMilestonesAndLabels(t *testing.T) {
 		Milestones []milestoneView `json:"milestones"`
 	}
 	a.call(http.MethodGet, "/api/projects/WP/milestones", a.agent, nil, http.StatusOK, &milestones)
-	a.call(http.MethodPatch, "/api/milestones/"+milestones.Milestones[0].ID, a.member, map[string]string{"status": "done"}, http.StatusNoContent, nil)
+	a.call(http.MethodPatch, "/api/milestones/"+milestones.Milestones[0].ID, a.member, map[string]string{"status": "done"}, http.StatusOK, nil)
+	wantField(t, a.request(http.MethodPatch, "/api/milestones/"+milestones.Milestones[0].ID, a.member, map[string]any{"position": nil}), "position")
 
 	var labels struct {
 		Labels []labelView `json:"labels"`
@@ -94,6 +95,25 @@ func TestProjectsMilestonesAndLabels(t *testing.T) {
 	a.call(http.MethodGet, "/api/projects/NOPE", a.member, nil, http.StatusNotFound, nil)
 	wantField(t, a.request(http.MethodPost, "/api/projects", a.member, map[string]string{"key": "1x", "name": "Bad"}), "key")
 	wantField(t, a.request(http.MethodPost, "/api/projects/WP/milestones", a.member, map[string]string{"name": "M", "status": "late"}), "status")
+}
+
+func TestWrongMethodsAndBearerSpelling(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+
+	for path, allow := range map[string]string{"/api/health": "GET", "/api/issues/WP-1": "GET, PATCH"} {
+		response := a.request(http.MethodPut, path, a.agent, nil)
+		if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != allow {
+			t.Errorf("PUT %s: status %d, Allow %q, want 405 and %q", path, response.Code, response.Header().Get("Allow"), allow)
+		}
+	}
+	wantStatus(t, a.request(http.MethodPut, "/api/nothing-here", a.agent, nil), http.StatusNotFound)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	request.Header.Set("Authorization", "bearer "+a.agent)
+	response := httptest.NewRecorder()
+	a.handler.ServeHTTP(response, request)
+	wantStatus(t, response, http.StatusOK)
 }
 
 func TestAgentsAreRefusedPersonAndOwnerActions(t *testing.T) {
@@ -146,6 +166,15 @@ func TestIssuesListUpdateAndBranchLookup(t *testing.T) {
 	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1", a.agent, map[string]any{"status": "later"}), "status")
 	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1", a.agent, map[string]any{"titel": "typo"}), "titel")
 	wantField(t, a.request(http.MethodGet, "/api/issues/not-a-key", a.agent, nil), "key")
+	wantField(t, a.request(http.MethodGet, "/api/issues/WP-01", a.agent, nil), "key")
+	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1", a.agent, map[string]any{"title": nil}), "title")
+	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1", a.agent, map[string]any{"title": 5}), "title")
+
+	a.call(http.MethodPatch, "/api/issues/WP-1", a.agent, map[string]any{"branch_name": "feat/wp-1-meta"}, http.StatusOK, nil)
+	a.call(http.MethodPatch, "/api/issues/WP-1", a.agent, map[string]any{"branch_name": nil}, http.StatusOK, &updated)
+	if updated.Issue.BranchName != "" {
+		t.Fatalf("null left branch_name %q", updated.Issue.BranchName)
+	}
 
 	var checked struct {
 		Issue issueView `json:"issue"`
@@ -167,6 +196,14 @@ func TestIssuesListUpdateAndBranchLookup(t *testing.T) {
 	if len(page.Issues) != 2 || page.Issues[0].Plan != nil || page.NextBefore == nil || *page.NextBefore != 2 {
 		t.Fatalf("first page %+v, next %v", page.Issues, page.NextBefore)
 	}
+	a.call(http.MethodGet, "/api/projects/WP/issues?limit=3", a.member, nil, http.StatusOK, &page)
+	if len(page.Issues) != 3 || page.NextBefore != nil {
+		t.Fatalf("a full last page %+v, next %v", page.Issues, page.NextBefore)
+	}
+	wantField(t, a.request(http.MethodGet, "/api/projects/WP/issues?limit=0", a.member, nil), "limit")
+	wantField(t, a.request(http.MethodGet, "/api/projects/WP/issues?status=bogus", a.member, nil), "status")
+	wantField(t, a.request(http.MethodGet, "/api/events?target_type=bogus", a.member, nil), "target_type")
+	wantStatus(t, a.request(http.MethodGet, "/api/events?actor=nobody", a.member, nil), http.StatusNotFound)
 	a.call(http.MethodGet, "/api/projects/WP/issues?limit=2&before=2", a.member, nil, http.StatusOK, &page)
 	if len(page.Issues) != 1 || page.NextBefore != nil {
 		t.Fatalf("last page %+v, next %v", page.Issues, page.NextBefore)

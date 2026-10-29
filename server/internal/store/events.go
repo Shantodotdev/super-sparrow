@@ -30,6 +30,9 @@ func (s *Store) ListEvents(ctx context.Context, filter EventFilter) ([]Event, er
 	if err != nil {
 		return nil, err
 	}
+	if filter.TargetType != "" && !filter.TargetType.valid() {
+		return nil, invalid("target_type", "must be actor, project, milestone, label, issue, review_round, finding, or comment")
+	}
 	if filter.TargetID != "" && filter.TargetType == "" {
 		return nil, invalid("target_type", "is required with target_id")
 	}

@@ -132,19 +132,24 @@ func (s *server) updateMilestone(w http.ResponseWriter, r *http.Request) error {
 		Status   *string `json:"status"`
 		Position *int    `json:"position"`
 	}
-	if err := decodeJSON(w, r, &body); err != nil {
+	nulls, err := decodeUpdate(w, r, &body)
+	if err != nil {
+		return err
+	}
+	if nulls["position"] {
+		return &store.ValidationError{Field: "position", Message: "must be a whole number"}
+	}
+
+	update := store.MilestoneUpdate{Name: patch(body.Name, nulls["name"]), Position: patch(body.Position, false)}
+	if status := patch(body.Status, nulls["status"]); status.Set {
+		update.Status = store.Change(store.MilestoneStatus(status.Value))
+	}
+	milestone, err := s.store.UpdateMilestone(r.Context(), identityFrom(r.Context()).caller(), r.PathValue("id"), update)
+	if err != nil {
 		return err
 	}
 
-	update := store.MilestoneUpdate{Name: optionalField(body.Name), Position: optionalField(body.Position)}
-	if body.Status != nil {
-		update.Status = store.Change(store.MilestoneStatus(*body.Status))
-	}
-	if err := s.store.UpdateMilestone(r.Context(), identityFrom(r.Context()).caller(), r.PathValue("id"), update); err != nil {
-		return err
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]any{"milestone": newMilestoneView(milestone)})
 	return nil
 }
 

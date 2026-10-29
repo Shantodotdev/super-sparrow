@@ -144,7 +144,7 @@ func (s *Store) RenewAgentToken(ctx context.Context, by Caller, tokenID string) 
 			return notFound("agent token")
 		}
 		if token.RevokedAt != nil {
-			return fmt.Errorf("a revoked token cannot be renewed: %w", ErrInvalidTransition)
+			return Refuse(ErrInvalidTransition, "a revoked token cannot be renewed")
 		}
 
 		token.ExpiresAt, token.UpdatedAt = w.now.Add(TokenLifetime), w.now

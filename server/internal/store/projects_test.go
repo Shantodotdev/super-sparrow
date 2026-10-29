@@ -59,7 +59,7 @@ func TestDeleteProjectRemovesItsWorkAndKeepsHistory(t *testing.T) {
 		}
 	}
 
-	events := got(tm.store.ListEvents(tm.ctx, EventFilter{ProjectID: project.ID, Limit: maximumPageLimit})).must(t)
+	events := got(tm.store.ListEvents(tm.ctx, EventFilter{ProjectID: project.ID, Limit: MaximumPageLimit})).must(t)
 	if len(events) < 6 || events[len(events)-1].Kind != "project.deleted" {
 		t.Errorf("project history has %d events, ending with %q", len(events), events[len(events)-1].Kind)
 	}
@@ -103,10 +103,10 @@ func TestMilestonesTakeTheNextPosition(t *testing.T) {
 	_, err = tm.store.CreateMilestone(tm.ctx, tm.agent, NewMilestone{ProjectID: project.ID, Name: "Phase 3", Status: MilestonePlanned})
 	wantErr(t, err, ErrForbidden)
 
-	err = tm.store.UpdateMilestone(tm.ctx, tm.member, second.ID, MilestoneUpdate{Name: Change("Phase 1")})
+	_, err = tm.store.UpdateMilestone(tm.ctx, tm.member, second.ID, MilestoneUpdate{Name: Change("Phase 1")})
 	wantErr(t, err, ErrConflict)
 
-	if err := tm.store.UpdateMilestone(tm.ctx, tm.member, first.ID, MilestoneUpdate{Status: Change(MilestoneDone), Position: Change(5)}); err != nil {
+	if _, err := tm.store.UpdateMilestone(tm.ctx, tm.member, first.ID, MilestoneUpdate{Status: Change(MilestoneDone), Position: Change(5)}); err != nil {
 		t.Fatalf("UpdateMilestone: %v", err)
 	}
 	milestones := got(tm.store.ListMilestones(tm.ctx, project.ID)).must(t)

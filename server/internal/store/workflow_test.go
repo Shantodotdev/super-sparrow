@@ -58,6 +58,9 @@ func TestPostFixSummaryMarksFindingsFixedAndComments(t *testing.T) {
 	r := tm.reviewed(t)
 	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, r.finding.ID, FindingChange{Status: FindingFix})).must(t)
 
+	_, _, err := tm.store.PostFixSummary(tm.ctx, tm.agent, FixSummary{IssueID: r.issue.ID, Summary: "Nothing.", Commit: "abc1234"})
+	wantInvalid(t, err, "findings")
+
 	comment, fixed, err := tm.store.PostFixSummary(tm.ctx, tm.agent, FixSummary{
 		IssueID: r.issue.ID, Summary: "Sent both rows from one job.", Commit: "abc1234", FindingIDs: []string{r.finding.ID},
 	})

@@ -17,6 +17,7 @@ func validEnv() map[string]string {
 		"SPARROW_LOG_LEVEL":             "info",
 		"SPARROW_RESEND_API_KEY":        "re_test_key",
 		"SPARROW_EMAIL_FROM":            "Super Sparrow <sparrow@example.com>",
+		"SPARROW_SIGN_IN_CODE_KEY":      "0123456789abcdef0123456789abcdef",
 		"SPARROW_TRUSTED_PROXIES":       "127.0.0.1, 10.0.0.0/8",
 		"SPARROW_WEB_DIR":               "none",
 		"SPARROW_GITHUB_WEBHOOK_SECRET": "none",
@@ -86,12 +87,13 @@ func TestLoadNamesEveryMissingSetting(t *testing.T) {
 
 func TestLoadRejectsMalformedSettings(t *testing.T) {
 	cases := map[string]string{
-		"SPARROW_LISTEN_ADDR":     "8090",
-		"SPARROW_PUBLIC_URL":      "sparrow.example.com",
-		"SPARROW_LOG_LEVEL":       "loud",
-		"SPARROW_RESEND_API_KEY":  "sk_live_123",
-		"SPARROW_EMAIL_FROM":      "not an address",
-		"SPARROW_TRUSTED_PROXIES": "10.0.0.0/8, proxy.local",
+		"SPARROW_LISTEN_ADDR":      "8090",
+		"SPARROW_PUBLIC_URL":       "sparrow.example.com",
+		"SPARROW_LOG_LEVEL":        "loud",
+		"SPARROW_RESEND_API_KEY":   "sk_live_123",
+		"SPARROW_EMAIL_FROM":       "not an address",
+		"SPARROW_TRUSTED_PROXIES":  "10.0.0.0/8, proxy.local",
+		"SPARROW_SIGN_IN_CODE_KEY": "too-short",
 	}
 
 	for name, value := range cases {

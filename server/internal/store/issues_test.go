@@ -254,7 +254,7 @@ func TestListIssuesFiltersAndPages(t *testing.T) {
 		t.Errorf("second page = %v", issueNumbers(next))
 	}
 
-	_, err := tm.store.ListIssues(tm.ctx, IssueFilter{ProjectID: project.ID, Limit: maximumPageLimit + 1})
+	_, err := tm.store.ListIssues(tm.ctx, IssueFilter{ProjectID: project.ID, Limit: MaximumPageLimit + 1})
 	wantInvalid(t, err, "limit")
 
 	_, err = tm.store.ListIssues(tm.ctx, IssueFilter{})

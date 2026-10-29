@@ -90,6 +90,9 @@ func TestGitHubWebhookClosesTheIssueOnMerge(t *testing.T) {
 	merged := `{"action":"closed","pull_request":{"html_url":"https://github.com/o/r/pull/3","merged":true,"head":{"ref":"feat/wp-1-meta"}}}`
 	wantStatus(t, a.deliver("pull_request", merged, "sha256=00"), http.StatusUnauthorized)
 	wantStatus(t, a.deliver("pull_request", merged, sign(merged+" ")), http.StatusUnauthorized)
+	wantStatus(t, a.deliver("push", "{}", ""), http.StatusUnauthorized)
+	oversized := strings.Repeat(" ", maxWebhookBytes+1)
+	wantStatus(t, a.deliver("pull_request", oversized, sign(oversized)), http.StatusBadRequest)
 
 	unmerged := strings.Replace(merged, `"merged":true`, `"merged":false`, 1)
 	wantStatus(t, a.deliver("pull_request", unmerged, sign(unmerged)), http.StatusAccepted)

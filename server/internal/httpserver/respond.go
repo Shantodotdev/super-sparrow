@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,15 +47,37 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, store.ErrUnauthenticated):
 		writeJSON(w, http.StatusUnauthorized, errorBody{Error: "sign in or send a valid agent token"})
 	case errors.Is(err, store.ErrForbidden):
-		writeJSON(w, http.StatusForbidden, errorBody{Error: err.Error()})
+		writeJSON(w, http.StatusForbidden, errorBody{Error: store.Explain(err)})
 	case errors.Is(err, store.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, errorBody{Error: err.Error()})
+		writeJSON(w, http.StatusNotFound, errorBody{Error: store.Explain(err)})
 	case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrInvalidTransition):
-		writeJSON(w, http.StatusConflict, errorBody{Error: err.Error()})
+		writeJSON(w, http.StatusConflict, errorBody{Error: store.Explain(err)})
 	default:
 		s.logger.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal server error"})
 	}
+}
+
+// decodeUpdate reads an update body like decodeJSON and also returns the names of the fields
+// sent as null, which the pointer fields of dst cannot tell from absent ones.
+func decodeUpdate(w http.ResponseWriter, r *http.Request, dst any) (map[string]bool, error) {
+	var body bytes.Buffer
+	r.Body = io.NopCloser(io.TeeReader(r.Body, &body))
+	if err := decodeJSON(w, r, dst); err != nil {
+		return nil, err
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body.Bytes(), &fields); err != nil {
+		return nil, &store.ValidationError{Field: "body", Message: "must be a JSON object"}
+	}
+	nulls := make(map[string]bool)
+	for name, value := range fields {
+		if string(value) == "null" {
+			nulls[name] = true
+		}
+	}
+	return nulls, nil
 }
 
 // decodeJSON reads the request body into dst, refusing unknown fields, trailing data, and
@@ -71,7 +94,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	case errors.Is(err, io.EOF):
 		return &store.ValidationError{Field: "body", Message: "is required"}
 	case errors.As(err, &typeErr):
-		return &store.ValidationError{Field: typeErr.Field, Message: "must be a " + typeErr.Type.String()}
+		return store.TypeMismatch(typeErr.Field, typeErr.Type)
 	case errors.As(err, &tooLarge):
 		return &store.ValidationError{Field: "body", Message: fmt.Sprintf("must be at most %d bytes", maxBodyBytes)}
 	case strings.HasPrefix(err.Error(), "json: unknown field "):

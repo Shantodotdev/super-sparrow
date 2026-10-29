@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/shantodotdev/super-sparrow/server/internal/auth"
@@ -158,9 +159,7 @@ func New(opts Options) http.Handler {
 	}
 
 	// Unknown API paths answer in JSON, so they never fall through to the frontend.
-	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusNotFound, errorBody{Error: "no such API endpoint: " + r.Method + " " + r.URL.Path})
-	})
+	s.mux.HandleFunc("/api/", s.noSuchEndpoint)
 	if opts.WebDir != "" {
 		s.mux.Handle("/", newFrontend(opts.WebDir))
 	}
@@ -183,6 +182,26 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 func (s *server) serveMCP(w http.ResponseWriter, r *http.Request) error {
 	s.mcp.ServeHTTP(w, r, identityFrom(r.Context()).caller())
 	return nil
+}
+
+// noSuchEndpoint answers an API request no route takes: 405 with the allowed methods when the
+// path exists for other methods, and 404 otherwise.
+func (s *server) noSuchEndpoint(w http.ResponseWriter, r *http.Request) {
+	var allowed []string
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		probe := r.Clone(r.Context())
+		probe.Method = method
+		if _, pattern := s.mux.Handler(probe); pattern != "/api/" {
+			allowed = append(allowed, method)
+		}
+	}
+
+	if len(allowed) > 0 {
+		w.Header().Set("Allow", strings.Join(allowed, ", "))
+		writeJSON(w, http.StatusMethodNotAllowed, errorBody{Error: r.Method + " is not allowed on " + r.URL.Path + "; use " + strings.Join(allowed, ", ")})
+		return
+	}
+	writeJSON(w, http.StatusNotFound, errorBody{Error: "no such API endpoint: " + r.Method + " " + r.URL.Path})
 }
 
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {

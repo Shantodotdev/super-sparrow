@@ -249,7 +249,7 @@ func serve(ctx context.Context) error {
 	defer db.Close()
 
 	logger := logging.New(os.Stdout, cfg.LogLevel)
-	authService := auth.New(st, email.NewResend(cfg.ResendAPIKey, cfg.EmailFrom), cfg.PublicURL, logger, time.Now)
+	authService := auth.New(st, email.NewResend(cfg.ResendAPIKey, cfg.EmailFrom), cfg.PublicURL, cfg.SignInCodeKey, logger, time.Now)
 	defer authService.Wait()
 
 	stopStreams := make(chan struct{})

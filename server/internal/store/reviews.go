@@ -145,7 +145,7 @@ func (s *Store) FinishReviewRound(ctx context.Context, by Caller, roundID, summa
 			return err
 		}
 		if current.FinishedAt != nil {
-			return fmt.Errorf("round %d is already finished: %w", current.Number, ErrInvalidTransition)
+			return Refuse(ErrInvalidTransition, "round %d is already finished", current.Number)
 		}
 		if w.caller.ID != current.AuthorActorID && w.caller.Kind != ActorHuman {
 			return forbidden("only the round's author or a person can finish it")
@@ -259,7 +259,7 @@ func (s *Store) AddFinding(ctx context.Context, by Caller, input NewFinding) (Fi
 			return err
 		}
 		if round.FinishedAt != nil {
-			return fmt.Errorf("round %d is finished, so it takes no new findings: %w", round.Number, ErrInvalidTransition)
+			return Refuse(ErrInvalidTransition, "round %d is finished, so it takes no new findings", round.Number)
 		}
 
 		err = w.tx.QueryRowContext(w.ctx, `
@@ -412,8 +412,8 @@ func changeFindingStatus(w *writeTx, current Finding, change FindingChange) (Fin
 
 	allowed := findingTransitions[current.Status]
 	if !slices.Contains(allowed, change.Status) {
-		return Finding{}, fmt.Errorf("finding %s of round %d cannot move from %s to %s: %w",
-			current.Label(), current.RoundNumber, current.Status, change.Status, ErrInvalidTransition)
+		return Finding{}, Refuse(ErrInvalidTransition, "finding %s of round %d cannot move from %s to %s",
+			current.Label(), current.RoundNumber, current.Status, change.Status)
 	}
 	if isDecision(current.Status, change.Status) {
 		if err := w.requireHuman("decide on findings"); err != nil {
@@ -460,6 +460,9 @@ func (s *Store) PostFixSummary(ctx context.Context, by Caller, input FixSummary)
 		return Comment{}, nil, err
 	}
 	findingIDs := uniqueSorted(input.FindingIDs)
+	if len(findingIDs) == 0 {
+		return Comment{}, nil, invalid("findings", "must list at least one finding; post a comment for a summary that fixes none")
+	}
 
 	var comment Comment
 	var fixed []Finding

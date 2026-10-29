@@ -74,7 +74,7 @@ func newFixture(t *testing.T) *fixture {
 
 	mailer := &fakeMailer{}
 	publicURL, _ := url.Parse("https://sparrow.example.com")
-	service := New(st, mailer, publicURL, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+	service := New(st, mailer, publicURL, []byte("test-sign-in-code-key-0123456789"), slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 
 	return &fixture{ctx: ctx, store: st, service: service, mailer: mailer, owner: owner}
 }
@@ -106,7 +106,7 @@ func TestSignInWithEmailedCode(t *testing.T) {
 		t.Errorf("email = %+v", sent[0])
 	}
 
-	signIn, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux")
+	signIn, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux", "203.0.113.7")
 	if err != nil {
 		t.Fatalf("VerifyCode: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestVerifyRejectsMalformedAndWrongCodes(t *testing.T) {
 	code := f.codeFor(t, "olive@example.com")
 
 	var validation *store.ValidationError
-	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", "12ab56", "Firefox on Linux"); !errors.As(err, &validation) || validation.Field != "code" {
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", "12ab56", "Firefox on Linux", "203.0.113.7"); !errors.As(err, &validation) || validation.Field != "code" {
 		t.Errorf("malformed code error = %v", err)
 	}
 
@@ -146,7 +146,7 @@ func TestVerifyRejectsMalformedAndWrongCodes(t *testing.T) {
 	if code == wrong {
 		wrong = "111111"
 	}
-	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", wrong, "Firefox on Linux"); !errors.Is(err, store.ErrInvalidCode) {
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", wrong, "Firefox on Linux", "203.0.113.7"); !errors.Is(err, store.ErrInvalidCode) {
 		t.Errorf("wrong code error = %v", err)
 	}
 }
@@ -173,6 +173,44 @@ func TestCodeRequestsAreRateLimitedPerEmailAndPerIP(t *testing.T) {
 		t.Fatalf("over the per-IP limit: %v", err)
 	}
 	f.service.Wait()
+}
+
+func TestCodeChecksAreRateLimitedPerIP(t *testing.T) {
+	f := newFixture(t)
+	code := f.codeFor(t, "olive@example.com")
+	wrong := "000000"
+	if code == wrong {
+		wrong = "111111"
+	}
+
+	// Wrong guesses spread over strangers' emails still use up the address's checks.
+	for i := range codeChecksPerIP {
+		address := "stranger" + string(rune('a'+i)) + "@example.com"
+		if _, err := f.service.VerifyCode(f.ctx, address, wrong, "Firefox on Linux", "198.51.100.9"); !errors.Is(err, store.ErrInvalidCode) {
+			t.Fatalf("check %d: %v", i+1, err)
+		}
+	}
+	var limited *RateLimitError
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux", "198.51.100.9"); !errors.As(err, &limited) || limited.RetryAfter <= 0 {
+		t.Fatalf("over the per-IP limit: %v", err)
+	}
+
+	// The limit left the code alone, so its person can still sign in from their own address.
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", code, "Firefox on Linux", "203.0.113.7"); err != nil {
+		t.Fatalf("VerifyCode from another address: %v", err)
+	}
+}
+
+func TestCodeHashesDependOnTheKey(t *testing.T) {
+	f := newFixture(t)
+	other := New(f.store, f.mailer, f.service.publicURL, []byte("another-sign-in-code-key-0123456"), f.service.logger, time.Now)
+
+	if string(f.service.hashCode("olive@example.com", "123456")) == string(other.hashCode("olive@example.com", "123456")) {
+		t.Fatal("two keys gave the same code hash")
+	}
+	if string(f.service.hashCode("olive@example.com", "123456")) == string(Hash("olive@example.com\x00123456")) {
+		t.Fatal("the code hash is the plain SHA-256 hash")
+	}
 }
 
 func TestTokensAuthenticateAsTheAgent(t *testing.T) {

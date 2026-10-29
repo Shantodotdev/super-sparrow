@@ -257,6 +257,14 @@ const (
 	TargetComment     TargetType = "comment"
 )
 
+func (t TargetType) valid() bool {
+	switch t {
+	case TargetActor, TargetProject, TargetMilestone, TargetLabel, TargetIssue, TargetReviewRound, TargetFinding, TargetComment:
+		return true
+	}
+	return false
+}
+
 // Event is one recorded change. Events are never changed or deleted.
 type Event struct {
 	Sequence      int64

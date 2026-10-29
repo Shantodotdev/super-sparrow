@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,9 +57,11 @@ func (s *server) findingFromPath(r *http.Request) (store.Issue, store.Finding, e
 	return issue, finding, err
 }
 
+// parsePositive reads a whole number of at least 1 written plainly, without signs, spaces, or
+// leading zeros, so each value has one spelling.
 func parsePositive(field, value string) (int, error) {
-	number, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || number < 1 {
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 1 || strconv.Itoa(number) != value {
 		return 0, &store.ValidationError{Field: field, Message: "must be a positive whole number"}
 	}
 	return number, nil
@@ -75,6 +79,20 @@ func queryInt(r *http.Request, name string) (int, error) {
 		return 0, &store.ValidationError{Field: name, Message: "must be a whole number"}
 	}
 	return number, nil
+}
+
+// queryLimit reads ?limit, the page size, or 0 when it is absent so the default applies.
+func queryLimit(r *http.Request) (int, error) {
+	value := r.URL.Query().Get("limit")
+	if value == "" {
+		return 0, nil
+	}
+
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit < 1 || limit > store.MaximumPageLimit {
+		return 0, &store.ValidationError{Field: "limit", Message: fmt.Sprintf("must be a whole number from 1 to %d", store.MaximumPageLimit)}
+	}
+	return limit, nil
 }
 
 // queryList reads a comma-separated list from the query string, without empty entries.
@@ -99,13 +117,27 @@ func queryBool(r *http.Request, name string) (bool, error) {
 	return false, &store.ValidationError{Field: name, Message: "must be true or false"}
 }
 
-// optionalField turns an optional JSON value into a store update: absent leaves the field as it
-// is, and a value, even empty, sets it.
-func optionalField[T any](value *T) store.Field[T] {
-	if value == nil {
-		return store.Field[T]{}
+// renameField reports a validation error about a store field under the name the request used
+// for it, such as ?status for the store's list of statuses.
+func renameField(err error, from, to string) error {
+	if validation, ok := errors.AsType[*store.ValidationError](err); ok && validation.Field == from {
+		return &store.ValidationError{Field: to, Message: validation.Message}
 	}
-	return store.Change(*value)
+	return err
+}
+
+// patch turns a field of an update body into a store update: absent leaves the field as it is,
+// and a value sets it. null reads as the empty value, so null and "" both clear an optional
+// field and a required field refuses both.
+func patch[T any](value *T, null bool) store.Field[T] {
+	switch {
+	case value != nil:
+		return store.Change(*value)
+	case null:
+		var empty T
+		return store.Change(empty)
+	}
+	return store.Field[T]{}
 }
 
 // pageSize returns the number of records a full page holds for a requested limit.

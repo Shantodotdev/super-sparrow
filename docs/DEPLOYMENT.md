@@ -7,6 +7,7 @@ Super Sparrow runs as one service behind the existing reverse proxy, which termi
 Every setting is required, and the server stops and names any that is missing. Start from `.env.example`. On a server:
 
 - `SPARROW_PUBLIC_URL` is the HTTPS address people open, such as `https://sparrow.example.com`. Over HTTPS the session cookie is `Secure` and `__Host-` prefixed.
+- `SPARROW_SIGN_IN_CODE_KEY` is a random secret of at least 32 characters, such as the output of `openssl rand -hex 32`. Sign-in codes are hashed with it, so keep it out of the database's backups.
 - `SPARROW_TRUSTED_PROXIES` lists the reverse proxy's address, so per-IP rate limits see the client's address from `X-Forwarded-For`.
 - `SPARROW_WEB_DIR` is the built frontend's folder: `web/dist/client` after `make build-web`, or `/srv/web` in the Docker image.
 - `SPARROW_BACKUPS=enabled`, with the backup settings below.

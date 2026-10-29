@@ -231,7 +231,7 @@ func (s *Server) describeError(ctx context.Context, toolName string, err error) 
 		return "Invalid input: " + validation.Field + " " + validation.Message
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, store.ErrForbidden),
 		errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrInvalidTransition):
-		return err.Error()
+		return store.Explain(err)
 	}
 
 	s.logger.ErrorContext(ctx, "tool failed", "tool", toolName, "error", err)

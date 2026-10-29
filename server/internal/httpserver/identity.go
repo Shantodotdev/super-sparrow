@@ -87,8 +87,8 @@ func (s *server) authorize(w http.ResponseWriter, r *http.Request, level access,
 // session cookie. A request that sends a token is judged by the token alone.
 func (s *server) identify(w http.ResponseWriter, r *http.Request) (identity, error) {
 	if header := r.Header.Get("Authorization"); header != "" {
-		token, ok := strings.CutPrefix(header, "Bearer ")
-		if !ok {
+		scheme, token, ok := strings.Cut(header, " ")
+		if !ok || !strings.EqualFold(scheme, "Bearer") {
 			return identity{}, store.ErrUnauthenticated
 		}
 
@@ -141,12 +141,7 @@ func safeMethod(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }
 
+// forbiddenRequest is a refusal decided by the HTTP layer, reported like a store refusal.
 func forbiddenRequest(reason string) error {
-	return &requestError{reason: reason}
+	return store.Refuse(store.ErrForbidden, "%s", reason)
 }
-
-// requestError is a refusal decided by the HTTP layer, reported like a store refusal.
-type requestError struct{ reason string }
-
-func (e *requestError) Error() string { return e.reason }
-func (e *requestError) Unwrap() error { return store.ErrForbidden }
