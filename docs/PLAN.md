@@ -25,6 +25,8 @@ Done. The schema is in `server/migrations/`; the data access layer is `server/in
 
 ## 3. Authentication and identity
 
+Done. Secrets and emails are in `server/internal/auth` and `server/internal/email`; the endpoints are in `server/internal/httpserver`.
+
 1. Add the Resend email client, with the API key and sender address as required settings.
 2. Add email sign-in codes: request, send, verify, expire after 10 minutes, cancel after five wrong attempts, and store only hashes.
 3. Add rate limits on code requests per email and per IP address.

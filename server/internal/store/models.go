@@ -280,3 +280,31 @@ type Field[T any] struct {
 
 // Change returns a Field that sets the value.
 func Change[T any](value T) Field[T] { return Field[T]{Set: true, Value: value} }
+
+// Session is one signed-in device of a person.
+type Session struct {
+	ID          string
+	ActorID     string
+	DeviceLabel string
+	LastSeenAt  time.Time
+	ExpiresAt   time.Time
+	RevokedAt   *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// AgentToken lets an agent act through the API. Only a hash of its secret is stored.
+type AgentToken struct {
+	ID           string
+	AgentActorID string
+	OwnerActorID string
+	AgentName    string
+	Label        string
+	// DisplayHint shows enough of the secret, such as ssp_…x7Qe, for a person to tell tokens apart.
+	DisplayHint string
+	LastUsedAt  *time.Time
+	ExpiresAt   time.Time
+	RevokedAt   *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}

@@ -27,9 +27,18 @@ func (c *testClock) Now() time.Time {
 	return c.now
 }
 
+// advance moves the clock forward by d.
+func (c *testClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.now = c.now.Add(d)
+}
+
 // team is a test database with an owner, a member, and an agent working for the member.
 type team struct {
 	store  *Store
+	clock  *testClock
 	ctx    context.Context
 	system Caller
 	owner  Caller
@@ -52,7 +61,7 @@ func newTeam(t *testing.T) *team {
 	}
 
 	clock := &testClock{now: time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
-	tm := &team{store: New(db, clock.Now), ctx: ctx, system: Caller{ActorID: SystemActorID}}
+	tm := &team{store: New(db, clock.Now), clock: clock, ctx: ctx, system: Caller{ActorID: SystemActorID}}
 
 	owner := got(tm.store.CreateHuman(ctx, tm.system, NewHuman{DisplayName: "Olive Owner", Email: "olive@example.com", Role: RoleOwner})).must(t)
 	member := got(tm.store.CreateHuman(ctx, tm.system, NewHuman{DisplayName: "Max Member", Email: "max@example.com", Role: RoleMember})).must(t)

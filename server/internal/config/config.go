@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/mail"
+	"net/netip"
 	"net/url"
 	"strings"
 )
@@ -16,6 +18,13 @@ type Config struct {
 	DatabasePath string
 	PublicURL    *url.URL
 	LogLevel     slog.Level
+	// ResendAPIKey authenticates the server to Resend, which sends sign-in codes and invitations.
+	ResendAPIKey string
+	// EmailFrom is the sender of every email, such as "Super Sparrow <sparrow@example.com>".
+	EmailFrom string
+	// TrustedProxies are the reverse proxies whose X-Forwarded-For header names the client's
+	// address. It is empty when the server is reached directly.
+	TrustedProxies []netip.Prefix
 }
 
 // Load reads the settings through getenv, which is os.Getenv outside tests. It returns one error
@@ -53,6 +62,29 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	problems = append(problems, err)
 
+	resendAPIKey, err := required(getenv, "SPARROW_RESEND_API_KEY")
+	if err == nil && !strings.HasPrefix(resendAPIKey, "re_") {
+		err = errors.New("SPARROW_RESEND_API_KEY must be a Resend API key, which starts with re_")
+	}
+	problems = append(problems, err)
+	cfg.ResendAPIKey = resendAPIKey
+
+	emailFrom, err := required(getenv, "SPARROW_EMAIL_FROM")
+	if err == nil {
+		_, err = mail.ParseAddress(emailFrom)
+		if err != nil {
+			err = fmt.Errorf("SPARROW_EMAIL_FROM must be an address such as Super Sparrow <sparrow@example.com>: %w", err)
+		}
+	}
+	problems = append(problems, err)
+	cfg.EmailFrom = emailFrom
+
+	trustedProxies, err := required(getenv, "SPARROW_TRUSTED_PROXIES")
+	if err == nil {
+		cfg.TrustedProxies, err = parseTrustedProxies(trustedProxies)
+	}
+	problems = append(problems, err)
+
 	if err := errors.Join(problems...); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration:\n%w", err)
 	}
@@ -83,4 +115,29 @@ func parsePublicURL(value string) (*url.URL, error) {
 	}
 
 	return parsed, nil
+}
+
+// parseTrustedProxies reads "none" or a comma-separated list of IP addresses and CIDR ranges.
+func parseTrustedProxies(value string) ([]netip.Prefix, error) {
+	if value == "none" {
+		return nil, nil
+	}
+
+	var prefixes []netip.Prefix
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if prefix, err := netip.ParsePrefix(part); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+
+		addr, err := netip.ParseAddr(part)
+		if err != nil {
+			return nil, fmt.Errorf("SPARROW_TRUSTED_PROXIES must be none or a comma-separated list of IP addresses and CIDR ranges, not %q", part)
+		}
+		addr = addr.Unmap()
+		prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+
+	return prefixes, nil
 }

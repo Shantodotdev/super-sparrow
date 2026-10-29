@@ -17,6 +17,12 @@ var (
 	ErrForbidden = errors.New("forbidden")
 	// ErrInvalidTransition means the record cannot move from its current state to the requested one.
 	ErrInvalidTransition = errors.New("invalid transition")
+	// ErrUnauthenticated means a session or agent token is unknown, expired, revoked, or belongs
+	// to a disabled actor.
+	ErrUnauthenticated = errors.New("not signed in")
+	// ErrInvalidCode means a sign-in code is wrong, expired, used, or canceled. The reasons are not
+	// told apart, so a guesser learns nothing from them.
+	ErrInvalidCode = errors.New("the code is wrong or has expired")
 )
 
 // ValidationError reports one invalid input field, so the API can name it in its response.

@@ -2,7 +2,7 @@
 # Super Sparrow - Developer Automation
 # ==============================================================================
 
-.PHONY: help install dev dev-server dev-web dev-desktop build build-server build-web check check-go check-web check-desktop test test-go test-web format format-go format-web format-check clean env-file
+.PHONY: help install create-owner dev dev-server dev-web dev-desktop build build-server build-web check check-go check-web check-desktop test test-go test-web format format-go format-web format-check clean env-file
 
 # The server and the web dev server read their settings from the repository .env.
 LOAD_ENV := set -a && . ./.env && set +a
@@ -12,6 +12,8 @@ help:
 	@echo ""
 	@echo "  --- Setup ---"
 	@echo "  make install        Install Bun workspace dependencies and download Go modules"
+	@echo "  make create-owner NAME=\"Your Name\" EMAIL=you@example.com"
+	@echo "                     Add the first owner to the database in .env"
 	@echo ""
 	@echo "  --- Development ---"
 	@echo "  make dev            Run the Go server and the web dev server together"
@@ -41,6 +43,11 @@ help:
 install:
 	bun install --frozen-lockfile
 	cd server && go mod download
+
+create-owner: env-file
+	@test -n "$(NAME)" && test -n "$(EMAIL)" || { echo 'usage: make create-owner NAME="Your Name" EMAIL=you@example.com'; exit 1; }
+	cd server && go build -o bin/sparrow ./cmd/sparrow
+	@$(LOAD_ENV) && mkdir -p "$$(dirname "$$SPARROW_DATABASE_PATH")" && ./server/bin/sparrow create-owner --name "$(NAME)" --email "$(EMAIL)"
 
 env-file:
 	@test -f .env || { echo ".env is missing: run cp .env.example .env"; exit 1; }

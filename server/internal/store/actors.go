@@ -25,7 +25,7 @@ type NewAgent struct {
 
 // CreateHuman adds a person to the team. Only an owner or the system can add people.
 func (s *Store) CreateHuman(ctx context.Context, by Caller, input NewHuman) (Actor, error) {
-	name, err := requiredText("display_name", input.DisplayName, maxNameLength)
+	name, err := singleLineText("display_name", input.DisplayName, maxNameLength)
 	if err != nil {
 		return Actor{}, err
 	}
@@ -42,27 +42,57 @@ func (s *Store) CreateHuman(ctx context.Context, by Caller, input NewHuman) (Act
 		if err := w.requireOwner("add people"); err != nil {
 			return err
 		}
-
-		actor.CreatedAt, actor.UpdatedAt = w.now, w.now
-		_, err := w.exec(`
-			INSERT INTO actors (id, kind, display_name, email, role, created_at, updated_at)
-			VALUES (?, 'human', ?, ?, ?, ?, ?)`,
-			actor.ID, name, email, input.Role, w.timestamp(), w.timestamp())
-		if err != nil {
-			return mapUniqueViolation(err, "a person with this email already exists", "create person")
-		}
-
-		return w.event("", TargetActor, actor.ID, "actor.created",
-			map[string]any{"kind": ActorHuman, "display_name": name, "email": email, "role": input.Role})
+		return insertHuman(w, &actor)
 	})
 
 	return actor, err
 }
 
+// CreateFirstOwner adds the team's first owner, recorded as the system actor. It fails with
+// ErrConflict once anyone has been added, so it cannot be used to take over a running team.
+func (s *Store) CreateFirstOwner(ctx context.Context, displayName, email string) (Actor, error) {
+	name, err := singleLineText("display_name", displayName, maxNameLength)
+	if err != nil {
+		return Actor{}, err
+	}
+	normalized, err := normalizeEmail(email)
+	if err != nil {
+		return Actor{}, err
+	}
+
+	actor := Actor{ID: newID(), Kind: ActorHuman, DisplayName: name, Email: normalized, Role: RoleOwner}
+	err = s.write(ctx, Caller{ActorID: SystemActorID}, func(w *writeTx) error {
+		var people int
+		if err := w.tx.QueryRowContext(w.ctx, `SELECT count(*) FROM actors WHERE kind = 'human'`).Scan(&people); err != nil {
+			return fmt.Errorf("count people: %w", err)
+		}
+		if people > 0 {
+			return conflict("the team already has people; an owner adds the rest")
+		}
+		return insertHuman(w, &actor)
+	})
+
+	return actor, err
+}
+
+func insertHuman(w *writeTx, actor *Actor) error {
+	actor.CreatedAt, actor.UpdatedAt = w.now, w.now
+	_, err := w.exec(`
+		INSERT INTO actors (id, kind, display_name, email, role, created_at, updated_at)
+		VALUES (?, 'human', ?, ?, ?, ?, ?)`,
+		actor.ID, actor.DisplayName, actor.Email, actor.Role, w.timestamp(), w.timestamp())
+	if err != nil {
+		return mapUniqueViolation(err, "a person with this email already exists", "create person")
+	}
+
+	return w.event("", TargetActor, actor.ID, "actor.created",
+		map[string]any{"kind": ActorHuman, "display_name": actor.DisplayName, "email": actor.Email, "role": actor.Role})
+}
+
 // CreateAgent adds an agent that works for the calling person. Only a person can add agents,
 // and only for themselves.
 func (s *Store) CreateAgent(ctx context.Context, by Caller, input NewAgent) (Actor, error) {
-	name, err := requiredText("display_name", input.DisplayName, maxNameLength)
+	name, err := singleLineText("display_name", input.DisplayName, maxNameLength)
 	if err != nil {
 		return Actor{}, err
 	}
@@ -77,20 +107,24 @@ func (s *Store) CreateAgent(ctx context.Context, by Caller, input NewAgent) (Act
 		}
 
 		actor.OwnerActorID = w.caller.ID
-		actor.CreatedAt, actor.UpdatedAt = w.now, w.now
-		_, err := w.exec(`
-			INSERT INTO actors (id, kind, display_name, agent_name, owner_actor_id, created_at, updated_at)
-			VALUES (?, 'agent', ?, ?, ?, ?, ?)`,
-			actor.ID, name, input.AgentName, w.caller.ID, w.timestamp(), w.timestamp())
-		if err != nil {
-			return fmt.Errorf("create agent: %w", err)
-		}
-
-		return w.event("", TargetActor, actor.ID, "actor.created",
-			map[string]any{"kind": ActorAgent, "display_name": name, "agent_name": input.AgentName, "owner_actor_id": w.caller.ID})
+		return insertAgent(w, &actor)
 	})
 
 	return actor, err
+}
+
+func insertAgent(w *writeTx, actor *Actor) error {
+	actor.CreatedAt, actor.UpdatedAt = w.now, w.now
+	_, err := w.exec(`
+		INSERT INTO actors (id, kind, display_name, agent_name, owner_actor_id, created_at, updated_at)
+		VALUES (?, 'agent', ?, ?, ?, ?, ?)`,
+		actor.ID, actor.DisplayName, actor.AgentName, actor.OwnerActorID, w.timestamp(), w.timestamp())
+	if err != nil {
+		return mapUniqueViolation(err, "this person already has a "+actor.AgentName+" agent", "create agent")
+	}
+
+	return w.event("", TargetActor, actor.ID, "actor.created",
+		map[string]any{"kind": ActorAgent, "display_name": actor.DisplayName, "agent_name": actor.AgentName, "owner_actor_id": actor.OwnerActorID})
 }
 
 // SetRole changes a person's role. Only an owner can change roles, and the last active owner

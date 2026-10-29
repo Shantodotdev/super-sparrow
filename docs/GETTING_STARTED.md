@@ -21,8 +21,10 @@ macOS needs the Xcode command line tools. Windows needs the Microsoft C++ build 
 ## First run
 
 1. `cp .env.example .env`. Every setting is required; the server stops and names any that is missing.
-2. `make install` installs the Bun workspace and downloads the Go modules.
-3. `make dev` builds and runs the Go server and the web dev server together. The web dev server forwards `/api` to the Go server, as production does on one address.
+2. Set `SPARROW_RESEND_API_KEY` to a [Resend](https://resend.com/api-keys) API key. Sign-in codes and invitations are sent through Resend, so nobody can sign in without it. Until your domain is verified in Resend, keep the `onboarding@resend.dev` sender, which only delivers to your own Resend account's address.
+3. `make install` installs the Bun workspace and downloads the Go modules.
+4. `make create-owner NAME="Your Name" EMAIL=you@example.com` adds the first owner. It works only on a database with nobody in it; after that, owners invite teammates.
+5. `make dev` builds and runs the Go server and the web dev server together. The web dev server forwards `/api` to the Go server, as production does on one address.
 
 The server creates the SQLite database at `SPARROW_DATABASE_PATH` and applies the migrations in `server/migrations/` when it starts.
 
@@ -32,6 +34,7 @@ Run `make help` for the full list.
 
 | Command              | What it does                                                   |
 | -------------------- | -------------------------------------------------------------- |
+| `make create-owner`  | First owner, from `NAME` and `EMAIL`                           |
 | `make dev`           | Go server and web dev server together                          |
 | `make dev-server`    | Go server only                                                 |
 | `make dev-web`       | Web dev server only                                            |
@@ -43,6 +46,26 @@ Run `make help` for the full list.
 | `make test`          | Go tests with the race detector, and web tests with `bun test` |
 | `make format`        | gofmt and Prettier over the whole repository                   |
 | `make build`         | Web build and server binary                                    |
+
+## Signing in
+
+There is no password. `POST /api/auth/code` with `{"email": "…"}` emails a 6-digit code to an active teammate, and `POST /api/auth/verify` with the email and code sets the session cookie. Agents and scripts send an agent token as `Authorization: Bearer ssp_…`; a person creates one with `POST /api/tokens`, and the secret is shown only in that response.
+
+To try it without the web interface, with `make dev-server` running:
+
+```bash
+curl -i -X POST http://127.0.0.1:8090/api/auth/code -H 'Content-Type: application/json' -d '{"email":"you@example.com"}'
+```
+
+Then send the emailed code, saving the cookie, and check who you are:
+
+```bash
+curl -i -c /tmp/sparrow-cookie -X POST http://127.0.0.1:8090/api/auth/verify -H 'Content-Type: application/json' -d '{"email":"you@example.com","code":"123456"}'
+```
+
+```bash
+curl -b /tmp/sparrow-cookie http://127.0.0.1:8090/api/me
+```
 
 ## Continuous integration
 

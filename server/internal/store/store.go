@@ -82,6 +82,26 @@ func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error)
 	return nil
 }
 
+// transact runs fn in a transaction that no caller owns, such as signing in, and commits when fn
+// succeeds. It passes fn the current time.
+func (s *Store) transact(ctx context.Context, fn func(tx *sql.Tx, now time.Time) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := fn(tx, s.now().UTC().Truncate(time.Millisecond)); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (w *writeTx) exec(query string, args ...any) (sql.Result, error) {
 	return w.tx.ExecContext(w.ctx, query, args...)
 }

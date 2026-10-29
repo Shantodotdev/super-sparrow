@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -39,6 +40,19 @@ func requiredText(field, value string, max int) (string, error) {
 	}
 
 	return value, checkLength(field, value, max)
+}
+
+// singleLineText is requiredText for values shown on one line, such as names and labels, which
+// may also reach email subjects. It refuses line breaks and other control characters.
+func singleLineText(field, value string, max int) (string, error) {
+	value, err := requiredText(field, value, max)
+	if err != nil {
+		return "", err
+	}
+	if strings.IndexFunc(value, unicode.IsControl) >= 0 {
+		return "", invalid(field, "must be one line without control characters")
+	}
+	return value, nil
 }
 
 // optionalText trims value and checks that it is at most max characters long. It may be empty.

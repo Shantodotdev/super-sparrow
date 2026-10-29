@@ -37,7 +37,7 @@ All tables have `id`, `created_at`, and `updated_at`, except events, which never
 
 The schema lives in `server/migrations/`, and `server/internal/store` is the only code that reads or writes it. CHECK constraints, foreign keys, and triggers enforce the rules below in the database as well as in Go.
 
-- **Actor:** kind (`human`, `agent`, or `system`), display name, disabled at. Humans also have an email and a role (`owner` or `member`). Agents also have an agent name (`claude-code`, `codex`) and the human who owns them. One built-in system actor records actions no person or agent took, such as creating the first owner. Every write records its actor. Disabling a person also disables their agents and revokes their sessions and tokens. The team always keeps at least one active owner.
+- **Actor:** kind (`human`, `agent`, or `system`), display name, disabled at. Humans also have an email and a role (`owner` or `member`). Agents also have an agent name (`claude-code`, `codex`) and the human who owns them. A person has at most one agent per agent name, and all of their tokens for that tool act as it. One built-in system actor records actions no person or agent took, such as creating the first owner. Every write records its actor. Disabling a person also disables their agents and revokes their sessions and tokens. The team always keeps at least one active owner.
 - **Session:** human actor, hashed session ID, device label, last seen, expires at, revoked at.
 - **Sign-in code:** email, hashed code, expires at, failed attempts, used at.
 - **Token:** agent actor, hashed secret, label, last used, expires at, revoked at. Only the hash is stored.
@@ -120,11 +120,13 @@ Super Sparrow serves one team. There is no public signup and no password.
 - The first owner is created with a server command. After that, an owner adds a teammate by name and email, and Resend sends them an invitation email.
 - Sign-in is by email only. A person enters their email, Resend sends a 6-digit code, and they enter it on the same screen. A code works in the browser and in the desktop app, where a link would open the wrong window.
 - A code expires after 10 minutes, works once, and is stored only as a hash. Five wrong attempts cancel it.
+- An email's three newest codes work at once, so someone else requesting codes for that email cannot cancel the one its owner is entering. A wrong guess counts against all of them, and signing in cancels the rest.
 - The sign-in screen shows the same message whether or not the email belongs to a teammate, so it never reveals who has an account. Codes are sent only to active teammates.
 - Code requests are rate-limited per email and per IP address.
-- A successful sign-in creates a session stored in the database. The browser gets a `Secure`, `HttpOnly`, `SameSite=Lax` cookie. A session lasts 30 days and renews while in use.
+- A successful sign-in creates a session stored in the database. The browser gets an `HttpOnly`, `SameSite=Lax` cookie. When the public URL uses HTTPS, the cookie is also `Secure` and named with the `__Host-` prefix; over `http://localhost` in development it is not, so sign-in works there. A session lasts 30 days and renews while in use.
 - Settings lists each person's signed-in devices, with sign-out for one device or all of them.
 - Disabling a teammate ends all their sessions and revokes all their agent tokens at once.
+- Signing in and out and creating, renewing, or revoking a token write events on the person or agent. Sign-in codes, session renewals, and token use are credential bookkeeping and write none.
 - The Resend API key, the sender address, and the server's public URL are required settings.
 
 ### Agents
