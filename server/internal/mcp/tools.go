@@ -593,6 +593,7 @@ type planOutput struct {
 	IssueKey  string           `json:"issue_key"`
 	Title     string           `json:"title"`
 	Plan      string           `json:"plan"`
+	Revision  int              `json:"plan_revision"`
 	Checklist []checklist.Item `json:"checklist"`
 }
 
@@ -603,7 +604,9 @@ func (s *Server) getPlan(ctx context.Context, _ store.Caller, args struct {
 	if err != nil {
 		return nil, err
 	}
-	return planOutput{IssueKey: issue.Key(), Title: issue.Title, Plan: issue.Plan, Checklist: checklist.Items(issue.Plan)}, nil
+	return planOutput{
+		IssueKey: issue.Key(), Title: issue.Title, Plan: issue.Plan, Revision: issue.PlanRevision, Checklist: checklist.Items(issue.Plan),
+	}, nil
 }
 
 func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, args struct {

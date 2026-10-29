@@ -114,11 +114,14 @@ func (s *server) issueForBranch(w http.ResponseWriter, r *http.Request) error {
 }
 
 // updateIssue changes the fields the body names. A field that is absent stays as it is; an
-// empty string or null clears an optional field, and label_ids replaces the whole set.
+// empty string or null clears an optional field, and label_ids replaces the whole set. A new plan
+// must come with the plan_revision it was edited from, and is refused with 409 when the plan has
+// changed since.
 func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Title           *string   `json:"title"`
 		Plan            *string   `json:"plan"`
+		PlanRevision    int       `json:"plan_revision"`
 		Status          *string   `json:"status"`
 		ParentIssueID   *string   `json:"parent_issue_id"`
 		MilestoneID     *string   `json:"milestone_id"`
@@ -138,7 +141,7 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	update := store.IssueUpdate{
-		Title: patch(body.Title, nulls["title"]), Plan: patch(body.Plan, nulls["plan"]),
+		Title: patch(body.Title, nulls["title"]), Plan: patch(body.Plan, nulls["plan"]), PlanRevision: body.PlanRevision,
 		ParentIssueID: patch(body.ParentIssueID, nulls["parent_issue_id"]), MilestoneID: patch(body.MilestoneID, nulls["milestone_id"]),
 		AssigneeActorID: patch(body.AssigneeActorID, nulls["assignee_actor_id"]), BranchName: patch(body.BranchName, nulls["branch_name"]),
 		PullRequestURL: patch(body.PullRequestURL, nulls["pull_request_url"]), LabelIDs: patch(body.LabelIDs, nulls["label_ids"]),

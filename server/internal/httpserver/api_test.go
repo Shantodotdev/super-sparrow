@@ -185,6 +185,17 @@ func TestIssuesListUpdateAndBranchLookup(t *testing.T) {
 	}
 	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1/checklist", a.agent, map[string]any{"items": []map[string]any{{"index": 9, "checked": true}}}), "items")
 
+	// The tick moved the plan to revision 2, so an edit of revision 1 is refused with 409.
+	if checked.Issue.PlanRevision != 2 {
+		t.Fatalf("plan revision after a tick = %d", checked.Issue.PlanRevision)
+	}
+	wantStatus(t, a.request(http.MethodPatch, "/api/issues/WP-1", a.member, map[string]any{"plan": "- [ ] Migration", "plan_revision": 1}), http.StatusConflict)
+	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-1", a.member, map[string]any{"plan": "- [ ] Migration"}), "plan_revision")
+	a.call(http.MethodPatch, "/api/issues/WP-1", a.member, map[string]any{"plan": "- [ ] Migration\n- [x] Store\n- [ ] API", "plan_revision": 2}, http.StatusOK, &updated)
+	if updated.Issue.PlanRevision != 3 || len(updated.Issue.Checklist) != 3 {
+		t.Fatalf("saved plan %+v", updated.Issue)
+	}
+
 	for range 2 {
 		a.call(http.MethodPost, "/api/projects/WP/issues", a.member, map[string]any{"title": "More", "status": "backlog"}, http.StatusCreated, nil)
 	}

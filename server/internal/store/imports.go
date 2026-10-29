@@ -222,7 +222,7 @@ func (s *Store) ImportIssue(ctx context.Context, by Caller, source ImportSource,
 
 		issue = Issue{
 			ID: newID(), ProjectID: project.ID, ProjectKey: project.Key, Number: input.Number,
-			Title: fields.title, Plan: fields.plan, Status: fields.status, MilestoneID: fields.milestoneID,
+			Title: fields.title, Plan: fields.plan, PlanRevision: 1, Status: fields.status, MilestoneID: fields.milestoneID,
 			AssigneeActorID: fields.assigneeID, BranchName: fields.branch, LabelIDs: fields.labelIDs,
 			CreatedByID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now,
 		}

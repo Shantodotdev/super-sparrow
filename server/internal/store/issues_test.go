@@ -2,6 +2,7 @@ package store
 
 import (
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -212,8 +213,9 @@ func TestUpdateIssueRecordsOnlyChangedFields(t *testing.T) {
 	issue := tm.issue(t, project.ID, "Old title")
 
 	updated := got(tm.store.UpdateIssue(tm.ctx, tm.agent, issue.ID, IssueUpdate{
-		Title: Change("New title"),
-		Plan:  Change("## Goal\n\nShip it."),
+		Title:        Change("New title"),
+		Plan:         Change("## Goal\n\nShip it."),
+		PlanRevision: 1,
 	})).must(t)
 	stored := got(tm.store.GetIssue(tm.ctx, issue.ID)).must(t)
 	if updated.Title != "New title" || updated.Plan != "## Goal\n\nShip it." || !updated.UpdatedAt.Equal(stored.UpdatedAt) {
@@ -221,7 +223,7 @@ func TestUpdateIssueRecordsOnlyChangedFields(t *testing.T) {
 	}
 
 	event := tm.lastEvent(t)
-	want := `{"plan":{"changed":true},"title":{"from":"Old title","to":"New title"}}`
+	want := `{"plan":{"revision":2},"title":{"from":"Old title","to":"New title"}}`
 	if event.Kind != "issue.updated" || string(event.Payload) != want || event.ReportedModel != "claude-test-model" {
 		t.Errorf("event %s %s model %q", event.Kind, event.Payload, event.ReportedModel)
 	}
@@ -231,6 +233,46 @@ func TestUpdateIssueRecordsOnlyChangedFields(t *testing.T) {
 	if tm.eventCount(t) != before {
 		t.Error("an update that changed nothing recorded an event")
 	}
+}
+
+func TestPlanEditsMadeOnAnOldRevisionAreRefused(t *testing.T) {
+	tm := newTeam(t)
+	project := tm.project(t, "WP")
+	issue := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{
+		ProjectID: project.ID, Title: "Plan", Status: IssueTodo, Plan: "- [ ] Migration\n- [ ] Store",
+	})).must(t)
+	if issue.PlanRevision != 1 {
+		t.Fatalf("new plan revision = %d, want 1", issue.PlanRevision)
+	}
+
+	// The agent ticks an item while the person edits the plan they loaded at revision 1.
+	ticked := got(tm.store.UpdatePlanChecklist(tm.ctx, tm.agent, issue.ID, map[int]bool{0: true})).must(t)
+	if ticked.PlanRevision != 2 {
+		t.Fatalf("ticking moved the revision to %d, want 2", ticked.PlanRevision)
+	}
+	_, err := tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{
+		Plan: Change("- [ ] Migration\n- [ ] Store\n- [ ] API"), PlanRevision: 1,
+	})
+	wantErr(t, err, ErrConflict)
+	if !strings.Contains(Explain(err), "now at revision 2") {
+		t.Errorf("conflict says %q", Explain(err))
+	}
+	if fresh := got(tm.store.GetIssue(tm.ctx, issue.ID)).must(t); fresh.Plan != "- [x] Migration\n- [ ] Store" {
+		t.Errorf("the refused edit changed the plan to %q", fresh.Plan)
+	}
+
+	// Saved again from the current revision, the edit keeps the tick.
+	saved := got(tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{
+		Plan: Change("- [x] Migration\n- [ ] Store\n- [ ] API"), PlanRevision: 2,
+	})).must(t)
+	if saved.PlanRevision != 3 {
+		t.Errorf("saved revision = %d, want 3", saved.PlanRevision)
+	}
+
+	// A plan without its revision is refused, and other fields need none.
+	_, err = tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{Plan: Change("Rewritten")})
+	wantInvalid(t, err, "plan_revision")
+	got(tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{Title: Change("Renamed")})).must(t)
 }
 
 func TestListIssuesFiltersAndPages(t *testing.T) {

@@ -48,16 +48,16 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 
 ## Issues and plans
 
-| Method and path                      | What it does                                                                                                                                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/projects/{key}/issues`     | `{issues, next_before}`, newest first. Filters: `?status=todo,in_progress`, `?milestone=<id>`, `?assignee=<id>`. Pages: `?limit=` (1 to 200, 50 by default) and `?before=<next_before>`, which is `null` on the last page |
-| `POST /api/projects/{key}/issues`    | `{title, status, plan?, parent_issue_id?, milestone_id?, assignee_actor_id?, branch_name?, pull_request_url?, label_ids?}`                                                                                                |
-| `GET /api/issues/{key}`              | `{issue}` with its `plan` and `checklist`                                                                                                                                                                                 |
-| `GET /api/issues/for-branch?branch=` | The issue that records the branch, or whose key the branch name contains                                                                                                                                                  |
-| `PATCH /api/issues/{key}`            | Any of the creation fields plus `status`; `label_ids` replaces the set. All of it applies in one transaction                                                                                                              |
-| `PATCH /api/issues/{key}/checklist`  | `{items: [{index, checked}]}`; ticks plan checklist items by index without rewriting the rest of the plan                                                                                                                 |
+| Method and path                      | What it does                                                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/projects/{key}/issues`     | `{issues, next_before}`, newest first. Filters: `?status=todo,in_progress`, `?milestone=<id>`, `?assignee=<id>`. Pages: `?limit=` (1 to 200, 50 by default) and `?before=<next_before>`, which is `null` on the last page        |
+| `POST /api/projects/{key}/issues`    | `{title, status, plan?, parent_issue_id?, milestone_id?, assignee_actor_id?, branch_name?, pull_request_url?, label_ids?}`                                                                                                       |
+| `GET /api/issues/{key}`              | `{issue}` with its `plan` and `checklist`                                                                                                                                                                                        |
+| `GET /api/issues/for-branch?branch=` | The issue that records the branch, or whose key the branch name contains                                                                                                                                                         |
+| `PATCH /api/issues/{key}`            | Any of the creation fields plus `status`; `label_ids` replaces the set. A new `plan` needs the `plan_revision` it was edited from, and is refused with 409 when the plan has changed since. All of it applies in one transaction |
+| `PATCH /api/issues/{key}/checklist`  | `{items: [{index, checked}]}`; ticks plan checklist items by index without rewriting the rest of the plan                                                                                                                        |
 
-Issue statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and `canceled`. Lists leave out `plan` and `checklist`, and every issue carries `checklist_progress: {done, total}`.
+Issue statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and `canceled`. Lists leave out `plan` and `checklist`, and every issue carries `checklist_progress: {done, total}` and `plan_revision`, which goes up with every change to the plan, ticked checklist items included.
 
 ## Reviews and findings
 

@@ -13,7 +13,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 )
 
-const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.status, i.parent_issue_id,
+const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.plan_revision, i.status, i.parent_issue_id,
 	i.milestone_id, i.assignee_actor_id, i.branch_name, i.pull_request_url,
 	(SELECT group_concat(label_id) FROM issue_labels WHERE issue_id = i.id),
 	i.created_by_actor_id, i.completed_at, i.created_at, i.updated_at`
@@ -42,8 +42,11 @@ type NewIssue struct {
 // IssueUpdate lists the issue fields to change. Setting an ID or text field to "" clears it, and
 // setting LabelIDs replaces the whole set.
 type IssueUpdate struct {
-	Title           Field[string]
-	Plan            Field[string]
+	Title Field[string]
+	Plan  Field[string]
+	// PlanRevision is the plan revision an edited Plan started from. It is required with Plan, and
+	// the update is refused with ErrConflict when the plan has changed since.
+	PlanRevision    int
 	ParentIssueID   Field[string]
 	MilestoneID     Field[string]
 	AssigneeActorID Field[string]
@@ -145,7 +148,7 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 
 	issue := Issue{
 		ID: newID(), ProjectID: project.ID, ProjectKey: project.Key, Number: number,
-		Title: fields.title, Plan: fields.plan, Status: fields.status,
+		Title: fields.title, Plan: fields.plan, PlanRevision: 1, Status: fields.status,
 		ParentIssueID: fields.parentID, MilestoneID: fields.milestoneID, AssigneeActorID: fields.assigneeID,
 		BranchName: fields.branch, PullRequestURL: fields.pullRequest, LabelIDs: fields.labelIDs,
 		CreatedByID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now,
@@ -224,10 +227,14 @@ func updateIssueFields(w *writeTx, current Issue, update IssueUpdate) error {
 	applyChange(update.AssigneeActorID, &next.AssigneeActorID, "assignee_actor_id", changes)
 	applyChange(update.BranchName, &next.BranchName, "branch_name", changes)
 	applyChange(update.PullRequestURL, &next.PullRequestURL, "pull_request_url", changes)
-	// A plan can be long, so its event records only that it changed; the issue holds the text.
+	// A plan can be long, so its event records only its new revision; the issue holds the text.
 	if update.Plan.Set && update.Plan.Value != current.Plan {
-		next.Plan = update.Plan.Value
-		changes["plan"] = map[string]any{"changed": true}
+		if update.PlanRevision != current.PlanRevision {
+			return Refuse(ErrConflict, "%s's plan changed after revision %d and is now at revision %d; load it again, "+
+				"reapply your edit, and save it with plan_revision %d", current.Key(), update.PlanRevision, current.PlanRevision, current.PlanRevision)
+		}
+		next.Plan, next.PlanRevision = update.Plan.Value, current.PlanRevision+1
+		changes["plan"] = map[string]any{"revision": next.PlanRevision}
 	}
 	if len(changes) == 0 {
 		return nil
@@ -240,10 +247,10 @@ func updateIssueFields(w *writeTx, current Issue, update IssueUpdate) error {
 	}
 
 	_, err = w.exec(`
-		UPDATE issues SET title = ?, plan = ?, parent_issue_id = ?, milestone_id = ?, assignee_actor_id = ?,
-			branch_name = ?, pull_request_url = ?, updated_at = ?
+		UPDATE issues SET title = ?, plan = ?, plan_revision = ?, parent_issue_id = ?, milestone_id = ?,
+			assignee_actor_id = ?, branch_name = ?, pull_request_url = ?, updated_at = ?
 		WHERE id = ?`,
-		next.Title, next.Plan, nullString(next.ParentIssueID), nullString(next.MilestoneID),
+		next.Title, next.Plan, next.PlanRevision, nullString(next.ParentIssueID), nullString(next.MilestoneID),
 		nullString(next.AssigneeActorID), nullString(next.BranchName), nullString(next.PullRequestURL),
 		w.timestamp(), current.ID)
 	if err != nil {
@@ -274,6 +281,9 @@ func validateIssueUpdate(update *IssueUpdate) error {
 		if update.PullRequestURL.Value, err = optionalHTTPURL("pull_request_url", update.PullRequestURL.Value); err != nil {
 			return err
 		}
+	}
+	if update.Plan.Set && update.PlanRevision < 1 {
+		return invalid("plan_revision", "is required with plan: send the plan_revision the edited plan started from")
 	}
 	if update.Status.Set && !update.Status.Value.valid() {
 		return invalid("status", "must be backlog, todo, in_progress, in_review, done, or canceled")
@@ -413,10 +423,12 @@ func (s *Store) UpdatePlanChecklist(ctx context.Context, by Caller, issueID stri
 			return nil
 		}
 
-		if _, err := w.exec(`UPDATE issues SET plan = ?, updated_at = ? WHERE id = ?`, plan, w.timestamp(), current.ID); err != nil {
+		_, err = w.exec(`UPDATE issues SET plan = ?, plan_revision = plan_revision + 1, updated_at = ? WHERE id = ?`,
+			plan, w.timestamp(), current.ID)
+		if err != nil {
 			return fmt.Errorf("update plan checklist: %w", err)
 		}
-		issue.Plan, issue.UpdatedAt = plan, w.now
+		issue.Plan, issue.PlanRevision, issue.UpdatedAt = plan, current.PlanRevision+1, w.now
 
 		items := make([]map[string]any, 0, len(changes))
 		for _, item := range checklist.Items(plan) {
@@ -424,7 +436,8 @@ func (s *Store) UpdatePlanChecklist(ctx context.Context, by Caller, issueID stri
 				items = append(items, map[string]any{"index": item.Index, "text": item.Text, "checked": item.Checked})
 			}
 		}
-		return w.event(current.ProjectID, TargetIssue, current.ID, "issue.checklist_changed", map[string]any{"items": items})
+		return w.event(current.ProjectID, TargetIssue, current.ID, "issue.checklist_changed",
+			map[string]any{"items": items, "plan_revision": issue.PlanRevision})
 	})
 
 	return issue, err
@@ -645,7 +658,7 @@ func scanIssue(row scanner) (Issue, error) {
 	var created, updated string
 
 	err := row.Scan(&issue.ID, &issue.ProjectID, &issue.ProjectKey, &issue.Number, &issue.Title, &issue.Plan,
-		&issue.Status, &parent, &milestone, &assignee, &branch, &pullRequest, &labels,
+		&issue.PlanRevision, &issue.Status, &parent, &milestone, &assignee, &branch, &pullRequest, &labels,
 		&issue.CreatedByID, &completed, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Issue{}, notFound("issue")

@@ -122,6 +122,7 @@ type issueView struct {
 	Number            int              `json:"number"`
 	Title             string           `json:"title"`
 	Plan              *string          `json:"plan,omitempty"`
+	PlanRevision      int              `json:"plan_revision"`
 	Checklist         []checklist.Item `json:"checklist,omitempty"`
 	ChecklistProgress progressView     `json:"checklist_progress"`
 	Status            string           `json:"status"`
@@ -148,7 +149,7 @@ func newIssueSummaryView(issue store.Issue) issueView {
 
 	return issueView{
 		ID: issue.ID, Key: issue.Key(), ProjectID: issue.ProjectID, ProjectKey: issue.ProjectKey, Number: issue.Number,
-		Title: issue.Title, ChecklistProgress: progress, Status: string(issue.Status), ParentIssueID: issue.ParentIssueID,
+		Title: issue.Title, PlanRevision: issue.PlanRevision, ChecklistProgress: progress, Status: string(issue.Status), ParentIssueID: issue.ParentIssueID,
 		MilestoneID: issue.MilestoneID, AssigneeActorID: issue.AssigneeActorID, BranchName: issue.BranchName,
 		PullRequestURL: issue.PullRequestURL, LabelIDs: issue.LabelIDs, CreatedByActorID: issue.CreatedByID,
 		CompletedAt: issue.CompletedAt, CreatedAt: issue.CreatedAt, UpdatedAt: issue.UpdatedAt,
