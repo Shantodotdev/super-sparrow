@@ -45,7 +45,7 @@ sparrow.example.com {
 Two jobs run inside the server, always in production and in development when the backup settings are set. Each takes a consistent copy with `VACUUM INTO`, compresses it, encrypts it with [age](https://age-encryption.org) under `BACKUP_ENCRYPTION_KEY`, and uploads it to R2:
 
 - The **sync** runs when the server starts and then every hour, replacing `sync/sparrow.db.gz.age`. R2 replaces the old copy only once the new upload has finished.
-- The **daily backup** runs at `BACKUP_DAILY_TIME` (UTC) as `daily/sparrow-YYYY-MM-DD.db.gz.age`, then deletes dated copies older than `BACKUP_KEEP_DAYS`.
+- The **daily backup** runs at `BACKUP_DAILY_TIME` in `BACKUP_TIME_ZONE` (03:00 in `Asia/Dhaka` on staging) as `daily/sparrow-YYYY-MM-DD.db.gz.age`, dated in that time zone, then deletes dated copies older than `BACKUP_KEEP_DAYS`. A daily backup that fails, or that was missed while the server was down, runs again after each hourly sync until one succeeds that day.
 
 Each run is recorded, failures are logged, and `GET /api/backups` shows the last run and last success of each job.
 
@@ -53,7 +53,7 @@ To set them up:
 
 1. Make an encryption key with `openssl rand -hex 32`, and store a copy in the team's password manager. A backup cannot be restored without it.
 2. Create an R2 bucket, and an R2 API token with Object Read & Write on that bucket only.
-3. Set `BACKUP_ENCRYPTION_KEY` to the key, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_DAILY_TIME` (such as `03:30`), and `BACKUP_KEEP_DAYS` (`30` on staging).
+3. Set `BACKUP_ENCRYPTION_KEY` to the key, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_DAILY_TIME` and `BACKUP_TIME_ZONE` (`03:00` and `Asia/Dhaka`), and `BACKUP_KEEP_DAYS` (`30` on staging).
 
 ## Restoring
 

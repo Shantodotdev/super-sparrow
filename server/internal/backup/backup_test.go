@@ -87,7 +87,10 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
 		t.Fatal(err)
 	}
-	st := store.New(db, time.Now)
+	// 04:00 in Dhaka is 22:00 UTC the day before, so the copy must take Dhaka's date.
+	today := time.Date(2026, 3, 1, 4, 0, 0, 0, dhaka(t))
+	clock := func() time.Time { return today }
+	st := store.New(db, clock)
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -107,10 +110,9 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	bucket := newBucket(endpoint, "auto", "key-id", "secret", "bucket", time.Now)
 
 	const encryptionKey = "test-backup-encryption-key-0123456789"
-	today := time.Date(2026, 3, 1, 4, 0, 0, 0, time.UTC)
 	runner := NewRunner(Options{
 		Store: st, Bucket: bucket, EncryptionKey: encryptionKey, WorkDir: dir, KeepDays: 3, DailyAt: 3 * time.Hour,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: func() time.Time { return today },
+		TimeZone: dhaka(t), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: clock,
 	})
 
 	if err := runner.Sync(ctx); err != nil {
@@ -119,6 +121,16 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	if !runner.dailyDue(ctx) {
 		t.Fatal("the daily backup is not due after its time on a day without one")
 	}
+
+	// A failed daily backup stays due, so the next hourly sync tries it again.
+	fake.failPut = true
+	if err := runner.Daily(ctx); err == nil {
+		t.Fatal("Daily succeeded while uploads fail")
+	}
+	if !runner.dailyDue(ctx) {
+		t.Fatal("a failed daily backup is no longer due")
+	}
+	fake.failPut = false
 	if err := runner.Daily(ctx); err != nil {
 		t.Fatalf("Daily: %v", err)
 	}
@@ -191,19 +203,40 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	}
 }
 
-func TestUntilDailyAndResolveCopy(t *testing.T) {
-	runner := &Runner{dailyAt: 3*time.Hour + 30*time.Minute}
-	if got := runner.untilDaily(time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC)); got != 30*time.Minute {
+func TestDailyScheduleUsesTheTimeZone(t *testing.T) {
+	runner := &Runner{dailyAt: 3 * time.Hour, timeZone: dhaka(t)}
+
+	// 02:00 in Dhaka is an hour before the backup; 21:00 UTC is 03:00 in Dhaka.
+	if got := runner.untilDaily(time.Date(2026, 3, 1, 2, 0, 0, 0, dhaka(t))); got != time.Hour {
 		t.Errorf("before the time: %v", got)
 	}
-	if got := runner.untilDaily(time.Date(2026, 3, 1, 3, 30, 0, 0, time.UTC)); got != 24*time.Hour {
-		t.Errorf("at the time: %v", got)
+	if got := runner.untilDaily(time.Date(2026, 3, 1, 21, 0, 0, 0, time.UTC)); got != 24*time.Hour {
+		t.Errorf("at the time, given in UTC: %v", got)
+	}
+	if got := runner.untilDaily(time.Date(2026, 3, 1, 20, 30, 0, 0, time.UTC)); got != 30*time.Minute {
+		t.Errorf("half an hour before, given in UTC: %v", got)
 	}
 
+	before := &Runner{dailyAt: 3 * time.Hour, timeZone: dhaka(t), now: func() time.Time { return time.Date(2026, 3, 1, 2, 59, 0, 0, dhaka(t)) }}
+	if before.dailyDue(context.Background()) {
+		t.Error("the daily backup is due before its time")
+	}
+}
+
+func TestResolveCopy(t *testing.T) {
 	if key, _ := ResolveCopy("daily/2026-03-01"); key != "daily/sparrow-2026-03-01.db.gz.age" {
 		t.Errorf("daily copy key %q", key)
 	}
 	if _, err := ResolveCopy("daily/yesterday"); err == nil {
 		t.Error("accepted daily/yesterday")
 	}
+}
+
+func dhaka(t *testing.T) *time.Location {
+	t.Helper()
+	location, err := time.LoadLocation("Asia/Dhaka")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return location
 }

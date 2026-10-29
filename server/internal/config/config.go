@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	// The time zone database is built in, so BACKUP_TIME_ZONE works on servers without one.
+	_ "time/tzdata"
 )
 
 const (
@@ -38,7 +40,7 @@ const (
 
 // backupSettings are the settings of the backup jobs. Development needs all of them or none.
 var backupSettings = []string{
-	"BACKUP_ENCRYPTION_KEY", "BACKUP_DAILY_TIME", "BACKUP_KEEP_DAYS",
+	"BACKUP_ENCRYPTION_KEY", "BACKUP_DAILY_TIME", "BACKUP_TIME_ZONE", "BACKUP_KEEP_DAYS",
 	"R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET",
 }
 
@@ -74,8 +76,11 @@ type Config struct {
 type Backups struct {
 	// EncryptionKey encrypts every backup, and the restore command decrypts them with it.
 	EncryptionKey string
-	// DailyAt is when the daily backup runs, as time after midnight UTC.
+	// DailyAt is when the daily backup runs, as hours and minutes after midnight in TimeZone.
 	DailyAt time.Duration
+	// TimeZone is where DailyAt is read and where a daily backup's date comes from, such as
+	// Asia/Dhaka.
+	TimeZone *time.Location
 	// KeepDays is how many days of daily backups to keep.
 	KeepDays int
 	R2       R2
@@ -216,9 +221,18 @@ func loadBackups(getenv func(string) string) (*Backups, error) {
 		var at time.Time
 		at, err = time.Parse("15:04", dailyAt)
 		if err != nil {
-			err = errors.New("BACKUP_DAILY_TIME must be a UTC time such as 03:30")
+			err = errors.New("BACKUP_DAILY_TIME must be a time of day such as 03:00, in BACKUP_TIME_ZONE")
 		}
 		backups.DailyAt = time.Duration(at.Hour())*time.Hour + time.Duration(at.Minute())*time.Minute
+	}
+	problems = append(problems, err)
+
+	timeZone, err := required(getenv, "BACKUP_TIME_ZONE")
+	if err == nil {
+		backups.TimeZone, err = time.LoadLocation(timeZone)
+		if err != nil || timeZone == "Local" {
+			err = errors.New("BACKUP_TIME_ZONE must be an IANA time zone such as Asia/Dhaka")
+		}
 	}
 	problems = append(problems, err)
 

@@ -3,7 +3,8 @@
 // Both jobs take a consistent copy with VACUUM INTO, compress it with gzip, encrypt it with age
 // under the backup encryption key, and upload it. The hourly sync replaces one copy; the daily
 // backup keeps a dated copy per day and deletes those older than the configured number of days.
-// The same key decrypts the copies on restore.
+// The same key decrypts the copies on restore. A daily backup that fails is tried again with each
+// hourly sync until one succeeds that day.
 package backup
 
 import (
@@ -33,9 +34,10 @@ const (
 
 var dailyKeyPattern = regexp.MustCompile(`^daily/sparrow-(\d{4}-\d{2}-\d{2})\.db\.gz\.age$`)
 
-// DailyKey returns where the daily backup of a day is kept.
+// DailyKey returns where the daily backup of a day is kept. The date is day's own date, in
+// whatever time zone day is in.
 func DailyKey(day time.Time) string {
-	return dailyPrefix + "sparrow-" + day.UTC().Format(dateLayout) + ".db.gz.age"
+	return dailyPrefix + "sparrow-" + day.Format(dateLayout) + ".db.gz.age"
 }
 
 // Runner runs the backup jobs.
@@ -46,6 +48,7 @@ type Runner struct {
 	workDir       string
 	keepDays      int
 	dailyAt       time.Duration
+	timeZone      *time.Location
 	logger        *slog.Logger
 	now           func() time.Time
 }
@@ -60,23 +63,26 @@ type Options struct {
 	// has room for a copy of the database.
 	WorkDir  string
 	KeepDays int
-	// DailyAt is when the daily backup runs, as time after midnight UTC.
+	// DailyAt is when the daily backup runs, as hours and minutes after midnight in TimeZone.
 	DailyAt time.Duration
-	Logger  *slog.Logger
-	Now     func() time.Time
+	// TimeZone is where DailyAt is read and where each daily backup's date comes from.
+	TimeZone *time.Location
+	Logger   *slog.Logger
+	Now      func() time.Time
 }
 
 // NewRunner returns a Runner.
 func NewRunner(opts Options) *Runner {
 	return &Runner{
 		store: opts.Store, bucket: opts.Bucket, encryptionKey: opts.EncryptionKey, workDir: opts.WorkDir,
-		keepDays: opts.KeepDays, dailyAt: opts.DailyAt, logger: opts.Logger, now: opts.Now,
+		keepDays: opts.KeepDays, dailyAt: opts.DailyAt, timeZone: opts.TimeZone, logger: opts.Logger, now: opts.Now,
 	}
 }
 
 // Run syncs once at start and then every hour, and runs the daily backup at its time each day,
-// until ctx ends. A daily backup missed while the server was down runs at start. Jobs run one at a
-// time, so they never overlap.
+// until ctx ends. A daily backup that was missed while the server was down, or that failed, runs
+// at start and after each hourly sync until it succeeds. Jobs run one at a time, so they never
+// overlap.
 func (r *Runner) Run(ctx context.Context) {
 	r.Sync(ctx)
 	if r.dailyDue(ctx) {
@@ -94,6 +100,9 @@ func (r *Runner) Run(ctx context.Context) {
 			return
 		case <-syncTicker.C:
 			r.Sync(ctx)
+			if r.dailyDue(ctx) {
+				r.Daily(ctx)
+			}
 		case <-dailyTimer.C:
 			r.Daily(ctx)
 			dailyTimer.Reset(r.untilDaily(r.now()))
@@ -101,22 +110,29 @@ func (r *Runner) Run(ctx context.Context) {
 	}
 }
 
+// scheduled returns when the daily backup runs on the day of now, in the backup time zone.
+func (r *Runner) scheduled(now time.Time) time.Time {
+	local := now.In(r.timeZone)
+	return time.Date(local.Year(), local.Month(), local.Day(),
+		int(r.dailyAt/time.Hour), int(r.dailyAt%time.Hour/time.Minute), 0, 0, r.timeZone)
+}
+
 // untilDaily returns how long until the next daily backup time after now.
 func (r *Runner) untilDaily(now time.Time) time.Duration {
-	now = now.UTC()
-	next := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Add(r.dailyAt)
+	next := r.scheduled(now)
 	if !next.After(now) {
-		next = next.AddDate(0, 0, 1)
+		local := now.In(r.timeZone).AddDate(0, 0, 1)
+		next = r.scheduled(local)
 	}
 	return next.Sub(now)
 }
 
 // dailyDue reports whether today's backup time has passed without a successful daily backup
-// today, as after a restart across the backup time.
+// today, as after a restart across the backup time or after a failed run. Today is the date in
+// the backup time zone.
 func (r *Runner) dailyDue(ctx context.Context) bool {
-	now := r.now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	if now.Before(today.Add(r.dailyAt)) {
+	now := r.now()
+	if now.Before(r.scheduled(now)) {
 		return false
 	}
 
@@ -126,7 +142,7 @@ func (r *Runner) dailyDue(ctx context.Context) bool {
 		return false
 	}
 	last := status[store.BackupDaily].LastSuccess
-	return last == nil || last.StartedAt.UTC().Before(today)
+	return last == nil || last.StartedAt.In(r.timeZone).Format(dateLayout) != now.In(r.timeZone).Format(dateLayout)
 }
 
 // Sync replaces the sync copy and records the run.
@@ -137,7 +153,7 @@ func (r *Runner) Sync(ctx context.Context) error {
 // Daily uploads today's dated copy, records the run, and deletes dated copies older than the
 // number of days to keep.
 func (r *Runner) Daily(ctx context.Context) error {
-	today := r.now().UTC()
+	today := r.now().In(r.timeZone)
 	key := DailyKey(today)
 	if err := r.record(ctx, store.BackupDaily, key); err != nil {
 		return err
@@ -201,13 +217,15 @@ func (r *Runner) upload(ctx context.Context, key string) (int64, error) {
 	return r.bucket.Put(ctx, key, encrypted)
 }
 
-// prune deletes the dated copies older than the number of days to keep, counting today.
+// prune deletes the dated copies older than the number of days to keep, counting today. today is
+// in the backup time zone, as the copies' dates are.
 func (r *Runner) prune(ctx context.Context, today time.Time) error {
 	objects, err := r.bucket.List(ctx, dailyPrefix)
 	if err != nil {
 		return err
 	}
 
+	// Copies' dates are parsed as UTC midnights, so today's date is compared the same way.
 	oldest := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1-r.keepDays)
 	var problems []error
 	for _, object := range objects {

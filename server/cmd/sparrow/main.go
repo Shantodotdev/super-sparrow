@@ -268,6 +268,7 @@ func serve(ctx context.Context) error {
 			WorkDir:       filepath.Dir(cfg.DatabasePath),
 			KeepDays:      cfg.Backups.KeepDays,
 			DailyAt:       cfg.Backups.DailyAt,
+			TimeZone:      cfg.Backups.TimeZone,
 			Logger:        logger,
 			Now:           time.Now,
 		})

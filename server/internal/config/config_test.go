@@ -38,7 +38,8 @@ func productionEnv(t *testing.T) map[string]string {
 	env["WEB_DIR"] = webDir
 	env["GITHUB_WEBHOOK_SECRET"] = "a-long-enough-webhook-secret"
 	env["BACKUP_ENCRYPTION_KEY"] = "fedcba9876543210fedcba9876543210"
-	env["BACKUP_DAILY_TIME"] = "03:30"
+	env["BACKUP_DAILY_TIME"] = "03:00"
+	env["BACKUP_TIME_ZONE"] = "Asia/Dhaka"
 	env["BACKUP_KEEP_DAYS"] = "30"
 	env["R2_ACCOUNT_ID"] = "0123456789abcdef0123456789abcdef"
 	env["R2_ACCESS_KEY_ID"] = "key-id"
@@ -75,7 +76,7 @@ func TestProductionReadsEverySetting(t *testing.T) {
 		t.Errorf("web dir %q, webhook secret %q", cfg.WebDir, cfg.GitHubWebhookSecret)
 	}
 	if cfg.Backups == nil || cfg.Backups.EncryptionKey != "fedcba9876543210fedcba9876543210" ||
-		cfg.Backups.DailyAt != 3*time.Hour+30*time.Minute || cfg.Backups.KeepDays != 30 || cfg.Backups.R2.Bucket != "sparrow-backups" {
+		cfg.Backups.DailyAt != 3*time.Hour || cfg.Backups.TimeZone.String() != "Asia/Dhaka" || cfg.Backups.KeepDays != 30 || cfg.Backups.R2.Bucket != "sparrow-backups" {
 		t.Errorf("backups %+v", cfg.Backups)
 	}
 }
@@ -122,7 +123,7 @@ func TestDevelopmentNeedsAllBackupSettingsOrNone(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load accepted half of the backup settings")
 	}
-	for _, name := range []string{"BACKUP_ENCRYPTION_KEY", "BACKUP_DAILY_TIME", "BACKUP_KEEP_DAYS", "R2_ACCOUNT_ID"} {
+	for _, name := range []string{"BACKUP_ENCRYPTION_KEY", "BACKUP_DAILY_TIME", "BACKUP_TIME_ZONE", "BACKUP_KEEP_DAYS", "R2_ACCOUNT_ID"} {
 		if !strings.Contains(err.Error(), name+" is required") {
 			t.Errorf("error does not name %s:\n%v", name, err)
 		}
@@ -156,6 +157,7 @@ func TestLoadRejectsMalformedSettings(t *testing.T) {
 		"GITHUB_WEBHOOK_SECRET": "short",
 		"BACKUP_ENCRYPTION_KEY": "too-short",
 		"BACKUP_DAILY_TIME":     "25:00",
+		"BACKUP_TIME_ZONE":      "Mars/Olympus",
 		"BACKUP_KEEP_DAYS":      "0",
 		"R2_ACCOUNT_ID":         "not-an-account",
 	}
