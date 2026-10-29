@@ -14,7 +14,7 @@ desktop/src-tauri/target/
 desktop/src-tauri/gen/
 
 # Local database, sync, and backup files
-data/
+/data/
 *.db
 *.db-shm
 *.db-wal
