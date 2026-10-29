@@ -67,7 +67,7 @@ func newTeam(t *testing.T) *team {
 	member := got(tm.store.CreateHuman(ctx, tm.system, NewHuman{DisplayName: "Max Member", Email: "max@example.com", Role: RoleMember})).must(t)
 	tm.owner, tm.member = Caller{ActorID: owner.ID}, Caller{ActorID: member.ID}
 
-	agent := got(tm.store.CreateAgent(ctx, tm.member, NewAgent{DisplayName: "Claude Code (Max)", AgentName: "claude-code"})).must(t)
+	agent := got(tm.store.CreateAgent(ctx, tm.member, NewAgent{DisplayName: "Claude Code", AgentName: "claude-code"})).must(t)
 	tm.agent = Caller{ActorID: agent.ID, ReportedModel: "claude-test-model"}
 
 	return tm

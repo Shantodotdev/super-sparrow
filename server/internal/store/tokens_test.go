@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +27,7 @@ func TestTokensShareOneAgentPerTool(t *testing.T) {
 	}
 
 	agent := got(tm.store.GetActor(tm.ctx, first.AgentActorID)).must(t)
-	if agent.Kind != ActorAgent || agent.OwnerActorID != tm.member.ActorID || agent.DisplayName != "Codex (Max Member)" {
+	if agent.Kind != ActorAgent || agent.OwnerActorID != tm.member.ActorID || agent.DisplayName != "Codex" {
 		t.Errorf("agent = %+v", agent)
 	}
 
@@ -124,10 +123,11 @@ func TestDisablingAPersonRevokesTheirTokens(t *testing.T) {
 	wantErr(t, err, ErrForbidden)
 }
 
-func TestAgentDisplayNameFitsTheLimit(t *testing.T) {
-	name := agentDisplayName("claude-code", strings.Repeat("é", maxNameLength))
-	if count := len([]rune(name)); count != maxNameLength {
-		t.Errorf("display name has %d characters, want %d", count, maxNameLength)
+func TestAgentDisplayNameIsTheTool(t *testing.T) {
+	for agentName, want := range map[string]string{"claude-code": "Claude Code", "codex": "Codex", "aider": "aider"} {
+		if name := agentDisplayName(agentName); name != want {
+			t.Errorf("agentDisplayName(%q) = %q, want %q", agentName, name, want)
+		}
 	}
 }
 

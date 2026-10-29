@@ -225,7 +225,7 @@ func TestTokensAuthenticateAsTheAgent(t *testing.T) {
 	}
 
 	checked, err := f.service.AuthenticateToken(f.ctx, created.Secret)
-	if err != nil || checked.Actor.ID != created.Token.AgentActorID || checked.Actor.DisplayName != "Claude Code (Olive Owner)" {
+	if err != nil || checked.Actor.ID != created.Token.AgentActorID || checked.Actor.DisplayName != "Claude Code" {
 		t.Fatalf("AuthenticateToken = %+v, %v", checked.Actor, err)
 	}
 

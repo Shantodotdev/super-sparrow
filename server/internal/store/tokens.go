@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	"unicode/utf8"
 )
 
 const (
@@ -43,8 +42,8 @@ type AuthenticatedToken struct {
 }
 
 // CreateAgentToken creates a token for the caller's agent for input.AgentName, adding that agent
-// the first time, named after the tool and its person, such as "Claude Code (Shanto)". Only a
-// person can create tokens, and only for their own agents.
+// the first time, named after the tool, such as "Claude Code", with the caller as its owner. Only
+// a person can create tokens, and only for their own agents.
 func (s *Store) CreateAgentToken(ctx context.Context, by Caller, input NewAgentToken) (AgentToken, error) {
 	if !agentNamePattern.MatchString(input.AgentName) {
 		return AgentToken{}, invalid("agent_name", "must be lowercase letters, digits, and dashes, such as claude-code")
@@ -104,26 +103,20 @@ func agentFor(w *writeTx, agentName string) (Actor, error) {
 	}
 
 	agent = Actor{ID: newID(), Kind: ActorAgent, AgentName: agentName, OwnerActorID: w.caller.ID,
-		DisplayName: agentDisplayName(agentName, w.caller.DisplayName)}
+		DisplayName: agentDisplayName(agentName)}
 	if err := insertAgent(w, &agent); err != nil {
 		return Actor{}, err
 	}
 	return agent, nil
 }
 
-// agentDisplayName names an agent after its tool and its person, such as "Claude Code (Shanto)",
-// shortening the person's name to keep within the display name limit.
-func agentDisplayName(agentName, ownerName string) string {
-	tool, known := toolNames[agentName]
-	if !known {
-		tool = agentName
+// agentDisplayName names an agent after its tool, such as "Claude Code". The owner is not part of
+// the name; the agent's owner_actor_id says whose agent it is, and each view shows the two apart.
+func agentDisplayName(agentName string) string {
+	if tool, known := toolNames[agentName]; known {
+		return tool
 	}
-
-	room := maxNameLength - utf8.RuneCountInString(tool) - len(" ()")
-	if owner := []rune(ownerName); len(owner) > room {
-		ownerName = string(owner[:room])
-	}
-	return tool + " (" + ownerName + ")"
+	return agentName
 }
 
 // RenewAgentToken extends one of the caller's own tokens for another TokenLifetime from now,

@@ -347,7 +347,7 @@ func TestAgentTokensActAsTheirAgent(t *testing.T) {
 		Actor actorView `json:"actor"`
 	}
 	decode(t, me, &body)
-	if body.Actor.Kind != "agent" || body.Actor.OwnerActorID != f.owner.ID || body.Actor.DisplayName != "Claude Code (Olive Owner)" {
+	if body.Actor.Kind != "agent" || body.Actor.OwnerActorID != f.owner.ID || body.Actor.DisplayName != "Claude Code" {
 		t.Fatalf("token acts as %+v", body.Actor)
 	}
 

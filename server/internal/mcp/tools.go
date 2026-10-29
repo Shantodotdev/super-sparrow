@@ -324,10 +324,10 @@ type findingOutput struct {
 	CommitSHA      string          `json:"commit_sha,omitempty"`
 	DecisionReason string          `json:"decision_reason,omitempty"`
 	FixedInCommit  string          `json:"fixed_in_commit,omitempty"`
-	FoundBy        string          `json:"found_by"`
-	DecidedBy      string          `json:"decided_by,omitempty"`
-	FixedBy        string          `json:"fixed_by,omitempty"`
-	VerifiedBy     string          `json:"verified_by,omitempty"`
+	FoundBy        *actorOutput    `json:"found_by"`
+	DecidedBy      *actorOutput    `json:"decided_by,omitempty"`
+	FixedBy        *actorOutput    `json:"fixed_by,omitempty"`
+	VerifiedBy     *actorOutput    `json:"verified_by,omitempty"`
 	FollowUpIssue  string          `json:"follow_up_issue,omitempty"`
 	URL            string          `json:"url"`
 	Comments       []commentOutput `json:"comments"`
@@ -335,12 +335,12 @@ type findingOutput struct {
 
 // commentOutput is one comment in a discussion. ReplyTo is the ID of the comment it answers.
 type commentOutput struct {
-	ID        string    `json:"id"`
-	Author    string    `json:"author"`
-	ReplyTo   string    `json:"reply_to,omitempty"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
-	Edited    bool      `json:"edited,omitempty"`
+	ID        string       `json:"id"`
+	Author    *actorOutput `json:"author"`
+	ReplyTo   string       `json:"reply_to,omitempty"`
+	Body      string       `json:"body"`
+	CreatedAt time.Time    `json:"created_at"`
+	Edited    bool         `json:"edited,omitempty"`
 }
 
 func (s *Server) issueURL(issue store.Issue) string {
@@ -395,30 +395,52 @@ func (s *Server) newRoundOutput(issue store.Issue, round store.ReviewRound, find
 	return output
 }
 
-// actorNames looks up display names, once per actor per tool call.
-type actorNames struct {
-	store *store.Store
-	names map[string]string
+// actorOutput names who did something. Owner is the person an agent works for, and is empty for
+// people, so an agent's tool and its person stay two separate facts.
+type actorOutput struct {
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`
+	Owner string `json:"owner,omitempty"`
 }
 
-func (n *actorNames) name(ctx context.Context, id string) (string, error) {
+// actorNames looks up actors, once per actor per tool call.
+type actorNames struct {
+	store  *store.Store
+	actors map[string]*actorOutput
+}
+
+func newActorNames(st *store.Store) *actorNames {
+	return &actorNames{store: st, actors: map[string]*actorOutput{}}
+}
+
+// name returns the actor with id, or nil when id is empty.
+func (n *actorNames) name(ctx context.Context, id string) (*actorOutput, error) {
 	if id == "" {
-		return "", nil
+		return nil, nil
 	}
-	if name, ok := n.names[id]; ok {
-		return name, nil
+	if output, ok := n.actors[id]; ok {
+		return output, nil
 	}
 
 	actor, err := n.store.GetActor(ctx, id)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	n.names[id] = actor.DisplayName
-	return actor.DisplayName, nil
+	output := &actorOutput{Name: actor.DisplayName, Kind: string(actor.Kind)}
+	if actor.OwnerActorID != "" {
+		owner, err := n.name(ctx, actor.OwnerActorID)
+		if err != nil {
+			return nil, err
+		}
+		output.Owner = owner.Name
+	}
+
+	n.actors[id] = output
+	return output, nil
 }
 
 func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding) ([]findingOutput, error) {
-	names := &actorNames{store: s.store, names: map[string]string{}}
+	names := newActorNames(s.store)
 	outputs := make([]findingOutput, 0, len(findings))
 
 	for _, f := range findings {
@@ -431,7 +453,7 @@ func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findi
 
 		var err error
 		for _, field := range []struct {
-			target *string
+			target **actorOutput
 			id     string
 		}{{&output.FoundBy, f.FoundByActorID}, {&output.DecidedBy, f.DecidedByActorID}, {&output.FixedBy, f.FixedByActorID}, {&output.VerifiedBy, f.VerifiedByActorID}} {
 			if *field.target, err = names.name(ctx, field.id); err != nil {
@@ -811,7 +833,7 @@ func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
 	if err != nil {
 		return nil, err
 	}
-	outputs, err := newCommentOutputs(ctx, &actorNames{store: s.store, names: map[string]string{}}, comments)
+	outputs, err := newCommentOutputs(ctx, newActorNames(s.store), comments)
 	if err != nil {
 		return nil, err
 	}

@@ -140,13 +140,13 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		t.Fatalf("round %+v", round)
 	}
 	var finding struct {
-		Finding string `json:"finding"`
-		FoundBy string `json:"found_by"`
+		Finding string             `json:"finding"`
+		FoundBy actorOutputForTest `json:"found_by"`
 	}
 	a.mustTool("add_finding", map[string]any{
 		"issue_key": "WP-1", "severity": "blocking", "title": "Race", "problem": "P", "fix": "F", "file_path": "a.go", "line": 4,
 	}, &finding)
-	if finding.Finding != "R1" || finding.FoundBy != "Claude Code (Max Member)" {
+	if finding.Finding != "R1" || finding.FoundBy != (actorOutputForTest{Name: "Claude Code", Kind: "agent", Owner: "Max Member"}) {
 		t.Fatalf("finding %+v", finding)
 	}
 	a.mustTool("add_comment", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1", "body": "Seen in CI."}, nil)
@@ -175,13 +175,13 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		Comments []commentOutputForTest `json:"comments"`
 	}
 	a.mustTool("list_comments", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1"}, &thread)
-	if thread.About != "WP-1 round 1 R1" || len(thread.Comments) != 2 {
+	if thread.About != "WP-1 round 1 R1" || len(thread.Comments) != 2 || thread.Comments[1].Author != (actorOutputForTest{Name: "Max Member", Kind: "human"}) {
 		t.Fatalf("finding thread %+v", thread)
 	}
 	personComment := thread.Comments[1]
 	a.mustTool("add_comment", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1", "parent_comment_id": personComment.ID, "body": "Will do."}, nil)
 	a.mustTool("list_comments", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1"}, &thread)
-	if reply := thread.Comments[2]; reply.ReplyTo != personComment.ID || reply.Author != "Claude Code (Max Member)" {
+	if reply := thread.Comments[2]; reply.ReplyTo != personComment.ID || reply.Author != (actorOutputForTest{Name: "Claude Code", Kind: "agent", Owner: "Max Member"}) {
 		t.Fatalf("reply %+v", reply)
 	}
 	a.mustTool("list_comments", map[string]any{"issue_key": "WP-1"}, &thread)
@@ -243,11 +243,17 @@ func TestMCPToolErrorsNameTheArgument(t *testing.T) {
 	}
 }
 
+type actorOutputForTest struct {
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`
+	Owner string `json:"owner"`
+}
+
 type commentOutputForTest struct {
-	ID      string `json:"id"`
-	Author  string `json:"author"`
-	ReplyTo string `json:"reply_to"`
-	Body    string `json:"body"`
+	ID      string             `json:"id"`
+	Author  actorOutputForTest `json:"author"`
+	ReplyTo string             `json:"reply_to"`
+	Body    string             `json:"body"`
 }
 
 type issueOutputForTest struct {
