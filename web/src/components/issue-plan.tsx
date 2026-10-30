@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiWrite } from "../lib/api";
 import type { ReactNode } from "react";
 import { planLines, type PlanLine } from "../lib/checklist";
 import type { ChecklistItem, Issue } from "../lib/types";
@@ -33,11 +36,63 @@ function hasContent(line: PlanLine): boolean {
  * rendered as HTML, so nothing in it can run; "## " headings become section titles.
  */
 export function IssuePlan({ issue }: { issue: Issue }) {
+  const client = useQueryClient();
+  const [draft, setDraft] = useState<{ plan: string; revision: number } | null>(null);
+  const save = useMutation({
+    mutationFn: () =>
+      apiWrite(`/api/issues/${issue.key}`, "PATCH", {
+        plan: draft?.plan,
+        plan_revision: draft?.revision,
+      }),
+    onSuccess: async () => {
+      setDraft(null);
+      await client.invalidateQueries();
+    },
+  });
+  const editor = draft ? (
+    <form
+      className="grid gap-3 py-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <label>
+        Plan
+        <textarea
+          aria-label="Edit plan"
+          rows={14}
+          value={draft.plan}
+          onChange={(event) => setDraft({ ...draft, plan: event.target.value })}
+        />
+      </label>
+      {save.error && <p role="alert">{save.error.message}</p>}
+      <button disabled={save.isPending}>Save plan</button>
+      <button type="button" onClick={() => setDraft(null)}>
+        Cancel
+      </button>
+    </form>
+  ) : (
+    <button
+      className="mt-4"
+      onClick={() => {
+        save.reset();
+        setDraft({ plan: issue.plan ?? "", revision: issue.plan_revision });
+      }}
+    >
+      Edit plan
+    </button>
+  );
   const setChecklistItem = useSetChecklistItem();
   const plan = issue.plan ?? "";
 
   if (!plan.trim()) {
-    return <p className="mt-[24px] text-[#a2aec2]">No plan added yet.</p>;
+    return (
+      <>
+        {editor}
+        <p className="mt-[24px] text-[#a2aec2]">No plan added yet.</p>
+      </>
+    );
   }
 
   const renderLines = (lines: PlanLine[]): ReactNode[] =>
@@ -57,6 +112,7 @@ export function IssuePlan({ issue }: { issue: Issue }) {
 
   return (
     <div className="max-w-[850px] [&_h2]:mb-[8px] [&_p]:leading-[1.55] [&_p]:text-[#b4c1d3] [&_section]:mt-[24px] [&_section]:grid [&_section]:grid-cols-[38px_1fr] [&_section]:gap-[10px]">
+      {editor}
       {sections(planLines(plan)).map((section, position) => {
         const [icon, color] = headingIcons[section.heading.toLowerCase()] ?? [
           "file-text",

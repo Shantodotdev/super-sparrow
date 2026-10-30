@@ -1,3 +1,6 @@
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { apiWrite } from "../lib/api";
+import { projectsQuery } from "../queries/project";
 import { useState } from "react";
 import { Link, useMatches } from "@tanstack/react-router";
 import { Icon } from "./icon";
@@ -6,6 +9,12 @@ import { useToast } from "./toast";
 
 /** The main navigation. The highlighted item comes from the `section` in the route's static data. */
 export function Sidebar() {
+  const client = useQueryClient();
+  const { data: projects = [] } = useQuery(projectsQuery);
+  const [creating, setCreating] = useState(false);
+  const [key, setKey] = useState("");
+  const [name, setName] = useState("");
+  const [pending, setPending] = useState(false);
   const section = useMatches({ select: (matches) => matches.at(-1)?.staticData.section });
   const { notify } = useToast();
   const [collapsed, setCollapsed] = useState(false);
@@ -19,6 +28,37 @@ export function Sidebar() {
           alt=""
         />
       </div>
+      {creating && (
+        <form
+          className="grid gap-2 p-2"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (pending) return;
+            setPending(true);
+            try {
+              await apiWrite("/api/projects", "POST", { key, name });
+              await client.invalidateQueries();
+              setCreating(false);
+              setKey("");
+              setName("");
+            } catch (error) {
+              notify(error instanceof Error ? error.message : "Could not create project");
+            } finally {
+              setPending(false);
+            }
+          }}
+        >
+          <label>
+            Project key
+            <input required value={key} onChange={(event) => setKey(event.target.value)} />
+          </label>
+          <label>
+            Project name
+            <input required value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <button disabled={pending}>Create project</button>
+        </form>
+      )}
       <nav className="mt-[32px]" aria-label="Main navigation">
         <NavItem to="/issues" icon="circle-user-round" label="My issues" />
         <NavItem to="/activity" icon="activity" label="Activity" active={section === "activity"} />
@@ -27,7 +67,7 @@ export function Sidebar() {
           <button
             className="float-right border-0 bg-transparent text-[#9ba9be]"
             aria-label="Add project"
-            onClick={() => notify("Project creation is a preview")}
+            onClick={() => setCreating(!creating)}
           >
             <Icon name="plus" />
           </button>
@@ -40,7 +80,7 @@ export function Sidebar() {
             name="folder"
             className="project-logo text-[20px] text-[#7890ff] max-[700px]:text-[20px]"
           />{" "}
-          <strong>Sparrow</strong>
+          <strong>All projects ({projects.length})</strong>
           <Icon
             name={collapsed ? "chevron-right" : "chevron-down"}
             className="ml-auto text-[#a5b1c2] max-[700px]:hidden"
@@ -66,10 +106,10 @@ export function Sidebar() {
       </nav>
       <div className="mt-auto">
         <Link
-          to="/signin"
+          to="/settings/sessions"
           className="text-button mx-[12px] mt-0 mb-[8px] border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
         >
-          Sign-in preview
+          Signed-in devices
         </Link>
         <NavItem to="/settings" icon="settings" label="Settings" active={section === "settings"} />
       </div>

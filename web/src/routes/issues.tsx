@@ -13,14 +13,15 @@ import { issueStatusLabel, issueStatuses } from "../lib/issue-status";
 import type { IssueStatus } from "../lib/types";
 import { validateIssuesSearch, type IssuesSearch } from "../lib/search";
 import { issuesQuery, useCreateIssue } from "../queries/issues";
-import { actorsQuery, labelsQuery, milestonesQuery } from "../queries/project";
-import { loadQuery } from "../queries/seeded";
+import { actorsQuery, labelsQuery, milestonesQuery, projectsQuery } from "../queries/project";
+import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/issues")({
   staticData: { section: "issues" },
   validateSearch: validateIssuesSearch,
   loader: async ({ context }) => {
     await Promise.all([
+      loadQuery(context.queryClient, projectsQuery),
       loadQuery(context.queryClient, issuesQuery),
       loadQuery(context.queryClient, actorsQuery),
       loadQuery(context.queryClient, labelsQuery),
@@ -38,6 +39,7 @@ function IssuesPage() {
   const search = Route.useSearch();
   const { view } = search;
   const navigate = Route.useNavigate();
+  const { data: projects } = useSuspenseQuery(projectsQuery);
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const { data: actors } = useSuspenseQuery(actorsQuery);
   const { data: labels } = useSuspenseQuery(labelsQuery);
@@ -61,8 +63,12 @@ function IssuesPage() {
   const milestoneOptions = milestones.map((milestone) => ({
     value: milestone.id,
     label: milestone.name,
+    projectId: milestone.project_id,
   }));
-  const filtered = filterIssues(issues, search);
+  const filtered = filterIssues(
+    issues.filter((i) => !search.project || i.project_key === search.project),
+    search,
+  );
 
   /** Sets one filter in the URL; the "All" choice removes it. Filtering replaces the history entry. */
   const setFilter = (name: Exclude<keyof IssuesSearch, "view">, value: string) =>
@@ -118,7 +124,7 @@ function IssuesPage() {
         <div className="px-[26px] pt-[24px] pb-0 max-[700px]:px-[16px] max-[700px]:pt-[16px] max-[700px]:pb-0">
           <div className="mb-[16px] flex items-center justify-between gap-[16px] [&_.breadcrumb]:mb-0">
             <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
-              Projects / Sparrow
+              Projects / Issues
             </div>
           </div>
           <div className="mb-0 flex flex-nowrap items-center gap-[12px] pb-[20px] max-[700px]:flex-wrap">
@@ -128,6 +134,12 @@ function IssuesPage() {
               value={search.q ?? ""}
               onChange={(event) => setFilter("q", event.target.value)}
               aria-label="Search issues"
+            />
+            <Filter
+              name="Project"
+              value={search.project ?? all}
+              onChange={(value) => setFilter("project", value)}
+              options={projects.map((p) => ({ value: p.key, label: p.name }))}
             />
             <Filter
               name="Status"

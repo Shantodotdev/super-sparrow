@@ -29,16 +29,26 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
   const { data: allComments } = useSuspenseQuery(commentsQuery);
   const actor = useActor();
   const addComment = useAddComment();
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   const [body, setBody] = useState("");
 
   const comments = allComments.filter((c) => c.issue_id === issueId && c.finding_id === findingId);
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!body.trim()) return;
+    if (!body.trim() || pending) return;
 
-    addComment(issueId, findingId, body.trim());
-    setBody("");
+    setPending(true);
+    try {
+      await addComment(issueId, findingId, body.trim());
+      setBody("");
+      setError("");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not add comment");
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -61,6 +71,7 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
           </div>
         );
       })}
+      {error && <p role="alert">{error}</p>}
       <form className="mt-[16px] flex gap-[8px]" onSubmit={submit}>
         <input
           aria-label="Add a comment"
@@ -70,7 +81,7 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
         />
         <button
           className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b]"
-          disabled={!body.trim()}
+          disabled={pending || !body.trim()}
         >
           Send
         </button>

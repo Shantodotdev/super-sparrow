@@ -8,12 +8,13 @@ import { IssueProperties } from "../components/issue-properties";
 import { NotFoundState } from "../components/not-found-state";
 import { ReviewRoundList } from "../components/review-round-list";
 import { Tabs } from "../components/tabs";
+import { isUnresolved } from "../lib/finding-status";
 import { slugify } from "../lib/format";
 import { statusIcon } from "../lib/issue-status";
 import { validateIssueSearch, type IssueTab } from "../lib/search";
 import type { ActivityEvent, Finding, Issue, ReviewRound } from "../lib/types";
 import { findingsQuery } from "../queries/findings";
-import { issuesQuery } from "../queries/issues";
+import { issueQuery, issuesQuery } from "../queries/issues";
 import {
   activityQuery,
   actorsQuery,
@@ -22,13 +23,14 @@ import {
   milestonesQuery,
   reviewRoundsQuery,
 } from "../queries/project";
-import { loadQuery } from "../queries/seeded";
+import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/$issue")({
   staticData: { section: "issues" },
   validateSearch: validateIssueSearch,
-  loader: async ({ context }) => {
+  loader: async ({ context, params }) => {
     await Promise.all([
+      context.queryClient.fetchQuery(issueQuery(params.issue)),
       loadQuery(context.queryClient, issuesQuery),
       loadQuery(context.queryClient, findingsQuery),
       loadQuery(context.queryClient, reviewRoundsQuery),
@@ -51,12 +53,11 @@ const tabs: { id: IssueTab; label: string }[] = [
 /** An issue's plan, review rounds, activity, and comments; the selected tab lives in the URL. */
 function IssuePage() {
   const { issue: issueKey } = Route.useParams();
-  const { data: issues } = useSuspenseQuery(issuesQuery);
+  const { data: issue } = useSuspenseQuery(issueQuery(issueKey));
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
   const { data: events } = useSuspenseQuery(activityQuery);
 
-  const issue = issues.find((item) => item.key === issueKey);
   if (!issue) {
     return (
       <NotFoundState
@@ -126,7 +127,26 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             </Link>
           ))}
         </Tabs>
-        {tab === "plan" && <IssuePlan issue={issue} />}
+        {tab === "plan" && (
+          <>
+            <IssuePlan issue={issue} />
+            <section className="mt-8">
+              <h2>Open findings</h2>
+              {findings.filter(isUnresolved).length === 0 && <p>No unresolved findings.</p>}
+              {findings.filter(isUnresolved).map((finding) => (
+                <Link
+                  className="mt-3 block text-[#719bff]"
+                  key={finding.id}
+                  to="/$issue/reviews/$round"
+                  params={{ issue: issue.key, round: String(finding.round) }}
+                  search={{ finding: finding.label }}
+                >
+                  {finding.label} · {finding.title}
+                </Link>
+              ))}
+            </section>
+          </>
+        )}
         {tab === "rounds" && (
           <div className="px-0 py-[20px]">
             <ReviewRoundList issue={issue} rounds={rounds} findings={findings} />

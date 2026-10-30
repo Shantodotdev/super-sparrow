@@ -59,7 +59,7 @@ export type Issue = {
   checklist_progress: { done: number; total: number };
   status: IssueStatus;
   /** Not in the API yet; see IssuePriority. */
-  priority: IssuePriority;
+  priority?: IssuePriority;
   parent_issue_id: string;
   milestone_id: string;
   assignee_actor_id: string;

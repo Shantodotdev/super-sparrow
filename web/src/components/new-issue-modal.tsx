@@ -2,33 +2,34 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "./icon";
 import { Select } from "./select";
 import { Modal } from "./modal";
-import { issuePriorities, issuePriorityLabel } from "../lib/issue-status";
-import type { IssuePriority, IssueStatus, Label } from "../lib/types";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { projectsQuery } from "../queries/project";
+import type { IssueStatus, Label } from "../lib/types";
 
 /** A new issue's fields; assigneeId and milestoneId are "" for none, as the API takes them. */
 export type NewIssueValues = {
   title: string;
   plan: string;
   status: IssueStatus;
-  priority: IssuePriority;
+  projectKey: string;
   assigneeId: string;
   milestoneId: string;
   labelIds: string[];
 };
 
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; projectId?: string };
 
 type NewIssueModalProps = {
   statuses: Option[];
   assignees: Option[];
   milestones: Option[];
   labels: Label[];
-  onCreate: (values: NewIssueValues) => void;
+  onCreate: (values: NewIssueValues) => Promise<unknown>;
   onClose: () => void;
   open: boolean;
 };
 
-/** Collects the fields for a new issue in the local frontend preview. */
+/** Collects the fields for a new issue to persist through the Go API. */
 export function NewIssueModal({
   statuses,
   assignees,
@@ -41,7 +42,10 @@ export function NewIssueModal({
   const [title, setTitle] = useState("");
   const [plan, setPlan] = useState("");
   const [status, setStatus] = useState<IssueStatus>("backlog");
-  const [priority, setPriority] = useState<IssuePriority>("medium");
+  const { data: projects } = useSuspenseQuery(projectsQuery);
+  const [projectKey, setProjectKey] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [milestoneId, setMilestoneId] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
@@ -49,14 +53,17 @@ export function NewIssueModal({
   const [createMore, setCreateMore] = useState(false);
   const labelMenu = useRef<HTMLDivElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
-  const labelNames = new Map(labels.map((label) => [label.id, label.name]));
+  const projectLabels = labels.filter(
+    (l) => l.project_id === projects.find((p) => p.key === projectKey)?.id,
+  );
+  const labelNames = new Map(projectLabels.map((label) => [label.id, label.name]));
 
   useEffect(() => {
     if (!open) return;
     setTitle("");
     setPlan("");
     setStatus("backlog");
-    setPriority("medium");
+
     setAssigneeId("");
     setMilestoneId("");
     setSelectedLabels([]);
@@ -73,31 +80,39 @@ export function NewIssueModal({
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [labelsOpen]);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!title.trim()) return;
-    onCreate({
-      title: title.trim(),
-      plan: plan.trim(),
-      status,
-      priority,
-      assigneeId,
-      milestoneId,
-      labelIds: selectedLabels,
-    });
-    if (!createMore) {
-      onClose();
-      return;
+    if (!title.trim() || !projectKey || pending) return;
+    setPending(true);
+    setError("");
+    try {
+      await onCreate({
+        title: title.trim(),
+        plan: plan.trim(),
+        status,
+        projectKey,
+        assigneeId,
+        milestoneId,
+        labelIds: selectedLabels,
+      });
+      if (!createMore) {
+        onClose();
+        return;
+      }
+      setTitle("");
+      setPlan("");
+      setStatus("backlog");
+
+      setAssigneeId("");
+      setMilestoneId("");
+      setSelectedLabels([]);
+      setLabelsOpen(false);
+      titleInput.current?.focus();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not create issue");
+    } finally {
+      setPending(false);
     }
-    setTitle("");
-    setPlan("");
-    setStatus("backlog");
-    setPriority("medium");
-    setAssigneeId("");
-    setMilestoneId("");
-    setSelectedLabels([]);
-    setLabelsOpen(false);
-    titleInput.current?.focus();
   };
 
   return (
@@ -109,6 +124,28 @@ export function NewIssueModal({
       labelledBy="new-issue-heading"
     >
       <form onSubmit={submit}>
+        <label>
+          Project
+          <select
+            required
+            value={projectKey}
+            onChange={(event) => {
+              setProjectKey(event.target.value);
+              setAssigneeId("");
+              setMilestoneId("");
+              setSelectedLabels([]);
+            }}
+          >
+            <option value="">Choose a project</option>
+            {projects.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {error && <p role="alert">{error}</p>}
+        {pending && <p role="status">Saving…</p>}
         <div className="flex items-center gap-[8px] text-[#a5a8b1] [&_>_.icon]:h-4 [&_>_.icon]:w-4 [&_h2]:m-0 [&_h2]:text-[14px] [&_h2]:font-medium [&_h2]:text-[#e7e8ec]">
           <span className="inline-flex items-center gap-[6px] rounded-full border border-[#36383e] bg-[#2a2c31] px-[9px] py-[5px] text-[12px] whitespace-nowrap text-[#d6d7dc] [&_.icon]:h-4 [&_.icon]:w-4">
             <Icon name="folder" /> Sparrow
@@ -144,17 +181,6 @@ export function NewIssueModal({
         <div className="flex flex-wrap gap-[6px]">
           <Select
             variant="chip"
-            icon="triangle-alert"
-            label="Priority"
-            value={priority}
-            onChange={(value) => setPriority(value as IssuePriority)}
-            options={issuePriorities.map((item) => ({
-              value: item,
-              label: issuePriorityLabel[item],
-            }))}
-          />
-          <Select
-            variant="chip"
             icon="circle-dashed"
             label="Status"
             value={status}
@@ -175,7 +201,12 @@ export function NewIssueModal({
             label="Milestone"
             value={milestoneId}
             onChange={setMilestoneId}
-            options={[{ value: "", label: "Milestone" }, ...milestones]}
+            options={[
+              { value: "", label: "Milestone" },
+              ...milestones.filter(
+                (m) => m.projectId === projects.find((p) => p.key === projectKey)?.id,
+              ),
+            ]}
           />
           <div
             className="relative"
@@ -202,7 +233,7 @@ export function NewIssueModal({
                 className="absolute top-[calc(100%+6px)] left-0 z-30 max-h-[240px] w-[190px] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-[5px] shadow-[0_12px_28px_#0009] [&_.icon]:h-4 [&_.icon]:w-4 [&_.icon]:text-[#7896ff] [&_button]:flex [&_button]:w-full [&_button]:items-center [&_button]:justify-between [&_button]:rounded-[6px] [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-[9px] [&_button]:py-[8px] [&_button]:text-left [&_button]:text-[#c7cfdb] [&_button:focus-visible]:bg-[#283140] [&_button:hover]:bg-[#283140]"
                 aria-label="Choose labels"
               >
-                {labels.map(({ id, name }) => (
+                {projectLabels.map(({ id, name }) => (
                   <button
                     type="button"
                     key={id}
@@ -250,7 +281,7 @@ export function NewIssueModal({
           </label>
           <button
             className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"
-            disabled={!title.trim()}
+            disabled={pending || !title.trim() || !projectKey}
           >
             Create issue
           </button>

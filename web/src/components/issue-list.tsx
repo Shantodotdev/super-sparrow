@@ -1,13 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { slugify } from "../lib/format";
-import {
-  issuePriorityLabel,
-  issueStatusLabel,
-  issueStatuses,
-  statusIcon,
-} from "../lib/issue-status";
-import type { Issue, IssuePriority, IssueStatus } from "../lib/types";
+import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
+import type { Issue, IssueStatus } from "../lib/types";
 import { useActor } from "../queries/project";
 import { Avatar } from "./avatar";
 import { useActorTitle } from "./person";
@@ -21,13 +16,6 @@ const groupBackground: Record<IssueStatus, string> = {
   backlog: "bg-[#292c30]",
   done: "bg-[#23302a]",
   canceled: "bg-[#27292c]",
-};
-
-const priorityStyles: Record<IssuePriority, string> = {
-  urgent: "text-[#ff8585] [&>span]:opacity-100",
-  high: "text-[#f2ad67] [&>span]:opacity-22 [&>span:nth-child(-n+3)]:opacity-100",
-  medium: "text-[#d8c66d] [&>span]:opacity-22 [&>span:nth-child(-n+2)]:opacity-100",
-  low: "text-[#9ba9bc] [&>span]:opacity-22 [&>span:first-child]:opacity-100",
 };
 
 type IssueListProps = {
@@ -85,17 +73,7 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
                     to="/$issue"
                     params={{ issue: issue.key }}
                   >
-                    <span
-                      className={`inline-flex h-[16px] w-[18px] items-end gap-[2px] [&>span]:flex-[0_0_3px] [&>span]:rounded-t-[2px] [&>span]:bg-current [&>span:nth-child(1)]:h-[4px] [&>span:nth-child(2)]:h-2 [&>span:nth-child(3)]:h-[11px] [&>span:nth-child(4)]:h-[15px] ${priorityStyles[issue.priority]}`}
-                      role="img"
-                      aria-label={`${issuePriorityLabel[issue.priority]} priority`}
-                      title={`${issuePriorityLabel[issue.priority]} priority`}
-                    >
-                      <span aria-hidden="true" />
-                      <span aria-hidden="true" />
-                      <span aria-hidden="true" />
-                      <span aria-hidden="true" />
-                    </span>
+                    <Icon name={statusIcon[issue.status]} />
                     <span className="flex items-center gap-4 text-[14px] text-[#aebed4]">
                       {issue.key}
                     </span>
