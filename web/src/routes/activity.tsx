@@ -66,9 +66,6 @@ function ActivityPage() {
             }
             options={actorOptions}
           />
-          <div className="rounded-[6px] border border-[#292e38] p-[12px]">
-            Project &nbsp; Sparrow
-          </div>
         </div>
         {days.length === 0 && <p className="muted text-[#a2aec2]">No activity yet.</p>}
         {days.map(({ day, events: dayEvents }) => (

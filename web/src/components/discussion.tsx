@@ -1,3 +1,4 @@
+import { Input } from "./input";
 import { useState, type FormEvent } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { formatDate } from "../lib/format";
@@ -73,7 +74,7 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
       })}
       {error && <p role="alert">{error}</p>}
       <form className="mt-[16px] flex gap-[8px]" onSubmit={submit}>
-        <input
+        <Input
           aria-label="Add a comment"
           value={body}
           onChange={(event) => setBody(event.target.value)}

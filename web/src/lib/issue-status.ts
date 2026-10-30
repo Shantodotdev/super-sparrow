@@ -29,6 +29,15 @@ export const statusIcon: Record<IssueStatus, IconName> = {
   canceled: "circle-x",
 };
 
+export const statusIconColor: Record<IssueStatus, string> = {
+  in_review: "text-[#a574ff]",
+  in_progress: "text-[#4c7aff]",
+  todo: "text-[#cbd5e1]",
+  backlog: "text-[#a9b6c8]",
+  done: "text-[#44ce91]",
+  canceled: "text-[#f08080]",
+};
+
 export const issuePriorities: IssuePriority[] = ["urgent", "high", "medium", "low"];
 
 export const issuePriorityLabel: Record<IssuePriority, string> = {

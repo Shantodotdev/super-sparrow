@@ -1,3 +1,4 @@
+import { useProjectSlugs } from "../hooks/use-project";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -21,6 +22,7 @@ type IssuePropertiesProps = {
 
 /** The side panel of an issue page: status, people, branch, review rounds, and labels. */
 export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProps) {
+  const projectSlug = useProjectSlugs();
   const [editingLabels, setEditingLabels] = useState(false);
   const { data: labels } = useSuspenseQuery(labelsQuery);
   const { data: milestones } = useSuspenseQuery(milestonesQuery);
@@ -77,8 +79,8 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
           {rounds.length > 0 && (
             <Link
               className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
-              to="/$issue"
-              params={{ issue: issue.key }}
+              to="/$projectSlug/issues/$issue"
+              params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
               search={{ tab: "rounds" }}
             >
               View all →
@@ -105,7 +107,7 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
         )}
         {editingLabels && (
           <LabelPicker
-            options={labels}
+            options={labels.filter((label) => label.project_id === issue.project_id)}
             selected={issue.label_ids}
             onChange={(labelIds) => updateIssue(issue.id, () => ({ label_ids: labelIds }))}
           />

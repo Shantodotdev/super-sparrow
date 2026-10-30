@@ -1,3 +1,4 @@
+import { Input } from "../components/input";
 import { apiWrite } from "../lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
@@ -27,7 +28,7 @@ function SignInPage() {
       if (sent) {
         await apiWrite("/api/auth/verify", "POST", { email, code });
         client.clear();
-        await navigate({ to: "/issues" });
+        await navigate({ to: "/" });
       } else {
         await apiWrite("/api/auth/code", "POST", { email });
         setSent(true);
@@ -59,7 +60,7 @@ function SignInPage() {
         </p>
         <label>
           Email
-          <input
+          <Input
             type="email"
             required
             autoComplete="email"
@@ -72,7 +73,7 @@ function SignInPage() {
         {sent && (
           <label>
             Sign-in code
-            <input
+            <Input
               inputMode="numeric"
               autoComplete="one-time-code"
               pattern="[0-9]{6}"

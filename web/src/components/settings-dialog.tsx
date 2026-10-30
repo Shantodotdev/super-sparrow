@@ -1,3 +1,4 @@
+import { Input } from "./input";
 import { useRef, useState, type FormEvent } from "react";
 import { agentTools } from "../data/team";
 import type { NewAgentToken } from "../lib/types";
@@ -95,7 +96,7 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
             {toolName} runs; the repository's MCP configuration reads it from there. See
             &ldquo;Connecting agents&rdquo; in docs/DEPLOYMENT.md.
           </p>
-          <input
+          <Input
             readOnly
             aria-label="New agent token"
             value={created.secret}
@@ -116,7 +117,7 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
           <h2>{isMember ? "Add member" : "Create agent token"}</h2>
           <label>
             {isMember ? "Name" : "Token label, such as the machine"}
-            <input
+            <Input
               autoFocus
               required
               value={name}
@@ -126,7 +127,7 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
           {isMember ? (
             <label>
               Email
-              <input
+              <Input
                 type="email"
                 required
                 value={email}

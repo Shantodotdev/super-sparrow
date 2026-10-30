@@ -1,7 +1,7 @@
 import { apiGet } from "../lib/api";
 import type { ActivityEvent, Finding, Issue } from "../lib/types";
 
-export type Project = { id: string; key: string; name: string };
+export type Project = { id: string; key: string; name: string; slug: string };
 
 export async function getProjects(): Promise<Project[]> {
   return (await apiGet<{ projects: Project[] }>("/api/projects")).projects;

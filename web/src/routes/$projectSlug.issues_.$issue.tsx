@@ -1,3 +1,4 @@
+import { useProject } from "../hooks/use-project";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Discussion } from "../components/discussion";
@@ -25,7 +26,7 @@ import {
 } from "../queries/project";
 import { loadQuery } from "../queries/options";
 
-export const Route = createFileRoute("/$issue")({
+export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   staticData: { section: "issues" },
   validateSearch: validateIssueSearch,
   loader: async ({ context, params }) => {
@@ -52,13 +53,14 @@ const tabs: { id: IssueTab; label: string }[] = [
 
 /** An issue's plan, review rounds, activity, and comments; the selected tab lives in the URL. */
 function IssuePage() {
+  const project = useProject();
   const { issue: issueKey } = Route.useParams();
   const { data: issue } = useSuspenseQuery(issueQuery(issueKey));
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
   const { data: events } = useSuspenseQuery(activityQuery);
 
-  if (!issue) {
+  if (!issue || issue.project_id !== project.id) {
     return (
       <NotFoundState
         title="Issue not found"
@@ -85,13 +87,17 @@ type IssueDetailProps = {
 };
 
 function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
+  const project = useProject();
   const { tab = "plan" } = Route.useSearch();
 
   return (
     <div className="grid min-h-screen grid-cols-[minmax(0,1fr)_410px] max-[1100px]:grid-cols-[minmax(0,1fr)_310px] max-[700px]:block [&_.issue-icon-approach]:text-[#b28aff] [&_.issue-icon-branch]:text-[#b28aff] [&_.issue-icon-checklist]:text-[#61c99d] [&_.issue-icon-comments]:text-[#7bbdcf] [&_.issue-icon-goal]:text-[#7c9dff] [&_.issue-icon-pull-request]:text-[#7fcd9c] [&_.issue-icon-review]:text-[#a38af1] [&_.issue-icon-warning]:text-[#e8ae62]">
       <div className="px-[32px] pt-[27px] pb-0 max-[700px]:px-[20px] max-[700px]:py-[24px]">
         <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
-          <Link to="/issues">Issues</Link> / {issue.key}
+          <Link to="/$projectSlug/issues" params={{ projectSlug: project.slug }}>
+            Issues
+          </Link>{" "}
+          / {issue.key}
         </div>
         <h1>{issue.title}</h1>
         <div className="mt-4 text-[#a9b8ca]">
@@ -112,8 +118,8 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
           {tabs.map(({ id, label }) => (
             <Link
               key={id}
-              to="/$issue"
-              params={{ issue: issue.key }}
+              to="/$projectSlug/issues/$issue"
+              params={{ projectSlug: project.slug, issue: issue.key }}
               search={{ tab: id === "plan" ? undefined : id }}
               replace
               className={tab === id ? "selected" : ""}
@@ -137,8 +143,12 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
                 <Link
                   className="mt-3 block text-[#719bff]"
                   key={finding.id}
-                  to="/$issue/reviews/$round"
-                  params={{ issue: issue.key, round: String(finding.round) }}
+                  to="/$projectSlug/issues/$issue/reviews/$round"
+                  params={{
+                    projectSlug: project.slug,
+                    issue: issue.key,
+                    round: String(finding.round),
+                  }}
                   search={{ finding: finding.label }}
                 >
                   {finding.label} · {finding.title}

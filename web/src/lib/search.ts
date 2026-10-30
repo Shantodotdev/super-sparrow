@@ -4,7 +4,6 @@ import type { FindingSeverity, FindingStatus, IssueStatus } from "./types";
 
 /** The issues page's view and filters; a missing value means the list view or no filter. */
 export type IssuesSearch = {
-  project?: string;
   view?: "board";
   q?: string;
   status?: IssueStatus;
@@ -43,7 +42,6 @@ function oneOf<T extends string>(value: unknown, values: readonly T[]): T | unde
 /** Keeps only known views and statuses and non-empty filter values; other values are dropped. */
 export function validateIssuesSearch(search: Record<string, unknown>): IssuesSearch {
   return {
-    project: text(search.project),
     view: search.view === "board" ? "board" : undefined,
     q: text(search.q),
     status: oneOf(search.status, issueStatuses),

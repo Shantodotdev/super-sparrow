@@ -1,3 +1,4 @@
+import { useProject } from "../hooks/use-project";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { PageHeader } from "../components/page-header";
@@ -12,7 +13,7 @@ const statusLabel: Record<MilestoneStatus, string> = {
 };
 import { loadQuery } from "../queries/options";
 
-export const Route = createFileRoute("/milestones")({
+export const Route = createFileRoute("/$projectSlug/milestones")({
   staticData: { section: "milestones" },
   loader: async ({ context }) => {
     await Promise.all([
@@ -25,18 +26,20 @@ export const Route = createFileRoute("/milestones")({
 
 /** The project's milestones in order; active ones show how many of their issues are finished. */
 function MilestonesPage() {
+  const project = useProject();
   const { data: milestones } = useSuspenseQuery(milestonesQuery);
   const { data: issues } = useSuspenseQuery(issuesQuery);
 
   return (
     <>
       <PageHeader
-        crumb="Projects / Sparrow"
+        crumb={project.name}
         title="Milestones"
         description="Track the work that matters for your project."
       />
       <div className="grid gap-[22px] px-[32px] py-[20px] max-[700px]:p-[16px]">
-        {[...milestones]
+        {milestones
+          .filter((milestone) => milestone.project_id === project.id)
           .sort((a, b) => a.position - b.position)
           .map((milestone) => {
             const milestoneIssues = issues.filter((issue) => issue.milestone_id === milestone.id);
@@ -73,7 +76,8 @@ function MilestonesPage() {
                       <span style={{ width: `${progress}%` }} />
                     </div>
                     <Link
-                      to="/issues"
+                      to="/$projectSlug/issues"
+                      params={{ projectSlug: project.slug }}
                       search={{ milestone: milestone.id }}
                       className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
                     >

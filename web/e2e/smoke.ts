@@ -48,6 +48,7 @@ try {
   }[];
   socket = new WebSocket(tabs.find((tab) => tab.type === "page")!.webSocketDebuggerUrl);
   const browserErrors: string[] = [];
+  const requests = new Map<string, string>();
   const pending = new Map<
     number,
     { resolve: (value: any) => void; reject: (error: Error) => void }
@@ -57,6 +58,13 @@ try {
     const message = JSON.parse(String(event.data));
     const task = pending.get(message.id);
     if (!task) {
+      if (message.method === "Network.requestWillBeSent")
+        requests.set(message.params.requestId, message.params.request.url);
+      if (
+        message.method === "Network.loadingFinished" ||
+        message.method === "Network.loadingFailed"
+      )
+        requests.delete(message.params.requestId);
       if (message.method === "Runtime.exceptionThrown")
         browserErrors.push(message.params.exceptionDetails.text);
       if (message.method === "Runtime.exceptionThrown")
@@ -94,10 +102,21 @@ try {
       );
     return result.result.value;
   };
+  await call("Page.bringToFront", {});
   await call("Runtime.enable", {});
+  await call("Network.enable", {});
   await call("Log.enable", {});
   const waitText = async (text: string) => {
-    await until(() => evaluate(`document.body?.innerText.includes(${JSON.stringify(text)})`), text);
+    try {
+      await until(
+        () => evaluate(`document.body?.innerText.includes(${JSON.stringify(text)})`),
+        text,
+      );
+    } catch (error) {
+      console.error(await evaluate("({url: location.href, text: document.body.innerText})"));
+      console.error("Pending requests:", [...requests.values()]);
+      throw error;
+    }
     checks++;
     console.log("Verified:", text);
   };
@@ -109,8 +128,17 @@ try {
     evaluate(
       `(() => {const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('Missing input'); Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(value)}); e.dispatchEvent(new Event('input', {bubbles:true}));})()`,
     );
-  const navigate = (path: string) => call("Page.navigate", { url: base + path });
-  await navigate("/issues");
+  const navigate = async (path: string, destination = path) => {
+    await call("Page.navigate", { url: base + path });
+    await until(
+      () =>
+        evaluate(
+          `location.pathname === ${JSON.stringify(destination)} && document.readyState === 'complete'`,
+        ),
+      `load ${path}`,
+    );
+  };
+  await navigate("/", "/signin");
   await waitText("Welcome to Super Sparrow").catch(async (error) => {
     console.error(await evaluate("({url: location.href, text: document.body.innerText})"));
     throw error;
@@ -125,18 +153,54 @@ try {
   await input('input[autocomplete="one-time-code"]', code);
   await click("Sign in");
   await waitText("Meta comments");
-  await click("New issue");
-  await evaluate(
-    `(() => {const e = document.querySelector('select'); e.value = 'WP'; e.dispatchEvent(new Event('change', {bubbles:true}));})()`,
+  const projectSlug = await evaluate(
+    `fetch('/api/projects').then(r=>r.json()).then(b=>b.projects.find(p=>p.key === 'WP').slug)`,
   );
+  if (!(await evaluate(`location.pathname === '/' + ${JSON.stringify(projectSlug)} + '/issues'`)))
+    throw new Error("Sign-in did not open a project URL");
+  checks++;
+  if (projectSlug !== "wp-agent") throw new Error("Project URL must use a generated name slug");
+  checks++;
+  const oldProjectId = await evaluate(
+    `fetch('/api/projects').then(r=>r.json()).then(b=>b.projects.find(p=>p.key === 'WP').id)`,
+  );
+  await navigate(`/${oldProjectId}/issues?view=board`, `/${projectSlug}/issues`);
+  await until(
+    () => evaluate(`location.search === '?view=board'`),
+    "preserve filters on legacy ID redirect",
+  );
+  checks++;
+  await navigate(`/${projectSlug}/issues`);
+  await waitText("Meta comments");
+  await click("New issue");
+  if (!(await evaluate(`!document.querySelector('[role=dialog] select')`)))
+    throw new Error("Issue form must not offer a project selector");
+  checks++;
   await input('input[aria-label="Issue title"]', "Browser persisted issue");
+  await evaluate(`document.querySelector('input[aria-label="Issue title"]').focus()`);
+  await until(
+    () =>
+      evaluate(
+        `(() => {const s = getComputedStyle(document.querySelector('input[aria-label="Issue title"]')); return s.outlineStyle === 'none' && s.borderBottomWidth === '1px' && s.borderBottomColor === 'rgb(100, 134, 255)';})()`,
+      ),
+    "focus inline input with a visible border",
+  ).catch(async (error) => {
+    console.error(
+      await evaluate(
+        `(() => {const e = document.querySelector('input[aria-label="Issue title"]'); const s = getComputedStyle(e); return {outline:s.outlineStyle, width:s.borderBottomWidth, color:s.borderBottomColor, focused:document.activeElement===e, className:e.className};})()`,
+      ),
+    );
+    throw error;
+  });
+  checks++;
+
   await input(
     'textarea[aria-label="Description or plan"]',
     "## Goal\nBrowser verification\n- [ ] Browser checklist",
   );
   await click("Create issue");
   await waitText("Browser persisted issue");
-  await evaluate(`document.querySelector('a[href="/WP-2"]').click()`);
+  await evaluate(`document.querySelector('a[href="/${projectSlug}/issues/WP-2"]').click()`);
   await waitText("Browser checklist");
   await evaluate(`document.querySelector('input[type="checkbox"]').click()`);
   await until(
@@ -150,7 +214,7 @@ try {
   await input('input[aria-label="Add a comment"]', "Browser persisted comment");
   await click("Send");
   await waitText("Browser persisted comment");
-  await navigate("/WP-2");
+  await navigate(`/${projectSlug}/issues/WP-2`);
   await waitText("Browser persisted comment");
   await click("Edit plan");
   await input(
@@ -163,7 +227,7 @@ try {
     `fetch('/api/issues/WP-2', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title:'Live update from another client'})})`,
   );
   await waitText("Live update from another client");
-  await navigate("/WP-1/reviews/1");
+  await navigate(`/${projectSlug}/issues/WP-1/reviews/1`);
   await waitText("Browser finding");
   await evaluate(
     `document.activeElement?.blur(); document.body.dispatchEvent(new KeyboardEvent('keydown', {key:'l', bubbles:true}));`,
@@ -185,7 +249,7 @@ try {
   );
   checks++;
 
-  await navigate("/activity");
+  await navigate(`/${projectSlug}/activity`);
   await waitText("Activity");
   await navigate("/settings");
   await waitText("Backups are disabled");
@@ -216,6 +280,133 @@ try {
       ),
     "revoke token",
   );
+  checks++;
+  // All destructive setup below is restricted to the server's temporary test database.
+  await evaluate(`fetch('/api/projects/WP', {method:'DELETE'})`);
+  await navigate("/settings");
+  await waitText("Create your first project");
+  if (
+    !(await evaluate(
+      `!document.querySelector('aside, nav, header') && !document.querySelector('[aria-label="Navigation"]')`,
+    ))
+  )
+    throw new Error("Onboarding must hide application navigation");
+  checks++;
+  await input('input[name="projectName"]', "First browser project");
+  if (
+    !(await evaluate(
+      `(() => {const e = document.querySelector('input[name="projectName"]'); const s = getComputedStyle(e); return s.outlineStyle === 'none' && s.transitionProperty === 'border-color';})()`,
+    ))
+  )
+    throw new Error("Shared input focus must use a border transition without an outline");
+  checks++;
+  if (!(await evaluate(`document.querySelector('input[name="projectKey"]').value === 'FBP'`)))
+    throw new Error("Project key was not generated from the name");
+  checks++;
+  await input('input[name="projectKey"]', "FIRST");
+  await input('input[name="projectName"]', "First browser project renamed");
+  if (!(await evaluate(`document.querySelector('input[name="projectKey"]').value === 'FIRST'`)))
+    throw new Error("Typing the name overwrote the edited project key");
+  checks++;
+  await click("Create project");
+  await waitText("New issue");
+  const firstSlug = await evaluate(
+    `fetch('/api/projects').then(r=>r.json()).then(b=>b.projects.find(p=>p.key === 'FIRST').slug)`,
+  );
+  if (
+    !(await evaluate(
+      `location.pathname === '/' + ${JSON.stringify(firstSlug)} + '/issues' && !!document.querySelector('aside')`,
+    ))
+  )
+    throw new Error("New project must open with navigation");
+  checks++;
+  await click("New issue");
+  await input('input[aria-label="Issue title"]', "Only in first project");
+  await click("Create issue");
+  await waitText("Only in first project");
+  await until(() => evaluate(`!document.querySelector('[role=dialog]')`), "close issue dialog");
+  await evaluate(
+    `(() => {const button = document.querySelector('button[aria-label="Add project"]'); button.focus(); button.click();})()`,
+  );
+  await waitText("New project");
+  await evaluate(
+    `document.querySelector('[role=dialog]').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))`,
+  );
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[role=dialog]') && document.activeElement?.getAttribute('aria-label') === 'Add project'`,
+      ),
+    "dismiss project modal and restore focus",
+  );
+  checks++;
+  await evaluate(
+    `(() => {const button = document.querySelector('button[aria-label="Add project"]'); button.focus(); button.click();})()`,
+  );
+  await waitText("New project");
+  await input('input[name="projectName"]', "Second browser project");
+  await input('input[name="projectKey"]', "SECOND");
+  await click("Create project");
+  const secondSlug = await until(
+    () =>
+      evaluate(
+        `fetch('/api/projects').then(r=>r.json()).then(b=>b.projects.find(p=>p.key === 'SECOND')?.slug)`,
+      ),
+    "create second project",
+  );
+  await until(
+    () => evaluate(`location.pathname === '/' + ${JSON.stringify(secondSlug)} + '/issues'`),
+    "open second project",
+  );
+  await waitText("New issue");
+  await waitText("Second browser project / Issues");
+  await until(
+    () => evaluate(`!document.querySelector('[role=dialog]')`),
+    "close project modal after creation",
+  );
+  if (!(await evaluate(`!document.querySelector('main').innerText.includes('FIRST-1')`)))
+    throw new Error("Issue list leaked another project");
+  checks++;
+  await click("New issue");
+  await input('input[aria-label="Issue title"]', "Only in second project");
+  await click("Create issue");
+  await waitText("Only in second project");
+  await until(
+    () => evaluate(`!document.querySelector('[role=dialog]')`),
+    "close second issue dialog",
+  );
+  if (
+    !(await evaluate(
+      `fetch('/api/projects/SECOND/issues').then(r=>r.json()).then(b=>b.issues.some(i=>i.key === 'SECOND-1' && i.title === 'Only in second project'))`,
+    ))
+  )
+    throw new Error("Issue was not created in the URL's project");
+  checks++;
+  await navigate(`/${secondSlug}/issues/FIRST-1`);
+  await waitText("Issue not found");
+  await navigate(`/${secondSlug}/issues/FIRST-1/reviews/1`);
+  await waitText("Issue not found");
+  await navigate("/missing-project/issues");
+  await waitText("Project not found");
+  await navigate(`/${secondSlug}/milestones`);
+  await waitText("Track the work that matters for your project.");
+  await navigate(`/${secondSlug}/findings`);
+  await waitText("No findings found");
+  await navigate(`/${secondSlug}/activity`);
+  await waitText("Activity");
+  if (!(await evaluate(`!document.querySelector('main').innerText.includes('FIRST-1')`)))
+    throw new Error("Activity leaked another project");
+  checks++;
+  await navigate("/activity");
+  await waitText("Track what’s happening across your projects, issues, and agents.");
+  await navigate("/issues");
+  await waitText("Assigned to you");
+  if (
+    !(await evaluate(
+      `(() => {const nav = document.querySelector('nav[aria-label="Main navigation"]'); const groups = nav.querySelectorAll('section'); return nav.querySelector('a[href="/issues"]').textContent.includes('My issues') && nav.querySelector('a[href="/activity"]').textContent.includes('Activity') && groups.length === 2 && [...groups].every(g => g.querySelectorAll('a').length === 3 && g.textContent.includes('Issues') && g.textContent.includes('Milestones') && g.textContent.includes('Open findings'));})()`,
+    ))
+  )
+    throw new Error("Sidebar must keep root links and three nested links per project");
   checks++;
   await navigate("/settings/sessions");
   await waitText("Current");

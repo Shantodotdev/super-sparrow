@@ -1,3 +1,4 @@
+import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { findingStatusLabel } from "../lib/finding-status";
@@ -55,6 +56,7 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
  * shows the model it reported, which the server records but cannot verify.
  */
 export function EventLine({ event }: { event: ActivityEvent }) {
+  const projectSlug = useProjectSlugs();
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const issue = issues.find((item) => item.id === eventIssueId(event));
   const { action, detail } = describe(event);
@@ -68,8 +70,8 @@ export function EventLine({ event }: { event: ActivityEvent }) {
         <span>{action} </span>
         {issue && (
           <Link
-            to="/$issue"
-            params={{ issue: issue.key }}
+            to="/$projectSlug/issues/$issue"
+            params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
             className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
           >
             {issue.key}

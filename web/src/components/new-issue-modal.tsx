@@ -1,9 +1,10 @@
+import { statusIcon, statusIconColor } from "../lib/issue-status";
+import { Input, Textarea } from "./input";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "./icon";
 import { Select } from "./select";
 import { Modal } from "./modal";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { projectsQuery } from "../queries/project";
+import type { Project } from "../queries/resources";
 import type { IssueStatus, Label } from "../lib/types";
 
 /** A new issue's fields; assigneeId and milestoneId are "" for none, as the API takes them. */
@@ -20,6 +21,7 @@ export type NewIssueValues = {
 type Option = { value: string; label: string; projectId?: string };
 
 type NewIssueModalProps = {
+  project: Project;
   statuses: Option[];
   assignees: Option[];
   milestones: Option[];
@@ -31,6 +33,7 @@ type NewIssueModalProps = {
 
 /** Collects the fields for a new issue to persist through the Go API. */
 export function NewIssueModal({
+  project,
   statuses,
   assignees,
   milestones,
@@ -42,8 +45,7 @@ export function NewIssueModal({
   const [title, setTitle] = useState("");
   const [plan, setPlan] = useState("");
   const [status, setStatus] = useState<IssueStatus>("backlog");
-  const { data: projects } = useSuspenseQuery(projectsQuery);
-  const [projectKey, setProjectKey] = useState("");
+  const projectKey = project.key;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -53,9 +55,7 @@ export function NewIssueModal({
   const [createMore, setCreateMore] = useState(false);
   const labelMenu = useRef<HTMLDivElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
-  const projectLabels = labels.filter(
-    (l) => l.project_id === projects.find((p) => p.key === projectKey)?.id,
-  );
+  const projectLabels = labels.filter((l) => l.project_id === project.id);
   const labelNames = new Map(projectLabels.map((label) => [label.id, label.name]));
 
   useEffect(() => {
@@ -124,31 +124,10 @@ export function NewIssueModal({
       labelledBy="new-issue-heading"
     >
       <form onSubmit={submit}>
-        <label>
-          Project
-          <select
-            required
-            value={projectKey}
-            onChange={(event) => {
-              setProjectKey(event.target.value);
-              setAssigneeId("");
-              setMilestoneId("");
-              setSelectedLabels([]);
-            }}
-          >
-            <option value="">Choose a project</option>
-            {projects.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
         {error && <p role="alert">{error}</p>}
-        {pending && <p role="status">Saving…</p>}
         <div className="flex items-center gap-[8px] text-[#a5a8b1] [&_>_.icon]:h-4 [&_>_.icon]:w-4 [&_h2]:m-0 [&_h2]:text-[14px] [&_h2]:font-medium [&_h2]:text-[#e7e8ec]">
           <span className="inline-flex items-center gap-[6px] rounded-full border border-[#36383e] bg-[#2a2c31] px-[9px] py-[5px] text-[12px] whitespace-nowrap text-[#d6d7dc] [&_.icon]:h-4 [&_.icon]:w-4">
-            <Icon name="folder" /> Sparrow
+            <Icon name="folder" /> {project.name}
           </span>
           <Icon name="chevron-right" />
           <h2 id="new-issue-heading">New issue</h2>
@@ -161,19 +140,19 @@ export function NewIssueModal({
             <Icon name="circle-x" />
           </button>
         </div>
-        <input
+        <Input
           ref={titleInput}
           autoFocus
           required
           aria-label="Issue title"
-          className="mt-[26px] block h-auto w-full rounded-none border-0 bg-transparent p-0 text-[19px] font-semibold text-[#f1f2f4] outline-none placeholder:text-[#777a84] focus-visible:outline-none"
+          className="mt-[26px] block h-auto w-full rounded-none border-0 border-b border-transparent bg-transparent p-0 text-[19px] font-semibold text-[#f1f2f4] placeholder:text-[#777a84]"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="Issue title"
         />
-        <textarea
+        <Textarea
           aria-label="Description or plan"
-          className="mt-4 block h-auto min-h-[100px] w-full resize-y rounded-none border-0 bg-transparent p-0 text-[14px] leading-[1.6] text-[#f1f2f4] outline-none placeholder:text-[#777a84] focus-visible:outline-none"
+          className="mt-4 block h-auto min-h-[100px] w-full resize-y rounded-none border-0 border-b border-transparent bg-transparent p-0 text-[14px] leading-[1.6] text-[#f1f2f4] placeholder:text-[#777a84]"
           value={plan}
           onChange={(event) => setPlan(event.target.value)}
           placeholder="Add a description or plan..."
@@ -181,11 +160,14 @@ export function NewIssueModal({
         <div className="flex flex-wrap gap-[6px]">
           <Select
             variant="chip"
-            icon="circle-dashed"
             label="Status"
             value={status}
             onChange={(value) => setStatus(value as IssueStatus)}
-            options={statuses}
+            options={statuses.map((option) => ({
+              ...option,
+              icon: statusIcon[option.value as IssueStatus],
+              iconClassName: statusIconColor[option.value as IssueStatus],
+            }))}
           />
           <Select
             variant="chip"
@@ -203,9 +185,7 @@ export function NewIssueModal({
             onChange={setMilestoneId}
             options={[
               { value: "", label: "Milestone" },
-              ...milestones.filter(
-                (m) => m.projectId === projects.find((p) => p.key === projectKey)?.id,
-              ),
+              ...milestones.filter((m) => m.projectId === project.id),
             ]}
           />
           <div

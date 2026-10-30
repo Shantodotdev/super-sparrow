@@ -1,3 +1,4 @@
+import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
 import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
 import { slugify } from "../lib/format";
@@ -13,6 +14,7 @@ type IssueBoardProps = {
 
 /** Lays issues out as one column per status; a status filter keeps only its column. */
 export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
+  const projectSlug = useProjectSlugs();
   const columns = issueStatuses.filter((status) => !statusFilter || status === statusFilter);
 
   return (
@@ -50,8 +52,8 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                 <Link
                   className="flex w-full flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left hover:border-[#5873c7] hover:bg-[#171d28]"
                   key={issue.key}
-                  to="/$issue"
-                  params={{ issue: issue.key }}
+                  to="/$projectSlug/issues/$issue"
+                  params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
                 >
                   <span className="text-[12px] text-[#aabbd1]">{issue.key}</span>
                   <strong className="text-[13px] leading-[1.4] text-[#edf0f6]">

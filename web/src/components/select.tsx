@@ -1,7 +1,12 @@
 import { Icon, type IconName } from "./icon";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
-type SelectOption = { value: string; label: string };
+type SelectOption = {
+  value: string;
+  label: string;
+  icon?: IconName;
+  iconClassName?: string;
+};
 
 type SelectProps = {
   label: string;
@@ -30,6 +35,9 @@ export function Select({
     0,
     options.findIndex((option) => option.value === value),
   );
+
+  const selectedOption = options[selected];
+  const selectedIcon = selectedOption?.icon ?? icon;
 
   useEffect(() => {
     if (!open) return;
@@ -101,7 +109,7 @@ export function Select({
         role="combobox"
         className={`flex items-center justify-between border text-left transition-[border-color,background,box-shadow] duration-140 ease-[ease] focus-visible:border-[#404957] focus-visible:bg-[#1b2028] focus-visible:outline-none motion-reduce:transition-none ${
           variant === "chip"
-            ? "min-h-[29px] w-auto gap-[6px] rounded-full border-[#36383e] px-[9px] py-[4px] text-[12px] hover:focus-visible:border-[#484b54] hover:focus-visible:bg-[#383b42] [&>svg:first-child]:size-4 [&>svg:first-child]:text-[#a9adb6]"
+            ? "min-h-[29px] w-auto gap-[6px] rounded-full border-[#36383e] px-[9px] py-[4px] text-[12px] hover:focus-visible:border-[#484b54] hover:focus-visible:bg-[#383b42] [&>svg:first-child]:size-4"
             : variant === "filter"
               ? "min-h-12 w-full gap-[8px] rounded-[10px] px-[10px] py-0 text-[13px]"
               : "min-h-12 w-full gap-4 rounded-[10px] px-[12px] py-0"
@@ -123,7 +131,14 @@ export function Select({
           setOpen(!open);
         }}
       >
-        {icon && <Icon name={icon} />}
+        {selectedIcon && (
+          <Icon
+            name={selectedIcon}
+            className={
+              selectedOption?.iconClassName ?? (variant === "chip" ? "text-[#a9adb6]" : "")
+            }
+          />
+        )}
         {variant === "filter" && <span className="text-[#e5e8ef]">{label}</span>}
         <span
           className={`custom-select-value truncate ${variant === "filter" ? "text-[#a9b6c8]" : ""}`}
@@ -155,7 +170,10 @@ export function Select({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(index)}
             >
-              <span>{option.label}</span>
+              <span className="flex items-center gap-2">
+                {option.icon && <Icon name={option.icon} className={option.iconClassName} />}
+                {option.label}
+              </span>
               {option.value === value && (
                 <span className="text-[#7896ff]" aria-hidden="true">
                   <Icon name="check" />

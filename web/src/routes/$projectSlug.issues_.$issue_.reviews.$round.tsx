@@ -1,3 +1,4 @@
+import { useProject } from "../hooks/use-project";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { FindingCard } from "../components/finding-card";
@@ -19,7 +20,7 @@ import {
 } from "../queries/project";
 import { loadQuery } from "../queries/options";
 
-export const Route = createFileRoute("/$issue_/reviews/$round")({
+export const Route = createFileRoute("/$projectSlug/issues_/$issue_/reviews/$round")({
   staticData: { section: "issues" },
   validateSearch: validateReviewSearch,
   loader: async ({ context }) => {
@@ -37,12 +38,13 @@ export const Route = createFileRoute("/$issue_/reviews/$round")({
 
 /** One review round of an issue: its findings on the left and the selected finding on the right. */
 function ReviewPage() {
+  const project = useProject();
   const { issue: issueKey, round: roundParam } = Route.useParams();
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
 
-  const issue = issues.find((item) => item.key === issueKey);
+  const issue = issues.find((item) => item.key === issueKey && item.project_id === project.id);
   if (!issue) {
     return (
       <NotFoundState
@@ -84,6 +86,7 @@ type ReviewRoundViewProps = {
 
 /** A round's findings and the selected one, which the URL names by label so it can be linked. */
 function ReviewRoundView({ issue, round, rounds, roundFindings }: ReviewRoundViewProps) {
+  const project = useProject();
   const navigate = Route.useNavigate();
   const { finding: selectedLabel } = Route.useSearch();
   const actor = useActor();
@@ -95,7 +98,10 @@ function ReviewRoundView({ issue, round, rounds, roundFindings }: ReviewRoundVie
     <>
       <header className="px-8 pt-[25px] pb-[18px] max-[700px]:px-[16px] max-[700px]:py-[22px] [&_.breadcrumb]:mb-[24px]">
         <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
-          <Link to="/$issue" params={{ issue: issue.key }}>
+          <Link
+            to="/$projectSlug/issues/$issue"
+            params={{ projectSlug: project.slug, issue: issue.key }}
+          >
             {issue.key}
           </Link>{" "}
           / Reviews / Round {round.number}
@@ -131,7 +137,8 @@ function ReviewRoundView({ issue, round, rounds, roundFindings }: ReviewRoundVie
               }))}
             />
             <Link
-              to="/findings"
+              to="/$projectSlug/findings"
+              params={{ projectSlug: project.slug }}
               search={{ issue: issue.key }}
               className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
             >

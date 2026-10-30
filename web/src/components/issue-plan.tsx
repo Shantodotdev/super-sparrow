@@ -1,3 +1,4 @@
+import { Textarea } from "./input";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
@@ -59,7 +60,7 @@ export function IssuePlan({ issue }: { issue: Issue }) {
     >
       <label>
         Plan
-        <textarea
+        <Textarea
           aria-label="Edit plan"
           rows={14}
           value={draft.plan}

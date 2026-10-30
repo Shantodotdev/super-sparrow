@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
-import { meQuery } from "../queries/project";
+import { ProjectOnboarding } from "./project-onboarding";
+import { meQuery, projectsQuery } from "../queries/project";
 import { useEffect, useState } from "react";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
@@ -13,6 +14,7 @@ import { Sidebar } from "./sidebar";
 export function AppShell() {
   const bare = useMatches({ select: (matches) => matches.some((match) => match.staticData.bare) });
   const client = useQueryClient();
+  const projects = useQuery({ ...projectsQuery, enabled: !bare });
   const identity = useQuery({ ...meQuery, enabled: !bare, refetchInterval: 30_000 });
   useEffect(() => {
     if (identity.error instanceof ApiError && identity.error.status === 401) {
@@ -22,14 +24,28 @@ export function AppShell() {
   }, [identity.error, client]);
   useEffect(() => {
     if (bare) return;
-    const stream = new EventSource("/api/events/stream");
-    stream.addEventListener("change", () => {
-      void client.invalidateQueries();
-    });
-    stream.onopen = () => {
-      void client.invalidateQueries();
+    let stream: EventSource;
+    const connect = () => {
+      stream = new EventSource("/api/events/stream");
+      stream.addEventListener("change", () => {
+        void client.invalidateQueries();
+      });
+      stream.onopen = () => {
+        void client.invalidateQueries();
+      };
     };
-    return () => stream.close();
+    const close = () => stream.close();
+    const resume = (event: PageTransitionEvent) => {
+      if (event.persisted) connect();
+    };
+    connect();
+    window.addEventListener("pagehide", close);
+    window.addEventListener("pageshow", resume);
+    return () => {
+      close();
+      window.removeEventListener("pagehide", close);
+      window.removeEventListener("pageshow", resume);
+    };
   }, [bare, client]);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -47,6 +63,20 @@ export function AppShell() {
   }, []);
 
   if (bare) return <Outlet />;
+  if (projects.isPending)
+    return (
+      <p role="status" className="p-8">
+        Loading projects…
+      </p>
+    );
+  if (projects.error)
+    return (
+      <div role="alert" className="p-8">
+        <p>{projects.error.message}</p>
+        <button onClick={() => void projects.refetch()}>Try again</button>
+      </div>
+    );
+  if (!projects.data.length) return <ProjectOnboarding />;
 
   return (
     <div className="flex min-h-screen">

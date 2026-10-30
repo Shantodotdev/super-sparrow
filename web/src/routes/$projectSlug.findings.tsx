@@ -1,3 +1,5 @@
+import { Input } from "../components/input";
+import { useProject } from "../hooks/use-project";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { FindingDetail } from "../components/finding-detail";
@@ -19,7 +21,7 @@ import { issuesQuery } from "../queries/issues";
 import { actorsQuery, commentsQuery, reviewRoundsQuery } from "../queries/project";
 import { loadQuery } from "../queries/options";
 
-export const Route = createFileRoute("/findings")({
+export const Route = createFileRoute("/$projectSlug/findings")({
   staticData: { section: "findings" },
   validateSearch: validateFindingsSearch,
   loader: async ({ context }) => {
@@ -68,11 +70,15 @@ function matches(finding: Finding, search: FindingsSearch): boolean {
  * finding nobody looked at.
  */
 function FindingsPage() {
+  const project = useProject();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { data: findings } = useSuspenseQuery(findingsQuery);
+  const { data: allFindings } = useSuspenseQuery(findingsQuery);
   const { data: issues } = useSuspenseQuery(issuesQuery);
 
+  const findings = allFindings.filter((finding) =>
+    issues.some((issue) => issue.id === finding.issue_id && issue.project_id === project.id),
+  );
   const visible = findings
     .filter((finding) => matches(finding, search))
     .sort((a, b) => severityOrder[a.severity]! - severityOrder[b.severity]! || b.round - a.round);
@@ -98,12 +104,12 @@ function FindingsPage() {
     <>
       <div className="sticky top-0 z-2 bg-[#08090b]">
         <PageHeader
-          crumb="Projects / Sparrow"
+          crumb={project.name}
           title="Open findings"
           description="Findings across review rounds that need attention."
         />
         <div className="m-0 flex flex-wrap items-center gap-[12px] px-8 py-[20px]">
-          <input
+          <Input
             className="filter-search w-[295px] rounded-full"
             placeholder="Search findings..."
             aria-label="Search findings"
@@ -142,8 +148,8 @@ function FindingsPage() {
               <section key={issueKey}>
                 <div className="flex gap-4 border-b border-b-[#242932] px-[20px] py-[16px]">
                   <Link
-                    to="/$issue"
-                    params={{ issue: issueKey }}
+                    to="/$projectSlug/issues/$issue"
+                    params={{ projectSlug: project.slug, issue: issueKey }}
                     className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
                   >
                     {issueKey}

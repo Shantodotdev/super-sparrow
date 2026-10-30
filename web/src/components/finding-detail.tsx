@@ -1,3 +1,4 @@
+import { Input } from "./input";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { findingStatusLabel } from "../lib/finding-status";
@@ -157,7 +158,7 @@ export function FindingDetail({ finding }: { finding: Finding }) {
         >
           <label>
             Reason
-            <input
+            <Input
               ref={reasonInput}
               required
               value={reason}
