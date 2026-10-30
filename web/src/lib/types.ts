@@ -11,6 +11,7 @@ export type Actor = {
   id: string;
   kind: ActorKind;
   display_name: string;
+  avatar_id?: string;
   email?: string;
   role?: Role;
   agent_name?: string;

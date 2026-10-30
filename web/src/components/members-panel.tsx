@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Modal } from "./modal";
+import { ProfileModal } from "./profile-modal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
 import { meQuery } from "../queries/project";
@@ -18,6 +19,7 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
   const { notify } = useToast();
   const [disabling, setDisabling] = useState<Actor | null>(null);
   const [disableOpen, setDisableOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const disable = useMutation({
     mutationFn: (id: string) => apiWrite(`/api/people/${id}/disable`, "POST"),
     onSuccess: async () => {
@@ -55,7 +57,7 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
                 <th>Agents</th>
                 <th>Role</th>
                 <th>Joined</th>
-                {me?.role === "owner" && <th>Actions</th>}
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -97,29 +99,38 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
                     </span>
                   </td>
                   <td className="muted text-[#a2aec2]">{formatDate(member.created_at)}</td>
-                  {me?.role === "owner" && (
-                    <td>
-                      {!member.disabled_at && member.id !== me.id && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center rounded-full border border-[#713440] bg-[#30191f] px-3 py-1.5 text-[12px] font-[550] whitespace-nowrap text-[#f2a9ae] transition-colors hover:border-[#a33a48] hover:bg-[#4a222b] focus-visible:border-[#f2a9ae] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                          disabled={disable.isPending}
-                          onClick={() => {
-                            setDisabling(member);
-                            setDisableOpen(true);
-                          }}
-                        >
-                          Disable
-                        </button>
-                      )}
-                    </td>
-                  )}
+                  <td>
+                    {member.id === me?.id && (
+                      <button
+                        type="button"
+                        aria-label="Edit profile"
+                        className="inline-flex items-center justify-center rounded-full border border-[#303641] bg-[#14171c] px-3 py-1.5 text-[12px] font-[550] text-[#d6dfed] transition-colors hover:bg-[#20242b] focus-visible:border-[#6486ff] focus-visible:outline-none"
+                        onClick={() => setProfileOpen(true)}
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {me?.role === "owner" && !member.disabled_at && member.id !== me.id && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-full border border-[#713440] bg-[#30191f] px-3 py-1.5 text-[12px] font-[550] whitespace-nowrap text-[#f2a9ae] transition-colors hover:border-[#a33a48] hover:bg-[#4a222b] focus-visible:border-[#f2a9ae] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={disable.isPending}
+                        onClick={() => {
+                          setDisabling(member);
+                          setDisableOpen(true);
+                        }}
+                      >
+                        Disable
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
+      {me && <ProfileModal actor={me} open={profileOpen} onClose={() => setProfileOpen(false)} />}
       <Modal
         open={disableOpen}
         onClose={() => {

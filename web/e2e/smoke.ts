@@ -120,10 +120,18 @@ try {
     checks++;
     console.log("Verified:", text);
   };
-  const click = (text: string) =>
-    evaluate(
+  const click = async (text: string) => {
+    await until(
+      () =>
+        evaluate(
+          `!![...(document.querySelector('[role=dialog]') ?? document).querySelectorAll('button,a')].find(e=>e.textContent.trim() === ${JSON.stringify(text)})`,
+        ),
+      `find control ${text}`,
+    );
+    await evaluate(
       `(() => {const button = [...(document.querySelector('[role=dialog]') ?? document).querySelectorAll('button,a')].find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw new Error('Missing control'); button.click();})()`,
     );
+  };
   const input = (selector: string, value: string) =>
     evaluate(
       `(() => {const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('Missing input'); Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(value)}); e.dispatchEvent(new Event('input', {bubbles:true}));})()`,
@@ -331,6 +339,15 @@ try {
   );
   checks++;
   await evaluate(`document.querySelector('[role="combobox"][aria-label="Assignee"]').click()`);
+  if (
+    !(await evaluate(`fetch('/api/people').then(r=>r.json()).then(b=>{
+    const options=[...document.querySelectorAll('[role="option"]')];
+    const humans=b.actors.filter(a=>a.kind === 'human' && !a.disabled_at);
+    return options.length === humans.length + 1 && humans.every(a=>options.some(o=>o.textContent.includes(a.display_name) && !!o.querySelector('.avatar')));
+  })`))
+  )
+    throw new Error("Assignee options must show teammate avatars and exclude agents");
+  checks++;
   await evaluate(`document.querySelectorAll('[role="option"]')[1].click()`);
   await until(
     () =>
@@ -416,6 +433,48 @@ try {
   await waitText("Activity");
   await navigate("/settings");
   await waitText("Team members");
+  await evaluate(`document.querySelector('button[aria-label="Edit profile"]').click()`);
+  await waitText("Edit profile");
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/avatars').then(r=>r.json()).then(b=>document.querySelectorAll('[aria-label="Available avatars"] button').length === b.avatars.length + 1)`,
+      ),
+    "show every built-in avatar plus initials",
+  );
+  checks++;
+  await input('[role="dialog"] input', "Cancelled profile name");
+  await click("Cancel");
+  await until(
+    () => evaluate(`!document.querySelector('[role="dialog"]')`),
+    "close profile without saving",
+  );
+  if (
+    !(await evaluate(
+      `fetch('/api/me').then(r=>r.json()).then(b=>b.actor.display_name !== 'Cancelled profile name')`,
+    ))
+  )
+    throw new Error("Cancelling changed the profile");
+  checks++;
+  await evaluate(`document.querySelector('button[aria-label="Edit profile"]').click()`);
+  await input('[role="dialog"] input', "Browser Profile");
+  await evaluate(
+    `document.querySelector('button[aria-label="Select adventurers cat pilot"]').click()`,
+  );
+  await click("Save changes");
+  await until(
+    () => evaluate(`!document.querySelector('[role="dialog"]')`),
+    "save and close profile",
+  );
+  await navigate("/settings");
+  await waitText("Browser Profile");
+  if (
+    !(await evaluate(
+      `fetch('/api/me').then(r=>r.json()).then(b=>b.actor.avatar_id === 'adventurers-cat-pilot' && !!document.querySelector('img[src="/avatars/adventurers-cat-pilot.png"]'))`,
+    ))
+  )
+    throw new Error("Profile avatar did not survive a reload");
+  checks++;
   await click("Create token");
   await waitText("Token label, such as the machine");
   await input("[role=dialog] input", "Browser token");

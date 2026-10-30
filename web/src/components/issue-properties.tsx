@@ -14,6 +14,7 @@ import { useProject } from "../hooks/use-project";
 import type { Label, Milestone } from "../lib/types";
 import { ReviewRoundList } from "./review-round-list";
 import { Select } from "./select";
+import { Avatar } from "./avatar";
 import { IssueTextField } from "./issue-text-field";
 
 type IssuePropertiesProps = {
@@ -55,20 +56,31 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
       <h3>Assignee</h3>
       <Select
         label="Assignee"
+        placeholder="Assign a teammate"
         value={issue.assignee_actor_id}
         icon="circle-user-round"
         onChange={(value) => patch.mutate({ assignee_actor_id: value })}
         options={[
-          { value: "", label: "Unassigned" },
+          {
+            value: "",
+            label: "Unassigned",
+            icon: "circle-user-round",
+            iconClassName: "text-[#95a6bd]",
+          },
           ...actors
             .filter(
               (actor) =>
-                actor.kind !== "system" &&
+                actor.kind === "human" &&
                 (!actor.disabled_at || actor.id === issue.assignee_actor_id),
             )
             .map((actor) => ({
               value: actor.id,
-              label: actor.display_name + (actor.kind === "agent" ? " (agent)" : ""),
+              label: actor.display_name,
+              leading: (
+                <span className="flex shrink-0 [&_.avatar]:size-6 [&_.avatar]:basis-6 [&_.avatar]:text-[10px]">
+                  <Avatar actor={actor} />
+                </span>
+              ),
             })),
         ]}
       />

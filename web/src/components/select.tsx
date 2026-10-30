@@ -1,11 +1,12 @@
 import { Icon, type IconName } from "./icon";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 type SelectOption = {
   value: string;
   label: string;
   icon?: IconName;
   iconClassName?: string;
+  leading?: ReactNode;
 };
 
 type SelectProps = {
@@ -15,6 +16,7 @@ type SelectProps = {
   onChange: (value: string) => void;
   variant?: "filter" | "default" | "chip";
   icon?: IconName;
+  placeholder?: string;
 };
 
 /** A controlled select with an accessible, keyboard-operable listbox. */
@@ -25,6 +27,7 @@ export function Select({
   onChange,
   variant = "default",
   icon,
+  placeholder,
 }: SelectProps) {
   const id = useId();
   const container = useRef<HTMLDivElement>(null);
@@ -36,7 +39,7 @@ export function Select({
     options.findIndex((option) => option.value === value),
   );
 
-  const selectedOption = options[selected];
+  const selectedOption = options.find((option) => option.value === value);
   const selectedIcon = selectedOption?.icon ?? icon;
 
   useEffect(() => {
@@ -131,19 +134,20 @@ export function Select({
           setOpen(!open);
         }}
       >
-        {selectedIcon && (
-          <Icon
-            name={selectedIcon}
-            className={
-              selectedOption?.iconClassName ?? (variant === "chip" ? "text-[#a9adb6]" : "")
-            }
-          />
-        )}
+        {selectedOption?.leading ??
+          (selectedIcon && (
+            <Icon
+              name={selectedIcon}
+              className={
+                selectedOption?.iconClassName ?? (variant === "chip" ? "text-[#a9adb6]" : "")
+              }
+            />
+          ))}
         {variant === "filter" && <span className="text-[#e5e8ef]">{label}</span>}
         <span
-          className={`custom-select-value truncate ${variant === "filter" ? "text-[#a9b6c8]" : ""}`}
+          className={`custom-select-value min-w-0 flex-1 truncate text-left ${variant === "filter" ? "text-[#a9b6c8]" : ""}`}
         >
-          {options[selected]?.label ?? value}
+          {selectedOption?.label ?? placeholder ?? value}
         </span>
         {variant !== "chip" && (
           <Icon
@@ -171,7 +175,8 @@ export function Select({
               onClick={() => choose(index)}
             >
               <span className="flex items-center gap-2">
-                {option.icon && <Icon name={option.icon} className={option.iconClassName} />}
+                {option.leading ??
+                  (option.icon && <Icon name={option.icon} className={option.iconClassName} />)}
                 {option.label}
               </span>
               {option.value === value && (
