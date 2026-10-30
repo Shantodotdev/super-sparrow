@@ -12,7 +12,7 @@ export type IssuesSearch = {
   milestone?: string;
 };
 
-export type IssueTab = "plan" | "rounds" | "activity";
+export type IssueTab = "plan" | "findings" | "rounds" | "activity" | "comments";
 
 export type IssueSearch = { tab?: Exclude<IssueTab, "plan"> };
 
@@ -53,7 +53,15 @@ export function validateIssuesSearch(search: Record<string, unknown>): IssuesSea
 
 /** Accepts only the non-default issue tabs; the plan tab is the absence of the parameter. */
 export function validateIssueSearch(search: Record<string, unknown>): IssueSearch {
-  return { tab: search.tab === "rounds" || search.tab === "activity" ? search.tab : undefined };
+  return {
+    tab:
+      search.tab === "findings" ||
+      search.tab === "rounds" ||
+      search.tab === "activity" ||
+      search.tab === "comments"
+        ? search.tab
+        : undefined,
+  };
 }
 
 export function validateFindingsSearch(search: Record<string, unknown>): FindingsSearch {

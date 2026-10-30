@@ -270,10 +270,12 @@ try {
     "persist checklist",
   );
   checks++;
+  await click("Comments");
   await input('input[aria-label="Add a comment"]', "Browser persisted comment");
   await click("Send");
   await waitText("Browser persisted comment");
   await navigate(`/${projectSlug}/issues/WP-2`);
+  await click("Comments");
   await waitText("Browser persisted comment");
   if (
     !(await evaluate(
@@ -282,6 +284,7 @@ try {
   )
     throw new Error("Label color did not survive a reload");
   checks++;
+  await click("Plan");
   await evaluate(`(() => {
     const editor = document.querySelector('[contenteditable="true"][aria-label="Issue plan"]');
     editor.focus();

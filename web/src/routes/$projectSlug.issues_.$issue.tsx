@@ -3,7 +3,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Discussion } from "../components/discussion";
 import { EventLine, eventIssueId } from "../components/event-line";
-import { Icon } from "../components/icon";
+import { Icon, type IconName } from "../components/icon";
 import { IssuePlan } from "../components/issue-plan";
 import { IssuePrioritySelect } from "../components/issue-priority-select";
 import { IssueTextField } from "../components/issue-text-field";
@@ -47,10 +47,12 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   component: IssuePage,
 });
 
-const tabs: { id: IssueTab; label: string }[] = [
-  { id: "plan", label: "Plan" },
-  { id: "rounds", label: "Review rounds" },
-  { id: "activity", label: "Activity" },
+const tabs: { id: IssueTab; label: string; icon: IconName }[] = [
+  { id: "plan", label: "Plan", icon: "file-text" },
+  { id: "findings", label: "Findings", icon: "list-filter" },
+  { id: "rounds", label: "Review rounds", icon: "list-todo" },
+  { id: "activity", label: "Activity", icon: "activity" },
+  { id: "comments", label: "Comments", icon: "message-square" },
 ];
 
 /** An issue's plan, review rounds, activity, and comments; the selected tab lives in the URL. */
@@ -128,16 +130,17 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
           <Icon name="message-square" className="issue-icon-comments" /> &nbsp;{" "}
           {issue.comment_count} {issue.comment_count === 1 ? "comment" : "comments"}
         </div>
-        <Tabs className="mt-[27px] border-b border-b-[#252a32]">
-          {tabs.map(({ id, label }) => (
+        <Tabs className="mt-[27px] overflow-x-auto border-b border-b-[#252a32]">
+          {tabs.map(({ id, label, icon }) => (
             <Link
               key={id}
               to="/$projectSlug/issues/$issue"
               params={{ projectSlug: project.slug, issue: issue.key }}
               search={{ tab: id === "plan" ? undefined : id }}
               replace
-              className={tab === id ? "selected" : ""}
+              className={`inline-flex items-center gap-2 whitespace-nowrap ${tab === id ? "selected" : ""}`}
             >
+              <Icon name={icon} className="size-4" />
               {label}{" "}
               {id === "rounds" && (
                 <span className="count rounded-[5px] bg-[#262b34] px-2 py-[3px] text-[12px] text-[#dce2ec]">
@@ -147,29 +150,27 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             </Link>
           ))}
         </Tabs>
-        {tab === "plan" && (
-          <>
-            <IssuePlan key={issue.id} issue={issue} />
-            <section className="mt-8">
-              <h2>Open findings</h2>
-              {findings.filter(isUnresolved).length === 0 && <p>No unresolved findings.</p>}
-              {findings.filter(isUnresolved).map((finding) => (
-                <Link
-                  className="mt-3 block text-[#719bff]"
-                  key={finding.id}
-                  to="/$projectSlug/issues/$issue/reviews/$round"
-                  params={{
-                    projectSlug: project.slug,
-                    issue: issue.key,
-                    round: String(finding.round),
-                  }}
-                  search={{ finding: finding.label }}
-                >
-                  {finding.label} · {finding.title}
-                </Link>
-              ))}
-            </section>
-          </>
+        {tab === "plan" && <IssuePlan key={issue.id} issue={issue} />}
+        {tab === "findings" && (
+          <section className="mt-8">
+            <h2>Open findings</h2>
+            {findings.filter(isUnresolved).length === 0 && <p>No unresolved findings.</p>}
+            {findings.filter(isUnresolved).map((finding) => (
+              <Link
+                className="mt-3 block text-[#719bff]"
+                key={finding.id}
+                to="/$projectSlug/issues/$issue/reviews/$round"
+                params={{
+                  projectSlug: project.slug,
+                  issue: issue.key,
+                  round: String(finding.round),
+                }}
+                search={{ finding: finding.label }}
+              >
+                {finding.label} · {finding.title}
+              </Link>
+            ))}
+          </section>
         )}
         {tab === "rounds" && (
           <div className="px-0 py-[20px]">
@@ -184,10 +185,11 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             ))}
           </div>
         )}
-        <div className="mx-[-32px] mt-[25px] mb-0 border-t border-t-[#232832] px-[32px] py-[20px]">
-          <h2>Comments</h2>
-          <Discussion issueId={issue.id} findingId="" />
-        </div>
+        {tab === "comments" && (
+          <div className="py-[20px]">
+            <Discussion issueId={issue.id} findingId="" />
+          </div>
+        )}
       </div>
       <IssueProperties issue={issue} rounds={rounds} findings={findings} />
     </div>
