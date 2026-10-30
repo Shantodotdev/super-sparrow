@@ -66,8 +66,13 @@ func (s *Store) ImportProject(ctx context.Context, by Caller, source ImportSourc
 
 func insertImportedProject(w *writeTx, source ImportSource, externalID, key, name string) (Project, error) {
 	project := Project{ID: newID(), Key: key, Name: name, NextIssueNumber: 1, CreatedAt: w.now, UpdatedAt: w.now}
-	_, err := w.exec(`INSERT INTO projects (id, key, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		project.ID, key, name, w.timestamp(), w.timestamp())
+	slug, err := newProjectSlug(w, name, key)
+	if err != nil {
+		return Project{}, err
+	}
+	project.Slug = slug
+	_, err = w.exec(`INSERT INTO projects (id, key, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		project.ID, key, name, project.Slug, w.timestamp(), w.timestamp())
 	if err != nil {
 		return Project{}, fmt.Errorf("import project: %w", err)
 	}

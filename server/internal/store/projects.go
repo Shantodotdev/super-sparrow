@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const projectColumns = `id, key, name, next_issue_number, created_at, updated_at`
+const projectColumns = `id, key, name, slug, next_issue_number, created_at, updated_at`
 
 // NewProject describes a project to create.
 type NewProject struct {
@@ -35,14 +35,18 @@ func (s *Store) CreateProject(ctx context.Context, by Caller, input NewProject) 
 			return err
 		}
 
+		project.Slug, err = newProjectSlug(w, name, key)
+		if err != nil {
+			return err
+		}
 		project.CreatedAt, project.UpdatedAt = w.now, w.now
-		_, err := w.exec(`INSERT INTO projects (id, key, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-			project.ID, key, name, w.timestamp(), w.timestamp())
+		_, err := w.exec(`INSERT INTO projects (id, key, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			project.ID, key, name, project.Slug, w.timestamp(), w.timestamp())
 		if err != nil {
 			return mapUniqueViolation(err, "a project with key "+key+" already exists", "create project")
 		}
 
-		return w.event(project.ID, TargetProject, project.ID, "project.created", map[string]any{"key": key, "name": name})
+		return w.event(project.ID, TargetProject, project.ID, "project.created", map[string]any{"key": key, "name": name, "slug": project.Slug})
 	})
 
 	return project, err
@@ -146,7 +150,7 @@ func scanProject(row scanner) (Project, error) {
 	var project Project
 	var created, updated string
 
-	err := row.Scan(&project.ID, &project.Key, &project.Name, &project.NextIssueNumber, &created, &updated)
+	err := row.Scan(&project.ID, &project.Key, &project.Name, &project.Slug, &project.NextIssueNumber, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Project{}, notFound("project")
 	}

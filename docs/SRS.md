@@ -41,7 +41,7 @@ The schema lives in `server/migrations/`, and `server/internal/store` is the onl
 - **Session:** human actor, hashed session ID, device label, last seen, expires at, revoked at.
 - **Sign-in code:** email, hashed code, expires at, failed attempts, used at.
 - **Token:** agent actor, hashed secret, label, last used, expires at, revoked at. Only the hash is stored.
-- **Project:** key (`WP`), name, next issue number.
+- **Project:** key (`WP`), name, unique immutable URL slug generated from the name, next issue number. Slug collisions receive numeric suffixes; renaming keeps existing links working.
 - **Milestone:** project, name, position, status (`planned`, `active`, `done`).
 - **Label:** project, name. Names are unique within a project.
 - **Issue:** project, number (shown as `WP-142`), title, plan (markdown), plan revision, status, label set, parent issue, milestone, assignee, branch name, pull request URL, created by, completed at. The parent, milestone, and labels must be in the same project, and parent links never form a cycle. A branch name belongs to at most one issue per project. The plan revision goes up with every change to the plan, ticked checklist items included; saving an edited plan names the revision it started from and is refused when the plan has changed since, so no edit silently undoes another.

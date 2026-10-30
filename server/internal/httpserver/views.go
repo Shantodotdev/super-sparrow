@@ -68,6 +68,7 @@ func newTokenView(token store.AgentToken) tokenView {
 }
 
 type projectView struct {
+	Slug      string    `json:"slug"`
 	ID        string    `json:"id"`
 	Key       string    `json:"key"`
 	Name      string    `json:"name"`
@@ -76,7 +77,7 @@ type projectView struct {
 }
 
 func newProjectView(project store.Project) projectView {
-	return projectView{ID: project.ID, Key: project.Key, Name: project.Name, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt}
+	return projectView{Slug: project.Slug, ID: project.ID, Key: project.Key, Name: project.Name, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt}
 }
 
 type milestoneView struct {

@@ -46,6 +46,8 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 | `GET /api/projects/{key}/labels`      |        | `{labels}` in name order                                    |
 | `POST /api/projects/{key}/labels`     |        | `{name}`                                                    |
 
+Project responses include `slug`, generated once from the project name and kept on rename. The SPA uses `/{slug}/issues`, `/{slug}/milestones`, and `/{slug}/findings`; HTTP API project endpoints continue to use the project key.
+
 ## Issues and plans
 
 | Method and path                      | What it does                                                                                                                                                                                                                                                                             |

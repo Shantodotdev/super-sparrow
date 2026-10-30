@@ -129,3 +129,27 @@ func TestLabelNamesAreUniquePerProject(t *testing.T) {
 	_, err = tm.store.CreateLabel(tm.ctx, tm.agent, "missing", "Bug")
 	wantErr(t, err, ErrNotFound)
 }
+
+func TestProjectSlugsAreUniqueAndStable(t *testing.T) {
+	tm := newTeam(t)
+	for _, input := range []struct{ key, name, slug string }{
+		{"AA", "Super Sparrow!", "super-sparrow"},
+		{"BB", "Super Sparrow", "super-sparrow-2"},
+		{"CC", "Super Sparrow-2", "super-sparrow-2-2"},
+		{"DD", "Settings", "project-settings"},
+		{"EE", "বাংলা", "ee"},
+		{"FF", "  Roadmap / API__2026  ", "roadmap-api-2026"},
+	} {
+		project := got(tm.store.CreateProject(tm.ctx, tm.member, NewProject{Key: input.key, Name: input.name})).must(t)
+		if project.Slug != input.slug {
+			t.Fatalf("slug for %q = %q, want %q", input.name, project.Slug, input.slug)
+		}
+		if err := tm.store.RenameProject(tm.ctx, tm.member, project.ID, "Renamed project"); err != nil {
+			t.Fatal(err)
+		}
+		found := got(tm.store.GetProjectByKey(tm.ctx, input.key)).must(t)
+		if found.Slug != input.slug {
+			t.Fatalf("rename changed slug to %q", found.Slug)
+		}
+	}
+}

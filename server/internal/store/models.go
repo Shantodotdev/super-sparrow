@@ -59,6 +59,7 @@ type Caller struct {
 
 // Project groups issues under a key such as WP.
 type Project struct {
+	Slug            string
 	ID              string
 	Key             string
 	Name            string
