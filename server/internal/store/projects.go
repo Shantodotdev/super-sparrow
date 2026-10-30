@@ -325,25 +325,35 @@ func scanMilestone(row scanner) (Milestone, error) {
 
 // CreateLabel adds a label to a project. People and agents can create labels.
 func (s *Store) CreateLabel(ctx context.Context, by Caller, projectID, name string) (Label, error) {
+	return s.CreateLabelWithColor(ctx, by, projectID, name, "#a7c0ff")
+}
+
+// CreateLabelWithColor adds a label with an explicit hexadecimal color and records its actor.
+func (s *Store) CreateLabelWithColor(ctx context.Context, by Caller, projectID, name, color string) (Label, error) {
 	name, err := requiredText("name", name, maxLabelLength)
 	if err != nil {
 		return Label{}, err
 	}
 
-	label := Label{ID: newID(), ProjectID: projectID, Name: name}
+	color = strings.ToLower(strings.TrimSpace(color))
+	if !labelColorPattern.MatchString(color) {
+		return Label{}, invalid("color", "must be a six-digit hex color, such as #a7c0ff")
+	}
+
+	label := Label{ID: newID(), ProjectID: projectID, Name: name, Color: color}
 	err = s.write(ctx, by, func(w *writeTx) error {
 		if _, err := getProject(w.ctx, w.tx, `id = ?`, projectID); err != nil {
 			return err
 		}
 
 		label.CreatedAt, label.UpdatedAt = w.now, w.now
-		_, err := w.exec(`INSERT INTO labels (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-			label.ID, projectID, name, w.timestamp(), w.timestamp())
+		_, err := w.exec(`INSERT INTO labels (id, project_id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			label.ID, projectID, name, color, w.timestamp(), w.timestamp())
 		if err != nil {
 			return mapUniqueViolation(err, "this project already has a label named "+name, "create label")
 		}
 
-		return w.event(projectID, TargetLabel, label.ID, "label.created", map[string]any{"name": name})
+		return w.event(projectID, TargetLabel, label.ID, "label.created", map[string]any{"name": name, "color": color})
 	})
 
 	return label, err
@@ -352,7 +362,7 @@ func (s *Store) CreateLabel(ctx context.Context, by Caller, projectID, name stri
 // ListLabels returns a project's labels in name order.
 func (s *Store) ListLabels(ctx context.Context, projectID string) ([]Label, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, project_id, name, created_at, updated_at FROM labels WHERE project_id = ? ORDER BY name`, projectID)
+		`SELECT id, project_id, name, color, created_at, updated_at FROM labels WHERE project_id = ? ORDER BY name`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list labels: %w", err)
 	}
@@ -362,7 +372,7 @@ func (s *Store) ListLabels(ctx context.Context, projectID string) ([]Label, erro
 	for rows.Next() {
 		var label Label
 		var created, updated string
-		if err := rows.Scan(&label.ID, &label.ProjectID, &label.Name, &created, &updated); err != nil {
+		if err := rows.Scan(&label.ID, &label.ProjectID, &label.Name, &label.Color, &created, &updated); err != nil {
 			return nil, fmt.Errorf("read label: %w", err)
 		}
 		if label.CreatedAt, label.UpdatedAt, err = timestamps(created, updated); err != nil {

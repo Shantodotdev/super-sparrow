@@ -173,7 +173,8 @@ func (s *server) listLabels(w http.ResponseWriter, r *http.Request) error {
 
 func (s *server) createLabel(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		Name string `json:"name"`
+		Name  string  `json:"name"`
+		Color *string `json:"color"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		return err
@@ -183,7 +184,12 @@ func (s *server) createLabel(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	label, err := s.store.CreateLabel(r.Context(), identityFrom(r.Context()).caller(), project.ID, body.Name)
+	var label store.Label
+	if body.Color == nil {
+		label, err = s.store.CreateLabel(r.Context(), identityFrom(r.Context()).caller(), project.ID, body.Name)
+	} else {
+		label, err = s.store.CreateLabelWithColor(r.Context(), identityFrom(r.Context()).caller(), project.ID, body.Name, *body.Color)
+	}
 	if err != nil {
 		return err
 	}

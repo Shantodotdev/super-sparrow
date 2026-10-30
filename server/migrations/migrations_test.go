@@ -111,3 +111,38 @@ func TestProjectSlugsBackfillExistingNames(t *testing.T) {
 		t.Error("slug update was accepted")
 	}
 }
+
+func TestLabelColorsBackfillExistingLabels(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := database.Migrate(ctx, db, upTo(t, "0008")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO projects (id,key,name,slug,created_at,updated_at) VALUES ('project','WP','WP','wp','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Bug", "backend", "Other"} {
+		if _, err := db.Exec(`INSERT INTO labels(id,project_id,name,created_at,updated_at) VALUES (?, 'project', ?, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`, name, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"Bug": "#f2a9ae", "backend": "#a1e4cd", "Other": "#a7c0ff"} {
+		var color string
+		if err := db.QueryRow(`SELECT color FROM labels WHERE name=?`, name).Scan(&color); err != nil {
+			t.Fatal(err)
+		}
+		if color != want {
+			t.Errorf("%s color=%s, want %s", name, color, want)
+		}
+	}
+	if _, err := db.Exec(`UPDATE labels SET color='invalid' WHERE name='Bug'`); err == nil {
+		t.Fatal("database accepted an invalid color")
+	}
+}

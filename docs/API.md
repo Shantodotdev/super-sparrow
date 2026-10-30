@@ -44,7 +44,7 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 | `POST /api/projects/{key}/milestones` | person | `{name, status}`: `planned`, `active`, or `done`            |
 | `PATCH /api/milestones/{id}`          | person | `{name?, status?, position?}`; returns `{milestone}`        |
 | `GET /api/projects/{key}/labels`      |        | `{labels}` in name order                                    |
-| `POST /api/projects/{key}/labels`     |        | `{name}`                                                    |
+| `POST /api/projects/{key}/labels`     |        | `{name, color?}`; color is a six-digit hexadecimal value    |
 
 Project responses include `slug`, generated once from the project name and kept on rename. The SPA uses `/{slug}/issues`, `/{slug}/milestones`, and `/{slug}/findings`; HTTP API project endpoints continue to use the project key.
 

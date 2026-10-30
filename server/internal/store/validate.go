@@ -30,6 +30,7 @@ const (
 const DefaultPageLimit = 50
 
 var (
+	labelColorPattern = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 	projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,9}$`)
 	agentNamePattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 	commitPattern     = regexp.MustCompile(`^[0-9a-f]{7,64}$`)

@@ -559,3 +559,27 @@ func TestEventStreamEndsWhenAccessIsRevoked(t *testing.T) {
 		})
 	}
 }
+
+func TestLabelColorAPI(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+	var created struct {
+		Label labelView `json:"label"`
+	}
+	a.call(http.MethodPost, "/api/projects/WP/labels", a.member, map[string]string{"name": "Urgent", "color": "#F2A9AE"}, http.StatusCreated, &created)
+	if created.Label.Color != "#f2a9ae" {
+		t.Fatalf("created label %+v", created.Label)
+	}
+	var listed struct {
+		Labels []labelView `json:"labels"`
+	}
+	a.call(http.MethodGet, "/api/projects/WP/labels", a.member, nil, http.StatusOK, &listed)
+	if len(listed.Labels) != 1 || listed.Labels[0].Color != created.Label.Color {
+		t.Fatalf("listed labels %+v", listed.Labels)
+	}
+	wantField(t, a.request(http.MethodPost, "/api/projects/WP/labels", a.member, map[string]string{"name": "Invalid", "color": "not-a-color"}), "color")
+	a.call(http.MethodPost, "/api/projects/WP/labels", a.agent, map[string]string{"name": "Legacy"}, http.StatusCreated, &created)
+	if created.Label.Color != "#a7c0ff" {
+		t.Fatalf("legacy label %+v", created.Label)
+	}
+}

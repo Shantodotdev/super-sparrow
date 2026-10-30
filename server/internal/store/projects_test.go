@@ -153,3 +153,25 @@ func TestProjectSlugsAreUniqueAndStable(t *testing.T) {
 		}
 	}
 }
+
+func TestLabelColorPersistsAndRecordsActor(t *testing.T) {
+	tm := newTeam(t)
+	project := tm.project(t, "WP")
+	label := got(tm.store.CreateLabelWithColor(tm.ctx, tm.member, project.ID, "Urgent", "#F2A9AE")).must(t)
+	labels := got(tm.store.ListLabels(tm.ctx, project.ID)).must(t)
+	if label.Color != "#f2a9ae" || len(labels) != 1 || labels[0].Color != label.Color {
+		t.Fatalf("label colors: created=%+v, listed=%+v", label, labels)
+	}
+	event := tm.lastEvent(t)
+	if event.ActorID != tm.member.ActorID || event.Kind != "label.created" || string(event.Payload) != `{"color":"#f2a9ae","name":"Urgent"}` {
+		t.Fatalf("label event %+v", event)
+	}
+	before := tm.eventCount(t)
+	for _, color := range []string{"", "red", "#fff", "#zzzzzz", "url(https://example.com)"} {
+		_, err := tm.store.CreateLabelWithColor(tm.ctx, tm.member, project.ID, "Invalid", color)
+		wantInvalid(t, err, "color")
+	}
+	if tm.eventCount(t) != before {
+		t.Fatal("invalid colors wrote events")
+	}
+}

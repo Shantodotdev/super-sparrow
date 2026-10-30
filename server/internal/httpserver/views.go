@@ -98,6 +98,7 @@ func newMilestoneView(milestone store.Milestone) milestoneView {
 }
 
 type labelView struct {
+	Color     string    `json:"color"`
 	ID        string    `json:"id"`
 	ProjectID string    `json:"project_id"`
 	Name      string    `json:"name"`
@@ -105,7 +106,7 @@ type labelView struct {
 }
 
 func newLabelView(label store.Label) labelView {
-	return labelView{ID: label.ID, ProjectID: label.ProjectID, Name: label.Name, CreatedAt: label.CreatedAt}
+	return labelView{Color: label.Color, ID: label.ID, ProjectID: label.ProjectID, Name: label.Name, CreatedAt: label.CreatedAt}
 }
 
 type progressView struct {

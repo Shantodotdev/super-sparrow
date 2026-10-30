@@ -94,6 +94,7 @@ type Milestone struct {
 
 // Label tags issues within one project.
 type Label struct {
+	Color     string
 	ID        string
 	ProjectID string
 	Name      string
