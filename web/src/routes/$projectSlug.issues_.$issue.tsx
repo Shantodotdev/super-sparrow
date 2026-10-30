@@ -135,7 +135,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
         </Tabs>
         {tab === "plan" && (
           <>
-            <IssuePlan issue={issue} />
+            <IssuePlan key={issue.id} issue={issue} />
             <section className="mt-8">
               <h2>Open findings</h2>
               {findings.filter(isUnresolved).length === 0 && <p>No unresolved findings.</p>}

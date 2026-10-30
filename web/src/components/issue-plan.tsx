@@ -1,157 +1,163 @@
-import { Textarea } from "./input";
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiWrite } from "../lib/api";
-import type { ReactNode } from "react";
-import { planLines, type PlanLine } from "../lib/checklist";
-import type { ChecklistItem, Issue } from "../lib/types";
-import { useSetChecklistItem } from "../queries/issues";
-import { Icon, type IconName } from "./icon";
+import { useEffect, useState } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { Markdown } from "@tiptap/markdown";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import { TableKit } from "@tiptap/extension-table";
+import Image from "@tiptap/extension-image";
+import Placeholder from "@tiptap/extension-placeholder";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiWrite } from "../lib/api";
+import { PlanAutosave, type PlanVersion } from "../lib/plan-autosave";
+import type { Issue } from "../lib/types";
+import { issueQuery, issuesQuery } from "../queries/issues";
+import { useToast } from "./toast";
+import "./issue-plan.css";
 
-type Section = { heading: string; lines: PlanLine[] };
-
-const headingIcons: Record<string, [IconName, string]> = {
-  goal: ["target", "issue-icon-goal"],
-  approach: ["list", "issue-icon-approach"],
-  "edge cases": ["triangle-alert", "issue-icon-warning"],
-  checklist: ["square-check", "issue-icon-checklist"],
-};
-
-/** Splits plan lines into sections at each "## " heading; lines before the first have none. */
-function sections(lines: PlanLine[]): Section[] {
-  const result: Section[] = [{ heading: "", lines: [] }];
-  for (const line of lines) {
-    const heading = line.kind === "text" ? /^##\s+(.+)$/.exec(line.text) : null;
-    if (heading) result.push({ heading: heading[1]!.trim(), lines: [] });
-    else result.at(-1)!.lines.push(line);
+/** Reads only valid local editor drafts; unavailable browser storage never prevents editing. */
+function readDraft(key: string): PlanVersion | undefined {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(key) ?? "null");
+    if (value && typeof value.plan === "string" && Number.isInteger(value.revision)) return value;
+  } catch {
+    return undefined;
   }
-  return result.filter((section) => section.heading || section.lines.some(hasContent));
 }
 
-function hasContent(line: PlanLine): boolean {
-  return line.kind === "item" || line.text.trim() !== "";
+/** Keeps unsaved Markdown across reloads without treating browser storage as server state. */
+function storeDraft(key: string, draft: PlanVersion | null): void {
+  try {
+    if (draft) sessionStorage.setItem(key, JSON.stringify(draft));
+    else sessionStorage.removeItem(key);
+  } catch {
+    // Private browsing or a full storage quota must not interrupt editing or saving.
+  }
 }
 
-/**
- * Shows an issue's plan, with its checklist items as checkboxes. The plan is shown as text, not
- * rendered as HTML, so nothing in it can run; "## " headings become section titles.
- */
+/** An inline Markdown editor that saves serially using the server's plan revision. */
 export function IssuePlan({ issue }: { issue: Issue }) {
   const client = useQueryClient();
-  const [draft, setDraft] = useState<{ plan: string; revision: number } | null>(null);
-  const save = useMutation({
-    mutationFn: () =>
-      apiWrite(`/api/issues/${issue.key}`, "PATCH", {
-        plan: draft?.plan,
-        plan_revision: draft?.revision,
-      }),
-    onSuccess: async () => {
-      setDraft(null);
-      await client.invalidateQueries();
-    },
-  });
-  const editor = draft ? (
-    <form
-      className="grid gap-3 py-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      <label>
-        Plan
-        <Textarea
-          aria-label="Edit plan"
-          rows={14}
-          value={draft.plan}
-          onChange={(event) => setDraft({ ...draft, plan: event.target.value })}
-        />
-      </label>
-      {save.error && <p role="alert">{save.error.message}</p>}
-      <button disabled={save.isPending}>Save plan</button>
-      <button type="button" onClick={() => setDraft(null)}>
-        Cancel
-      </button>
-    </form>
-  ) : (
-    <button
-      className="mt-4"
-      onClick={() => {
-        save.reset();
-        setDraft({ plan: issue.plan ?? "", revision: issue.plan_revision });
-      }}
-    >
-      Edit plan
-    </button>
-  );
-  const setChecklistItem = useSetChecklistItem();
-  const plan = issue.plan ?? "";
-
-  if (!plan.trim()) {
-    return (
-      <>
-        {editor}
-        <p className="mt-[24px] text-[#a2aec2]">No plan added yet.</p>
-      </>
-    );
-  }
-
-  const renderLines = (lines: PlanLine[]): ReactNode[] =>
-    lines.map((line, position) =>
-      line.kind === "item" ? (
-        <ChecklistLine
-          key={`item-${line.item.index}`}
-          item={line.item}
-          onChange={(checked) => setChecklistItem(issue, line.item, checked)}
-        />
-      ) : (
-        <p key={`text-${position}`} className="whitespace-pre-wrap">
-          {line.text}
-        </p>
-      ),
-    );
-
-  return (
-    <div className="max-w-[850px] [&_h2]:mb-[8px] [&_p]:leading-[1.55] [&_p]:text-[#b4c1d3] [&_section]:mt-[24px] [&_section]:grid [&_section]:grid-cols-[38px_1fr] [&_section]:gap-[10px]">
-      {editor}
-      {sections(planLines(plan)).map((section, position) => {
-        const [icon, color] = headingIcons[section.heading.toLowerCase()] ?? [
-          "file-text",
-          "issue-icon-review",
-        ];
-        return (
-          <section key={`${section.heading}-${position}`}>
-            {section.heading ? (
-              <Icon name={icon} className={`plan-icon ${color} text-[24px]`} />
-            ) : (
-              <span />
-            )}
-            <div>
-              {section.heading && <h2>{section.heading}</h2>}
-              {renderLines(section.lines.filter(hasContent))}
-            </div>
-          </section>
+  const { notify } = useToast();
+  const [autosave] = useState(() => {
+    const draftKey = `sparrow:plan-draft:${issue.id}`;
+    return new PlanAutosave({
+      initial: { plan: issue.plan ?? "", revision: issue.plan_revision },
+      draft: readDraft(draftKey),
+      persist: (draft) => storeDraft(draftKey, draft),
+      save: async ({ plan, revision }) => {
+        const { issue: saved } = await apiWrite<{ issue: Issue }>(
+          `/api/issues/${encodeURIComponent(issue.key)}`,
+          "PATCH",
+          { plan, plan_revision: revision },
         );
-      })}
-    </div>
-  );
-}
+        client.setQueryData(issueQuery(issue.key).queryKey, (current) =>
+          current && current.plan_revision > saved.plan_revision ? current : saved,
+        );
+        void client.invalidateQueries({ queryKey: issuesQuery.queryKey });
+        void client.invalidateQueries({ queryKey: ["events"] });
+        return { plan: saved.plan ?? "", revision: saved.plan_revision };
+      },
+    });
+  });
+  const [state, setState] = useState(autosave.state);
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        underline: false,
+        link: { openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer nofollow" } },
+      }),
+      Markdown,
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      TableKit,
+      Image,
+      Placeholder.configure({ placeholder: "Add a description…" }),
+    ],
+    content: autosave.state.plan,
+    contentType: "markdown",
+    editorProps: {
+      handlePaste: (_view, event) => {
+        const text = event.clipboardData?.getData("text/plain");
+        if (!text || event.clipboardData?.getData("text/html")) return false;
+        editor?.commands.insertContent(text, { contentType: "markdown" });
+        return true;
+      },
+      attributes: { "aria-label": "Issue plan", role: "textbox", "aria-multiline": "true" },
+    },
+    onUpdate: ({ editor: current }) => autosave.edit(current.getMarkdown()),
+    onBlur: () => void autosave.flush(),
+  });
 
-function ChecklistLine({
-  item,
-  onChange,
-}: {
-  item: ChecklistItem;
-  onChange: (checked: boolean) => void;
-}) {
+  useEffect(() => autosave.subscribe(setState), [autosave]);
+
+  useEffect(() => {
+    if (autosave.receive({ plan: issue.plan ?? "", revision: issue.plan_revision })) {
+      editor?.commands.setContent(autosave.state.plan, {
+        contentType: "markdown",
+        emitUpdate: false,
+      });
+    }
+  }, [issue.plan, issue.plan_revision, autosave, editor, state.dirty, state.revision]);
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (!autosave.state.dirty && !autosave.state.saving) return;
+      void autosave.flush();
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      void autosave.flush();
+    };
+  }, [autosave]);
+
   return (
-    <label className="mx-0 my-[6px] flex items-center gap-[9px] font-normal text-[#b4c1d3] [&_input]:h-[15px] [&_input]:w-[15px] [&_input]:accent-[#4c75ff]">
-      <input
-        type="checkbox"
-        checked={item.checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      {item.text}
-    </label>
+    <div className="mt-6 max-w-[850px]">
+      <EditorContent editor={editor} className="issue-plan-editor" />
+      {state.error && (
+        <div role="alert" className="mt-3 text-sm text-[#f2a9ae]">
+          <p>{state.error.message} Your edits remain in the editor.</p>
+          <div className="mt-2 flex gap-3">
+            <button
+              type="button"
+              className="text-[#a7c0ff]"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(autosave.state.plan);
+                } catch {
+                  notify("Could not copy. Select and copy the plan directly.");
+                }
+              }}
+            >
+              Copy my Markdown
+            </button>
+            <button
+              type="button"
+              className="text-[#a7c0ff] disabled:opacity-50"
+              disabled={state.saving}
+              onClick={async () => {
+                try {
+                  const { issue: latest } = await apiGet<{ issue: Issue }>(
+                    `/api/issues/${encodeURIComponent(issue.key)}`,
+                  );
+                  autosave.reset({ plan: latest.plan ?? "", revision: latest.plan_revision });
+                  editor?.commands.setContent(latest.plan ?? "", {
+                    contentType: "markdown",
+                    emitUpdate: false,
+                  });
+                  client.setQueryData(issueQuery(issue.key).queryKey, latest);
+                } catch (error) {
+                  notify(error instanceof Error ? error.message : "Could not load the latest plan");
+                }
+              }}
+            >
+              Use latest plan
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

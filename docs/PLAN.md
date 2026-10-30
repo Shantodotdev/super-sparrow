@@ -73,7 +73,7 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 - [x] Build the activity feed, with actor names and agent badges.
 - [x] Build settings for teammates, signed-in devices, and agent tokens.
 - [x] Add the command palette and keyboard shortcuts.
-- [x] Safely display untrusted plans, findings, and comments as escaped React text; plan headings and checkboxes are parsed without rendering HTML.
+- [x] Safely display untrusted content: the plan editor parses Markdown into supported editor nodes; findings and comments use escaped React text.
 - [x] Serve the built frontend from the Go server. It serves the build in `WEB_DIR`.
 
 ## 7. Desktop app

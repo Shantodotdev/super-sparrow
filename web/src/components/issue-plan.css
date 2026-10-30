@@ -1,0 +1,129 @@
+.issue-plan-editor .tiptap {
+  min-height: 180px;
+  border: 0;
+  outline: none;
+  color: #b4c1d3;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.issue-plan-editor .tiptap > :first-child {
+  margin-top: 0;
+}
+
+.issue-plan-editor p {
+  margin: 0.75em 0;
+}
+
+.issue-plan-editor :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.4em 0 0.6em;
+  color: #f2f5fc;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.issue-plan-editor h1 {
+  font-size: 26px;
+}
+.issue-plan-editor h2 {
+  font-size: 21px;
+}
+.issue-plan-editor h3 {
+  font-size: 18px;
+}
+.issue-plan-editor :is(h4, h5, h6) {
+  font-size: 16px;
+}
+.issue-plan-editor strong {
+  color: #e4ebf6;
+  font-weight: 600;
+}
+.issue-plan-editor ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.issue-plan-editor ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.issue-plan-editor li {
+  margin: 0.3em 0;
+}
+.issue-plan-editor li p {
+  margin: 0;
+}
+.issue-plan-editor a {
+  color: #a7c0ff;
+  text-decoration: underline;
+}
+.issue-plan-editor blockquote {
+  border-left: 3px solid #303744;
+  margin: 1em 0;
+  padding-left: 1em;
+}
+.issue-plan-editor code {
+  border-radius: 4px;
+  background: #1b2029;
+  padding: 0.15em 0.3em;
+  font-size: 0.9em;
+}
+.issue-plan-editor pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #101216;
+  padding: 16px;
+  margin: 1em 0;
+}
+.issue-plan-editor pre code {
+  background: none;
+  padding: 0;
+}
+.issue-plan-editor hr {
+  border: 0;
+  border-top: 1px solid #303744;
+  margin: 1.5em 0;
+}
+.issue-plan-editor img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.issue-plan-editor table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.issue-plan-editor :is(td, th) {
+  border: 1px solid #303744;
+  padding: 8px 12px;
+}
+.issue-plan-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.issue-plan-editor li[data-type="taskItem"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.issue-plan-editor li[data-type="taskItem"] > label {
+  display: flex;
+  margin: 0;
+  padding-top: 6px;
+}
+.issue-plan-editor li[data-type="taskItem"] input {
+  width: 15px;
+  height: 15px;
+  accent-color: #4c75ff;
+}
+.issue-plan-editor li[data-type="taskItem"] > div {
+  flex: 1;
+  min-width: 0;
+}
+.issue-plan-editor .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: #8999ad;
+  pointer-events: none;
+}

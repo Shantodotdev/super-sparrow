@@ -63,7 +63,7 @@ Issue, round, and finding numbers come from counters on their parent, so a numbe
 ### Issues and plans
 
 - FR-1: Create, edit, and move issues between statuses. Issue numbers are unique and sequential within a project.
-- FR-2: Store the plan as markdown in the issue description, with checklists that can be ticked.
+- FR-2: Store the plan as markdown in the issue description, with checklists that can be ticked. The inline editor formats Markdown as it is typed and automatically saves with revision checks; unsaved drafts are kept in the browser tab for recovery.
 - FR-3: Link an issue to a branch name and a pull request URL.
 - FR-4: Find an issue from a branch name that contains its key, such as `feat/wp-142-meta-comments`.
 
