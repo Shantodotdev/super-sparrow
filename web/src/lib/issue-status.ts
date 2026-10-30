@@ -41,6 +41,7 @@ export const statusIconColor: Record<IssueStatus, string> = {
 export const issuePriorities: IssuePriority[] = ["urgent", "high", "medium", "low"];
 
 export const issuePriorityLabel: Record<IssuePriority, string> = {
+  "": "No priority",
   urgent: "Urgent",
   high: "High",
   medium: "Medium",

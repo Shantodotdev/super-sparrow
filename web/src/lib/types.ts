@@ -41,8 +41,8 @@ export type Label = {
 
 export type IssueStatus = "backlog" | "todo" | "in_progress" | "in_review" | "done" | "canceled";
 
-/** Issue priority. The API has no priority yet; it exists only in the frontend preview. */
-export type IssuePriority = "urgent" | "high" | "medium" | "low";
+/** An empty priority means no priority has been assigned. */
+export type IssuePriority = "" | "urgent" | "high" | "medium" | "low";
 
 export type ChecklistItem = { index: number; text: string; checked: boolean };
 
@@ -59,7 +59,6 @@ export type Issue = {
   checklist?: ChecklistItem[];
   checklist_progress: { done: number; total: number };
   status: IssueStatus;
-  /** Not in the API yet; see IssuePriority. */
   priority?: IssuePriority;
   parent_issue_id: string;
   milestone_id: string;

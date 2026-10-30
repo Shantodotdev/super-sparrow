@@ -282,17 +282,103 @@ try {
   )
     throw new Error("Label color did not survive a reload");
   checks++;
-  await click("Edit plan");
-  await input(
-    'textarea[aria-label="Edit plan"]',
-    "## Goal\nUpdated by browser\n- [x] Browser checklist",
+  await evaluate(`(() => {
+    const editor = document.querySelector('[contenteditable="true"][aria-label="Issue plan"]');
+    editor.focus();
+    document.execCommand('selectAll');
+    const data = new DataTransfer();
+    data.setData('text/plain', '## Goal\\n\\nUpdated by browser with **live formatting**\\n\\n- [x] Browser checklist');
+    editor.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+  })()`);
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/issues/WP-2').then(r=>r.json()).then(b=>b.issue.plan.includes('Updated by browser'))`,
+      ),
+    "automatically save the edited Markdown plan",
   );
-  await click("Save plan");
-  await waitText("Updated by browser");
+  checks++;
+  if (
+    !(await evaluate(
+      `!!document.querySelector('.issue-plan-editor h2') && !!document.querySelector('.issue-plan-editor strong') && ![...document.querySelectorAll('button')].some(b=>b.textContent === 'Edit plan' || b.textContent === 'Save plan')`,
+    ))
+  )
+    throw new Error(
+      "Markdown should render directly in the inline editor without edit or save buttons",
+    );
+  checks++;
+  await navigate(`/${projectSlug}/issues/WP-2`);
+  await waitText("Updated by browser with live formatting");
+  await evaluate(`document.querySelector('[role="combobox"][aria-label="Priority"]').click()`);
+  await evaluate(
+    `[...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'High').click()`,
+  );
+  await until(
+    () =>
+      evaluate(`fetch('/api/issues/WP-2').then(r=>r.json()).then(b=>b.issue.priority === 'high')`),
+    "persist issue priority",
+  );
+  checks++;
+  await evaluate(`document.querySelector('[role="combobox"][aria-label="Assignee"]').click()`);
+  await evaluate(`document.querySelectorAll('[role="option"]')[1].click()`);
+  await until(
+    () =>
+      evaluate(`fetch('/api/issues/WP-2').then(r=>r.json()).then(b=>!!b.issue.assignee_actor_id)`),
+    "assign a teammate",
+  );
+  checks++;
+  await evaluate(`document.querySelector('button[aria-label="Milestone"]').click()`);
+  await input('input[aria-label="Search or create milestone"]', "Browser milestone");
+  await click("Create milestone: “Browser milestone”");
+  await until(
+    () =>
+      evaluate(
+        `Promise.all([fetch('/api/issues/WP-2').then(r=>r.json()),fetch('/api/projects/WP/milestones').then(r=>r.json())]).then(([detail,resources])=>resources.milestones.some(m=>m.name === 'Browser milestone' && m.id === detail.issue.milestone_id))`,
+      ),
+    "create and attach a milestone",
+  );
+  checks++;
+  await evaluate(`document.querySelector('button[aria-label="Labels"]').click()`);
+  await input('input[aria-label="Search or create labels"]', "Detail label");
+  await click("Create labels: “Detail label”");
+  await waitText("Choose a color");
+  if (
+    !(await evaluate(
+      `fetch('/api/projects/WP/labels').then(r=>r.json()).then(b=>!b.labels.some(l=>l.name === 'Detail label'))`,
+    ))
+  )
+    throw new Error("Detail label created before choosing its color");
+  checks++;
+  await click("Green");
+  await until(
+    () =>
+      evaluate(
+        `Promise.all([fetch('/api/issues/WP-2').then(r=>r.json()),fetch('/api/projects/WP/labels').then(r=>r.json())]).then(([detail,resources])=>resources.labels.some(l=>l.name === 'Detail label' && l.color === '#a1e4cd' && detail.issue.label_ids.includes(l.id)))`,
+      ),
+    "create a colored label on the issue page",
+  );
+  checks++;
+  await navigate(`/${projectSlug}/issues/WP-2`);
+  await waitText("Detail label");
+  await waitText("Browser milestone");
+  if (
+    !(await evaluate(
+      `document.querySelector('[role="combobox"][aria-label="Priority"]').textContent.includes('High')`,
+    ))
+  )
+    throw new Error("Priority lost after reload");
+  checks++;
   await evaluate(
     `fetch('/api/issues/WP-2', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title:'Live update from another client'})})`,
   );
-  await waitText("Live update from another client");
+  await until(
+    () =>
+      evaluate(
+        `document.querySelector('input[aria-label="Issue title"]')?.value === "Live update from another client"`,
+      ),
+    "receive title updates",
+  );
+  checks++;
   await navigate(`/${projectSlug}/issues/WP-1/reviews/1`);
   await waitText("Browser finding");
   await evaluate(
@@ -318,7 +404,7 @@ try {
   await navigate(`/${projectSlug}/activity`);
   await waitText("Activity");
   await navigate("/settings");
-  await waitText("Backups are disabled");
+  await waitText("Team members");
   await click("Create token");
   await waitText("Token label, such as the machine");
   await input("[role=dialog] input", "Browser token");

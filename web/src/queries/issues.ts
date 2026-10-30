@@ -82,3 +82,24 @@ export function useCreateIssue() {
   });
   return mutation.mutateAsync;
 }
+
+/** Patches a loaded issue and updates its detail cache with the committed server response. */
+export function usePatchIssue(key: string) {
+  const client = useQueryClient();
+  const { notify } = useToast();
+  const mutation = useMutation({
+    scope: { id: `issue:${key}` },
+    mutationFn: (change: Partial<Issue>) =>
+      apiWrite<{ issue: Issue }>(`/api/issues/${encodeURIComponent(key)}`, "PATCH", change),
+    onSuccess: ({ issue }) => {
+      client.setQueryData(issueQuery(key).queryKey, (current) =>
+        current && current.plan_revision > issue.plan_revision ? current : issue,
+      );
+      void client.invalidateQueries({ queryKey: issuesQuery.queryKey });
+      void client.invalidateQueries({ queryKey: issueQuery(key).queryKey });
+      void client.invalidateQueries({ queryKey: ["activity"] });
+    },
+    onError: (error) => notify(error.message),
+  });
+  return mutation;
+}

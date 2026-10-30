@@ -5,6 +5,8 @@ import { Discussion } from "../components/discussion";
 import { EventLine, eventIssueId } from "../components/event-line";
 import { Icon } from "../components/icon";
 import { IssuePlan } from "../components/issue-plan";
+import { IssuePrioritySelect } from "../components/issue-priority-select";
+import { IssueTextField } from "../components/issue-text-field";
 import { IssueProperties } from "../components/issue-properties";
 import { NotFoundState } from "../components/not-found-state";
 import { ReviewRoundList } from "../components/review-round-list";
@@ -71,6 +73,7 @@ function IssuePage() {
 
   return (
     <IssueDetail
+      key={issue.id}
       issue={issue}
       rounds={rounds.filter((round) => round.issue_id === issue.id)}
       findings={findings.filter((finding) => finding.issue_id === issue.id)}
@@ -99,7 +102,18 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
           </Link>{" "}
           / {issue.key}
         </div>
-        <h1>{issue.title}</h1>
+        <h1>
+          <IssueTextField
+            key={issue.id}
+            issue={issue}
+            field="title"
+            label="Issue title"
+            className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[28px] font-semibold text-[#f2f5fc]"
+          />
+        </h1>
+        <div className="mt-3">
+          <IssuePrioritySelect issue={issue} />
+        </div>
         <div className="mt-4 text-[#a9b8ca]">
           <Icon name={statusIcon[issue.status]} className={`status-${slugify(issue.status)}`} />{" "}
           &nbsp;{issue.key}
