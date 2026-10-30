@@ -12,8 +12,12 @@ export function Sidebar() {
 
   return (
     <aside className="sticky top-0 left-0 z-1 flex h-dvh w-[274px] shrink-0 basis-[274px] flex-col self-start border-r border-[#20242b] bg-[#07080a] px-[13px] pt-[24px] pb-4 max-[700px]:w-[66px] max-[700px]:basis-[66px] max-[700px]:px-[8px] max-[700px]:py-[20px]">
-      <div className="flex items-center gap-[12px] px-[13px] text-[17px] font-[650] whitespace-nowrap max-[700px]:px-[5px] max-[700px]:text-[0px]">
-        <img src="/logo.png" className="h-[40px] w-[40px] flex-none" alt="" /> Super Sparrow
+      <div className="flex items-center justify-center px-[13px] max-[700px]:px-[5px]">
+        <img
+          src="/logo.png"
+          className="h-[64px] w-[64px] flex-none max-[700px]:h-[40px] max-[700px]:w-[40px]"
+          alt=""
+        />
       </div>
       <nav className="mt-[32px]" aria-label="Main navigation">
         <NavItem to="/issues" icon="circle-user-round" label="My issues" />
