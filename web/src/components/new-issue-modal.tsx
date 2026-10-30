@@ -2,23 +2,27 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "./icon";
 import { Select } from "./select";
 import { Modal } from "./modal";
-import { issuePriorities, type IssuePriority } from "../lib/types";
+import { issuePriorities, issuePriorityLabel } from "../lib/issue-status";
+import type { IssuePriority, IssueStatus, Label } from "../lib/types";
 
+/** A new issue's fields; assigneeId and milestoneId are "" for none, as the API takes them. */
 export type NewIssueValues = {
   title: string;
   plan: string;
-  status: string;
+  status: IssueStatus;
   priority: IssuePriority;
-  assignee: string;
-  milestone: string;
-  labels: string[];
+  assigneeId: string;
+  milestoneId: string;
+  labelIds: string[];
 };
 
+type Option = { value: string; label: string };
+
 type NewIssueModalProps = {
-  statuses: string[];
-  assignees: string[];
-  milestones: string[];
-  labels: string[];
+  statuses: Option[];
+  assignees: Option[];
+  milestones: Option[];
+  labels: Label[];
   onCreate: (values: NewIssueValues) => void;
   onClose: () => void;
   open: boolean;
@@ -36,24 +40,25 @@ export function NewIssueModal({
 }: NewIssueModalProps) {
   const [title, setTitle] = useState("");
   const [plan, setPlan] = useState("");
-  const [status, setStatus] = useState("Backlog");
-  const [priority, setPriority] = useState<IssuePriority>("Medium");
-  const [assignee, setAssignee] = useState("Unassigned");
-  const [milestone, setMilestone] = useState("No milestone");
+  const [status, setStatus] = useState<IssueStatus>("backlog");
+  const [priority, setPriority] = useState<IssuePriority>("medium");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [createMore, setCreateMore] = useState(false);
   const labelMenu = useRef<HTMLDivElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+  const labelNames = new Map(labels.map((label) => [label.id, label.name]));
 
   useEffect(() => {
     if (!open) return;
     setTitle("");
     setPlan("");
-    setStatus("Backlog");
-    setPriority("Medium");
-    setAssignee("Unassigned");
-    setMilestone("No milestone");
+    setStatus("backlog");
+    setPriority("medium");
+    setAssigneeId("");
+    setMilestoneId("");
     setSelectedLabels([]);
     setLabelsOpen(false);
     setCreateMore(false);
@@ -76,9 +81,9 @@ export function NewIssueModal({
       plan: plan.trim(),
       status,
       priority,
-      assignee,
-      milestone,
-      labels: selectedLabels,
+      assigneeId,
+      milestoneId,
+      labelIds: selectedLabels,
     });
     if (!createMore) {
       onClose();
@@ -86,10 +91,10 @@ export function NewIssueModal({
     }
     setTitle("");
     setPlan("");
-    setStatus("Backlog");
-    setPriority("Medium");
-    setAssignee("Unassigned");
-    setMilestone("No milestone");
+    setStatus("backlog");
+    setPriority("medium");
+    setAssigneeId("");
+    setMilestoneId("");
     setSelectedLabels([]);
     setLabelsOpen(false);
     titleInput.current?.focus();
@@ -143,37 +148,34 @@ export function NewIssueModal({
             label="Priority"
             value={priority}
             onChange={(value) => setPriority(value as IssuePriority)}
-            options={issuePriorities.map((item) => ({ value: item, label: item }))}
+            options={issuePriorities.map((item) => ({
+              value: item,
+              label: issuePriorityLabel[item],
+            }))}
           />
           <Select
             variant="chip"
             icon="circle-dashed"
             label="Status"
             value={status}
-            onChange={setStatus}
-            options={statuses.map((item) => ({ value: item, label: item }))}
+            onChange={(value) => setStatus(value as IssueStatus)}
+            options={statuses}
           />
           <Select
             variant="chip"
             icon="circle-user-round"
             label="Assignee"
-            value={assignee}
-            onChange={setAssignee}
-            options={["Unassigned", ...assignees].map((item) => ({
-              value: item,
-              label: item === "Unassigned" ? "Assignee" : item,
-            }))}
+            value={assigneeId}
+            onChange={setAssigneeId}
+            options={[{ value: "", label: "Assignee" }, ...assignees]}
           />
           <Select
             variant="chip"
             icon="target"
             label="Milestone"
-            value={milestone}
-            onChange={setMilestone}
-            options={["No milestone", ...milestones].map((item) => ({
-              value: item,
-              label: item === "No milestone" ? "Milestone" : item,
-            }))}
+            value={milestoneId}
+            onChange={setMilestoneId}
+            options={[{ value: "", label: "Milestone" }, ...milestones]}
           />
           <div
             className="relative"
@@ -200,21 +202,21 @@ export function NewIssueModal({
                 className="absolute top-[calc(100%+6px)] left-0 z-30 max-h-[240px] w-[190px] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-[5px] shadow-[0_12px_28px_#0009] [&_.icon]:h-4 [&_.icon]:w-4 [&_.icon]:text-[#7896ff] [&_button]:flex [&_button]:w-full [&_button]:items-center [&_button]:justify-between [&_button]:rounded-[6px] [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-[9px] [&_button]:py-[8px] [&_button]:text-left [&_button]:text-[#c7cfdb] [&_button:focus-visible]:bg-[#283140] [&_button:hover]:bg-[#283140]"
                 aria-label="Choose labels"
               >
-                {labels.map((label) => (
+                {labels.map(({ id, name }) => (
                   <button
                     type="button"
-                    key={label}
-                    aria-pressed={selectedLabels.includes(label)}
+                    key={id}
+                    aria-pressed={selectedLabels.includes(id)}
                     onClick={() =>
                       setSelectedLabels((current) =>
-                        current.includes(label)
-                          ? current.filter((item) => item !== label)
-                          : [...current, label],
+                        current.includes(id)
+                          ? current.filter((item) => item !== id)
+                          : [...current, id],
                       )
                     }
                   >
-                    <span>{label}</span>
-                    {selectedLabels.includes(label) && <Icon name="check" />}
+                    <span>{name}</span>
+                    {selectedLabels.includes(id) && <Icon name="check" />}
                   </button>
                 ))}
               </div>
@@ -223,16 +225,16 @@ export function NewIssueModal({
         </div>
         {selectedLabels.length > 0 && (
           <div className="mt-[10px] flex flex-wrap gap-[5px] [&_button]:rounded-full [&_button]:border [&_button]:border-[#3b424e] [&_button]:bg-[#252b35] [&_button]:px-[8px] [&_button]:py-[3px] [&_button]:text-[12px] [&_button]:text-[#becbe0] [&_span]:ml-[3px] [&_span]:text-[#8e9bac]">
-            {selectedLabels.map((label) => (
+            {selectedLabels.map((id) => (
               <button
                 type="button"
-                key={label}
+                key={id}
                 onClick={() =>
-                  setSelectedLabels((current) => current.filter((item) => item !== label))
+                  setSelectedLabels((current) => current.filter((item) => item !== id))
                 }
-                aria-label={`Remove ${label} label`}
+                aria-label={`Remove ${labelNames.get(id)} label`}
               >
-                {label} <span aria-hidden="true">×</span>
+                {labelNames.get(id)} <span aria-hidden="true">×</span>
               </button>
             ))}
           </div>

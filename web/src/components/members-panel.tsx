@@ -1,12 +1,14 @@
-import type { TeamMember } from "../lib/types";
+import { formatDate } from "../lib/format";
+import type { Actor } from "../lib/types";
 import { Avatar } from "./avatar";
 import { Icon } from "./icon";
 
-type MembersPanelProps = { members: TeamMember[]; onAdd: () => void };
+type MembersPanelProps = { actors: Actor[]; onAdd: () => void };
 
-/** The team member table. */
-export function MembersPanel({ members, onAdd }: MembersPanelProps) {
-  const agentCount = members.reduce((total, member) => total + member.agents.length, 0);
+/** The team member table, each person with the agents they own. */
+export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
+  const members = actors.filter((actor) => actor.kind === "human");
+  const agents = actors.filter((actor) => actor.kind === "agent");
 
   return (
     <section className="rounded-[8px] border border-[#222730] bg-[#0d0f12] p-[22px] max-[700px]:p-[16px]">
@@ -14,7 +16,7 @@ export function MembersPanel({ members, onAdd }: MembersPanelProps) {
         <div>
           <h2>Team members</h2>
           <p className="muted text-[#a2aec2]">
-            {members.length} team members · {agentCount} agents
+            {members.length} team members · {agents.length} agents
           </p>
         </div>
         <button
@@ -36,12 +38,12 @@ export function MembersPanel({ members, onAdd }: MembersPanelProps) {
           </thead>
           <tbody>
             {members.map((member) => (
-              <tr key={member.email}>
+              <tr key={member.id}>
                 <td>
                   <div className="flex items-center gap-[10px]">
-                    <Avatar name={member.name} />
+                    <Avatar actor={member} />
                     <div>
-                      <strong>{member.name}</strong>
+                      <strong>{member.display_name}</strong>
                       <div className="muted mt-[3px] text-[12px] text-[#a2aec2]">
                         {member.email}
                       </div>
@@ -50,25 +52,29 @@ export function MembersPanel({ members, onAdd }: MembersPanelProps) {
                 </td>
                 <td>
                   <div className="flex flex-wrap items-center gap-[10px]">
-                    {member.agents.map((agent) => (
-                      <span
-                        className="inline-flex items-center gap-2 rounded-[8px] border border-[#222731] bg-[#171a1f] px-[8px] py-[5px] text-[12px] whitespace-nowrap [&_.agent-icon]:h-[24px] [&_.agent-icon]:w-[24px]"
-                        key={agent}
-                      >
-                        <Avatar name={agent} />
-                        {agent}
-                        <span className="ml-[3px] h-2 w-2 rounded-full bg-[#16d99b]" />
-                        Active
-                      </span>
-                    ))}
+                    {agents
+                      .filter((agent) => agent.owner_actor_id === member.id)
+                      .map((agent) => (
+                        <span
+                          className="inline-flex items-center gap-2 rounded-[8px] border border-[#222731] bg-[#171a1f] px-[8px] py-[5px] text-[12px] whitespace-nowrap [&_.agent-icon]:h-[24px] [&_.agent-icon]:w-[24px]"
+                          key={agent.id}
+                        >
+                          <Avatar actor={agent} />
+                          {agent.display_name}
+                          <span
+                            className={`ml-[3px] h-2 w-2 rounded-full ${agent.disabled_at ? "bg-[#77889f]" : "bg-[#16d99b]"}`}
+                          />
+                          {agent.disabled_at ? "Disabled" : "Active"}
+                        </span>
+                      ))}
                   </div>
                 </td>
                 <td>
                   <span className="inline-block rounded-full border border-[#2b313a] bg-[#191c22] px-2 py-[4px] text-[12px] text-[#adb9c9] capitalize">
-                    {member.role}
+                    {member.disabled_at ? "disabled" : member.role}
                   </span>
                 </td>
-                <td className="muted text-[#a2aec2]">{member.joined}</td>
+                <td className="muted text-[#a2aec2]">{formatDate(member.created_at)}</td>
               </tr>
             ))}
           </tbody>

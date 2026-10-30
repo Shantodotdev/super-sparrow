@@ -1,21 +1,19 @@
 import { Link } from "@tanstack/react-router";
-import { issueStatuses, statusIcon } from "../lib/issue-status";
+import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
 import { slugify } from "../lib/format";
-import type { Issue } from "../lib/types";
+import type { Issue, IssueStatus } from "../lib/types";
 import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 import { Person } from "./person";
 
 type IssueBoardProps = {
   issues: Issue[];
-  statusFilter: string;
+  statusFilter: IssueStatus | undefined;
 };
 
-/** Lays issues out as one column per status; a status filter other than "All" keeps one column. */
+/** Lays issues out as one column per status; a status filter keeps only its column. */
 export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
-  const columns = issueStatuses.filter(
-    (status) => statusFilter === "All" || status === statusFilter,
-  );
+  const columns = issueStatuses.filter((status) => !statusFilter || status === statusFilter);
 
   return (
     <div
@@ -29,7 +27,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
           <section
             className="flex min-h-0 flex-[0_0_270px] flex-col rounded-[10px] border border-[#222831] bg-[#0d0f12] p-[12px]"
             key={status}
-            aria-label={status}
+            aria-label={issueStatusLabel[status]}
           >
             <div className="flex items-center gap-[8px] px-[2px] pt-[2px] pb-4">
               <span
@@ -37,7 +35,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
               >
                 <Icon name={statusIcon[status]} />
               </span>
-              <strong className="text-[13px]">{status}</strong>
+              <strong className="text-[13px]">{issueStatusLabel[status]}</strong>
               <span className="count rounded-[5px] bg-[#262b34] px-2 py-[3px] text-[12px] text-[#dce2ec]">
                 {rows.length}
               </span>
@@ -45,7 +43,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
             <div
               className="grid min-h-0 scrollbar-thin [scrollbar-color:#465062_transparent] auto-rows-max content-start gap-[9px] overflow-y-auto overscroll-contain"
               role="region"
-              aria-label={`${status} issues`}
+              aria-label={`${issueStatusLabel[status]} issues`}
               tabIndex={0}
             >
               {rows.map((issue) => (
@@ -59,11 +57,18 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                   <strong className="text-[13px] leading-[1.4] text-[#edf0f6]">
                     {issue.title}
                   </strong>
-                  <LabelChips labels={issue.labels} />
+                  <LabelChips labelIds={issue.label_ids} />
                   <span className="flex w-full items-center justify-between gap-[12px] text-[12px]">
-                    <Person name={issue.assignee} />
-                    <span className="muted text-[#a2aec2]">
-                      <Icon name="message-square" /> &nbsp;{issue.findings}
+                    <Person actorId={issue.assignee_actor_id} />
+                    <span className="muted flex gap-[10px] text-[#a2aec2]">
+                      {issue.unresolved_findings > 0 && (
+                        <span title={`${issue.unresolved_findings} unresolved findings`}>
+                          <Icon name="triangle-alert" /> &nbsp;{issue.unresolved_findings}
+                        </span>
+                      )}
+                      <span title={`${issue.comment_count} comments`}>
+                        <Icon name="message-square" /> &nbsp;{issue.comment_count}
+                      </span>
                     </span>
                   </span>
                 </Link>

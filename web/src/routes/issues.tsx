@@ -2,47 +2,77 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Columns3 } from "lucide-react";
-import { Filter } from "../components/filter";
+import { Filter, all } from "../components/filter";
 import { Icon } from "../components/icon";
 import { IssueBoard } from "../components/issue-board";
 import { IssueList } from "../components/issue-list";
 import { NewIssueModal } from "../components/new-issue-modal";
 import { useElementHeight } from "../hooks/use-element-height";
 import { filterIssues } from "../lib/issue-filter";
-import { issueStatuses } from "../lib/issue-status";
+import { issueStatusLabel, issueStatuses } from "../lib/issue-status";
 import type { IssueStatus } from "../lib/types";
-import { validateIssuesSearch } from "../lib/search";
-import { issueLabelOptions, issuesQuery, useCreateIssue } from "../queries/issues";
+import { validateIssuesSearch, type IssuesSearch } from "../lib/search";
+import { issuesQuery, useCreateIssue } from "../queries/issues";
+import { actorsQuery, labelsQuery, milestonesQuery } from "../queries/project";
+import { loadQuery } from "../queries/seeded";
 
 export const Route = createFileRoute("/issues")({
   staticData: { section: "issues" },
   validateSearch: validateIssuesSearch,
   loader: async ({ context }) => {
-    await context.queryClient.query({ ...issuesQuery, staleTime: "static" });
+    await Promise.all([
+      loadQuery(context.queryClient, issuesQuery),
+      loadQuery(context.queryClient, actorsQuery),
+      loadQuery(context.queryClient, labelsQuery),
+      loadQuery(context.queryClient, milestonesQuery),
+    ]);
   },
   component: IssuesPage,
 });
 
-/** The project issue list, shown as a grouped list or a board, with search and filters. */
+/**
+ * The project issue list, shown as a grouped list or a board, with search and filters. The view
+ * and filters live in the URL, so a filtered list can be reloaded and shared.
+ */
 function IssuesPage() {
-  const { view } = Route.useSearch();
+  const search = Route.useSearch();
+  const { view } = search;
   const navigate = Route.useNavigate();
   const { data: issues } = useSuspenseQuery(issuesQuery);
+  const { data: actors } = useSuspenseQuery(actorsQuery);
+  const { data: labels } = useSuspenseQuery(labelsQuery);
+  const { data: milestones } = useSuspenseQuery(milestonesQuery);
   const createIssue = useCreateIssue();
 
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("All");
-  const [assignee, setAssignee] = useState("All");
-  const [label, setLabel] = useState("All");
-  const [milestone, setMilestone] = useState("All");
   const [collapsed, setCollapsed] = useState<IssueStatus[]>([]);
   const [creating, setCreating] = useState(false);
   const { ref: toolbarRef, height: toolbarHeight } = useElementHeight<HTMLDivElement>();
 
-  const assignees = [...new Set(issues.map((issue) => issue.assignee))];
-  const milestones = [...new Set(issues.map((issue) => issue.milestone))];
-  const labels = issueLabelOptions(issues);
-  const filtered = filterIssues(issues, { query, status, assignee, label, milestone });
+  const assignable = actors.filter((actor) => actor.kind !== "system" && !actor.disabled_at);
+  const statusOptions = issueStatuses.map((status) => ({
+    value: status,
+    label: issueStatusLabel[status],
+  }));
+  const assigneeOptions = assignable.map((actor) => ({
+    value: actor.id,
+    label: actor.display_name,
+  }));
+  const labelOptions = labels.map((label) => ({ value: label.id, label: label.name }));
+  const milestoneOptions = milestones.map((milestone) => ({
+    value: milestone.id,
+    label: milestone.name,
+  }));
+  const filtered = filterIssues(issues, search);
+
+  /** Sets one filter in the URL; the "All" choice removes it. Filtering replaces the history entry. */
+  const setFilter = (name: Exclude<keyof IssuesSearch, "view">, value: string) =>
+    void navigate({
+      search: (previous) => ({
+        ...previous,
+        [name]: value === all || value === "" ? undefined : value,
+      }),
+      replace: true,
+    });
 
   const toggleGroup = (group: IssueStatus) =>
     setCollapsed((items) =>
@@ -53,7 +83,9 @@ function IssuesPage() {
     if ((view === "board") === (nextView === "board")) return;
 
     const updateView = async () => {
-      await navigate({ search: { view: nextView === "board" ? "board" : undefined } });
+      await navigate({
+        search: (previous) => ({ ...previous, view: nextView === "board" ? "board" : undefined }),
+      });
     };
     const pageDocument = document as Document & {
       startViewTransition?: (updateCallback: () => Promise<void>) => {
@@ -93,18 +125,33 @@ function IssuesPage() {
             <input
               className="w-[295px] max-w-[295px] min-w-[100px] flex-[1_1_180px] rounded-full"
               placeholder="Search issues..."
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={search.q ?? ""}
+              onChange={(event) => setFilter("q", event.target.value)}
               aria-label="Search issues"
             />
-            <Filter name="Status" value={status} onChange={setStatus} options={issueStatuses} />
-            <Filter name="Assignee" value={assignee} onChange={setAssignee} options={assignees} />
-            <Filter name="Label" value={label} onChange={setLabel} options={labels} />
+            <Filter
+              name="Status"
+              value={search.status ?? all}
+              onChange={(value) => setFilter("status", value)}
+              options={statusOptions}
+            />
+            <Filter
+              name="Assignee"
+              value={search.assignee ?? all}
+              onChange={(value) => setFilter("assignee", value)}
+              options={assigneeOptions}
+            />
+            <Filter
+              name="Label"
+              value={search.label ?? all}
+              onChange={(value) => setFilter("label", value)}
+              options={labelOptions}
+            />
             <Filter
               name="Milestone"
-              value={milestone}
-              onChange={setMilestone}
-              options={milestones}
+              value={search.milestone ?? all}
+              onChange={(value) => setFilter("milestone", value)}
+              options={milestoneOptions}
             />
             <div
               className={`relative isolate ml-auto inline-flex shrink-0 gap-[2px] rounded-full border border-[#292e38] bg-[#101216] p-[3px] before:pointer-events-none before:absolute before:inset-y-[3px] before:left-[3px] before:z-0 before:w-[calc(50%-4px)] before:rounded-full before:bg-[#273142] before:transition-transform before:duration-220 before:ease-[cubic-bezier(0.2,0.8,0.2,1)] before:content-[''] motion-reduce:before:transition-none ${view === "board" ? "before:translate-x-[calc(100%+2px)]" : ""}`}
@@ -142,7 +189,7 @@ function IssuesPage() {
         </div>
       </div>
       {view === "board" ? (
-        <IssueBoard issues={filtered} statusFilter={status} />
+        <IssueBoard issues={filtered} statusFilter={search.status} />
       ) : (
         <IssueList
           issues={filtered}
@@ -153,9 +200,9 @@ function IssuesPage() {
       )}
       <NewIssueModal
         open={creating}
-        statuses={issueStatuses}
-        assignees={assignees}
-        milestones={milestones}
+        statuses={statusOptions}
+        assignees={assigneeOptions}
+        milestones={milestoneOptions}
         labels={labels}
         onCreate={createIssue}
         onClose={() => setCreating(false)}

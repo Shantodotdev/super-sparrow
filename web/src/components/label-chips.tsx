@@ -1,3 +1,5 @@
+import { useLabelName } from "../queries/project";
+
 const labelStyles: Record<string, string> = {
   ux: "border-[#3b255b] bg-[#211634] text-[#c5a8ff]",
   ui: "border-[#3b255b] bg-[#211634] text-[#c5a8ff]",
@@ -13,7 +15,11 @@ const labelStyles: Record<string, string> = {
   database: "border-[#235057] bg-[#10292d] text-[#8fd5da]",
 };
 
-export function LabelChips({ labels }: { labels: string[] }) {
+/** Shows an issue's labels by ID, each in its color. */
+export function LabelChips({ labelIds }: { labelIds: string[] }) {
+  const labelName = useLabelName();
+  const labels = labelIds.map(labelName);
+
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-[5px]">
       {labels.map((label) => (

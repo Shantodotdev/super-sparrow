@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 
 /**
  * Builds query options for preview data held in memory.
@@ -14,4 +14,9 @@ export function seededQuery<T>(name: string, seed: T) {
     staleTime: Infinity,
     gcTime: Infinity,
   });
+}
+
+/** Loads one query before a page renders, reusing data already in the cache. */
+export function loadQuery<T>(queryClient: QueryClient, query: ReturnType<typeof seededQuery<T>>) {
+  return queryClient.query({ ...query, staleTime: "static" });
 }

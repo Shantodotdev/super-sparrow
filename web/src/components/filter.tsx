@@ -4,8 +4,11 @@ type FilterProps = {
   name: string;
   value: string;
   onChange: (value: string) => void;
-  options: string[];
+  options: { value: string; label: string }[];
 };
+
+/** The value of a filter's "All" choice, which narrows nothing. */
+export const all = "all";
 
 /** A dropdown that narrows a list, with an "All" choice added in front of the options. */
 export function Filter({ name, value, onChange, options }: FilterProps) {
@@ -15,7 +18,7 @@ export function Filter({ name, value, onChange, options }: FilterProps) {
       label={name}
       value={value}
       onChange={onChange}
-      options={["All", ...options].map((item) => ({ value: item, label: item }))}
+      options={[{ value: all, label: "All" }, ...options]}
     />
   );
 }

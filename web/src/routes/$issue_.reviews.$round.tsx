@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { FindingCard } from "../components/finding-card";
@@ -6,18 +5,31 @@ import { FindingDetail } from "../components/finding-detail";
 import { Icon } from "../components/icon";
 import { NotFoundState } from "../components/not-found-state";
 import { Select } from "../components/select";
+import { formatDate, shortSha } from "../lib/format";
+import { validateReviewSearch } from "../lib/search";
 import type { Finding, Issue, ReviewRound } from "../lib/types";
 import { findingsQuery } from "../queries/findings";
 import { issuesQuery } from "../queries/issues";
-import { reviewRoundsQuery } from "../queries/review-rounds";
+import {
+  actorsQuery,
+  commentsQuery,
+  labelsQuery,
+  reviewRoundsQuery,
+  useActor,
+} from "../queries/project";
+import { loadQuery } from "../queries/seeded";
 
 export const Route = createFileRoute("/$issue_/reviews/$round")({
   staticData: { section: "issues" },
+  validateSearch: validateReviewSearch,
   loader: async ({ context }) => {
     await Promise.all([
-      context.queryClient.query({ ...issuesQuery, staleTime: "static" }),
-      context.queryClient.query({ ...findingsQuery, staleTime: "static" }),
-      context.queryClient.query({ ...reviewRoundsQuery, staleTime: "static" }),
+      loadQuery(context.queryClient, issuesQuery),
+      loadQuery(context.queryClient, findingsQuery),
+      loadQuery(context.queryClient, reviewRoundsQuery),
+      loadQuery(context.queryClient, actorsQuery),
+      loadQuery(context.queryClient, commentsQuery),
+      loadQuery(context.queryClient, labelsQuery),
     ]);
   },
   component: ReviewPage,
@@ -25,7 +37,7 @@ export const Route = createFileRoute("/$issue_/reviews/$round")({
 
 /** One review round of an issue: its findings on the left and the selected finding on the right. */
 function ReviewPage() {
-  const { issue: issueKey, round } = Route.useParams();
+  const { issue: issueKey, round: roundParam } = Route.useParams();
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
@@ -40,36 +52,44 @@ function ReviewPage() {
     );
   }
 
-  const issueRounds = rounds.filter((item) => item.issue === issue.key);
-  const issueFindings = findings.filter((item) => item.issue === issue.key);
+  const issueRounds = rounds.filter((item) => item.issue_id === issue.id);
+  const round = issueRounds.find((item) => String(item.number) === roundParam);
+  if (!round) {
+    return (
+      <NotFoundState
+        title="Review round not found"
+        description={`${issue.key} has no review round ${roundParam}.`}
+      />
+    );
+  }
 
   return (
-    // Keyed so the selected finding resets when the issue or round changes.
     <ReviewRoundView
-      key={`${issue.key}-${round}`}
       issue={issue}
       round={round}
       rounds={issueRounds}
-      issueFindings={issueFindings}
+      roundFindings={findings
+        .filter((item) => item.review_round_id === round.id)
+        .sort((a, b) => a.number - b.number)}
     />
   );
 }
 
 type ReviewRoundViewProps = {
   issue: Issue;
-  round: string;
+  round: ReviewRound;
   rounds: ReviewRound[];
-  issueFindings: Finding[];
+  roundFindings: Finding[];
 };
 
-function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundViewProps) {
+/** A round's findings and the selected one, which the URL names by label so it can be linked. */
+function ReviewRoundView({ issue, round, rounds, roundFindings }: ReviewRoundViewProps) {
   const navigate = Route.useNavigate();
-  const [selected, setSelected] = useState(0);
+  const { finding: selectedLabel } = Route.useSearch();
+  const actor = useActor();
 
-  const currentRound = rounds.find((item) => String(item.number) === round);
-  const roundFindings = issueFindings.filter((item) => String(item.round) === round);
-  const selectedFinding = roundFindings[selected] ?? roundFindings[0];
-  const openCount = issueFindings.filter((item) => item.status === "Open").length;
+  const selectedFinding =
+    roundFindings.find((item) => item.label === selectedLabel) ?? roundFindings[0];
 
   return (
     <>
@@ -78,30 +98,33 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
           <Link to="/$issue" params={{ issue: issue.key }}>
             {issue.key}
           </Link>{" "}
-          / Reviews / Round {round}
+          / Reviews / Round {round.number}
         </div>
         <div className="flex items-start justify-between gap-[24px] max-[700px]:flex-wrap">
           <div>
-            <h1>Review round {round}</h1>
+            <h1>Review round {round.number}</h1>
             <p className="mt-4 text-[#a9b8ca]">
-              {currentRound && (
-                <>
-                  <Icon name="git-branch" /> &nbsp; {currentRound.from} &nbsp;{" "}
-                  <Icon name="arrow-right" /> &nbsp;
-                  {currentRound.to}　 ·　 <Icon name="clock" /> &nbsp; {currentRound.date} ·{" "}
-                  {currentRound.author}
-                </>
-              )}
+              <Icon name="git-branch" /> &nbsp; {shortSha(round.from_commit) || "branch start"}{" "}
+              &nbsp; <Icon name="arrow-right" /> &nbsp;
+              {shortSha(round.to_commit)}
+              {round.includes_uncommitted && " and uncommitted changes"}　 ·　 <Icon name="clock" />{" "}
+              &nbsp; {formatDate(round.finished_at ?? round.created_at)} ·{" "}
+              {actor(round.author_actor_id)?.display_name ?? "Unknown"}
+              {!round.finished_at && " · in progress"}
             </p>
-            <p className="mt-[16px] text-[16px] text-[#abb8cc]">
-              {currentRound?.summary ?? "This review round is not available in the preview."}
-            </p>
+            {round.summary && (
+              <p className="mt-[16px] text-[16px] whitespace-pre-wrap text-[#abb8cc]">
+                {round.summary}
+              </p>
+            )}
           </div>
           <div className="flex gap-[20px] max-[700px]:w-full [&_>_.custom-select]:w-[150px] [&_select]:w-[150px]">
             <Select
               label="Review round"
-              value={round}
-              onChange={(value) => void navigate({ params: { issue: issue.key, round: value } })}
+              value={String(round.number)}
+              onChange={(value) =>
+                void navigate({ params: { issue: issue.key, round: value }, search: {} })
+              }
               options={rounds.map((item) => ({
                 value: String(item.number),
                 label: `Round ${item.number}`,
@@ -109,9 +132,11 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
             />
             <Link
               to="/findings"
+              search={{ issue: issue.key }}
               className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
             >
-              {openCount} open findings
+              {issue.unresolved_findings} unresolved{" "}
+              {issue.unresolved_findings === 1 ? "finding" : "findings"}
               <Icon name="chevron-down" />
             </Link>
           </div>
@@ -127,29 +152,25 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
           </div>
           {roundFindings.length ? (
             <div className="p-[12px]">
-              {roundFindings.map((finding, index) => (
+              {roundFindings.map((finding) => (
                 <FindingCard
                   key={finding.id}
                   finding={finding}
-                  position={index + 1}
-                  selected={index === selected}
-                  onSelect={() => setSelected(index)}
+                  selected={finding === selectedFinding}
+                  onSelect={() =>
+                    void navigate({ search: { finding: finding.label }, replace: true })
+                  }
                 />
               ))}
             </div>
           ) : (
             <div className="mx-auto my-40 max-w-120 p-[24px] text-center text-[#93a0b2] [&_h2]:mx-0 [&_h2]:mt-[18px] [&_h2]:mb-2 [&_h2]:text-[#e9edf5]">
-              <h2>No findings in this preview</h2>
-              <p>There are no findings for this round.</p>
+              <h2>No findings</h2>
+              <p>This round found no problems.</p>
             </div>
           )}
         </div>
-        {selectedFinding && (
-          <FindingDetail
-            key={`${selectedFinding.issue}-${selectedFinding.round}-${selectedFinding.id}`}
-            finding={selectedFinding}
-          />
-        )}
+        {selectedFinding && <FindingDetail key={selectedFinding.id} finding={selectedFinding} />}
       </div>
     </>
   );

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { sampleIssueDetails } from "../data/issue-details";
-import { slugify } from "../lib/format";
-import { issueStatuses, statusIcon } from "../lib/issue-status";
+import { slugify, webUrl } from "../lib/format";
+import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
 import type { Finding, Issue, IssueStatus, ReviewRound } from "../lib/types";
-import { issueLabelOptions, issuesQuery, useUpdateIssue } from "../queries/issues";
+import { useUpdateIssue } from "../queries/issues";
+import { labelsQuery, milestonesQuery } from "../queries/project";
 import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 import { LabelPicker } from "./label-picker";
@@ -22,9 +22,13 @@ type IssuePropertiesProps = {
 /** The side panel of an issue page: status, people, branch, review rounds, and labels. */
 export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProps) {
   const [editingLabels, setEditingLabels] = useState(false);
-  const { data: issues } = useSuspenseQuery(issuesQuery);
+  const { data: labels } = useSuspenseQuery(labelsQuery);
+  const { data: milestones } = useSuspenseQuery(milestonesQuery);
   const updateIssue = useUpdateIssue();
-  const { branch, pullRequest } = sampleIssueDetails;
+
+  const milestone = milestones.find((item) => item.id === issue.milestone_id);
+  const pullRequestUrl = webUrl(issue.pull_request_url);
+  const pullNumber = /\/pull\/(\d+)/.exec(pullRequestUrl)?.[1];
 
   return (
     <aside className="border-l border-l-[#242932] p-[30px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_>_.custom-select]:w-full [&_h3]:mx-0 [&_h3]:mt-[22px] [&_h3]:mb-[9px] [&_h3]:text-[14px] [&_h3:first-child]:mt-0">
@@ -36,26 +40,36 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
           label="Status"
           value={issue.status}
           icon={statusIcon[issue.status]}
-          onChange={(value) => updateIssue(issue.key, { status: value as IssueStatus })}
-          options={issueStatuses.map((status) => ({ value: status, label: status }))}
+          onChange={(value) => updateIssue(issue.id, () => ({ status: value as IssueStatus }))}
+          options={issueStatuses.map((status) => ({
+            value: status,
+            label: issueStatusLabel[status],
+          }))}
         />
       </div>
       <h3>Assignee</h3>
       <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
-        <Person name={issue.assignee} />
+        <Person actorId={issue.assignee_actor_id} />
       </div>
       <h3>Milestone</h3>
       <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
-        <Icon name="target" className="issue-icon-goal" /> &nbsp;{issue.milestone}
+        <Icon name="target" className="issue-icon-goal" /> &nbsp;{milestone?.name ?? "No milestone"}
       </div>
       <h3>Branch</h3>
       <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
-        <Icon name="git-branch" className="issue-icon-branch" /> &nbsp; {branch}
+        <Icon name="git-branch" className="issue-icon-branch" /> &nbsp;{" "}
+        {issue.branch_name || "No branch"}
       </div>
       <h3>Pull request</h3>
       <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
         <Icon name="github" className="issue-icon-pull-request" /> &nbsp;{" "}
-        <span className="text-[#719bff]">#{pullRequest.number}</span> &nbsp; {pullRequest.title}
+        {pullRequestUrl ? (
+          <a className="text-[#719bff]" href={pullRequestUrl} target="_blank" rel="noreferrer">
+            {pullNumber ? `#${pullNumber}` : pullRequestUrl}
+          </a>
+        ) : (
+          "No pull request"
+        )}
       </div>
       <div className="mt-8 border-t border-t-[#252b34] pt-[22px] [&_p]:mt-[15px]">
         <div className="mb-[10px] flex justify-between">
@@ -71,7 +85,7 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
             </Link>
           )}
         </div>
-        <ReviewRoundList rounds={rounds} findings={findings} />
+        <ReviewRoundList issue={issue} rounds={rounds} findings={findings} />
       </div>
       <div className="mt-8 border-t border-t-[#252b34] pt-[22px] [&_p]:mt-[15px]">
         <div className="mb-[10px] flex justify-between">
@@ -85,15 +99,15 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
             {editingLabels ? "Done" : "Edit"}
           </button>
         </div>
-        <LabelChips labels={issue.labels} />
-        {issue.labels.length === 0 && (
+        <LabelChips labelIds={issue.label_ids} />
+        {issue.label_ids.length === 0 && (
           <p className="muted mt-[3px] text-[12px] text-[#a2aec2]">No labels</p>
         )}
         {editingLabels && (
           <LabelPicker
-            options={issueLabelOptions(issues)}
-            selected={issue.labels}
-            onChange={(labels) => updateIssue(issue.key, { labels })}
+            options={labels}
+            selected={issue.label_ids}
+            onChange={(labelIds) => updateIssue(issue.id, () => ({ label_ids: labelIds }))}
           />
         )}
       </div>

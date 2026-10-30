@@ -1,15 +1,21 @@
+import { formatDate } from "../lib/format";
 import type { AgentToken } from "../lib/types";
+import { useActor } from "../queries/project";
 import { Icon } from "./icon";
 import { Person } from "./person";
 
 type TokensPanelProps = {
   tokens: AgentToken[];
   onCreate: () => void;
-  onRevoke: (id: string) => void;
+  /** Asks to revoke a token; the page confirms before anything is revoked. */
+  onRevoke: (token: AgentToken) => void;
 };
 
-/** The agent token table. */
+/** The agent token table. Tokens show only their hint; the secret is shown once, when created. */
 export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
+  const actor = useActor();
+  const now = Date.now();
+
   return (
     <section className="rounded-[8px] border border-[#222730] bg-[#0d0f12] p-[22px] max-[700px]:p-[16px]">
       <div className="mb-[20px] flex items-start justify-between gap-[20px] [&_p]:mt-[3px]">
@@ -41,17 +47,23 @@ export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
               <tr key={token.id}>
                 <td>
                   <strong>{token.label}</strong>
+                  <div className="muted mt-[3px] text-[12px] text-[#a2aec2]">
+                    {token.display_hint}
+                  </div>
                 </td>
-                <td>{token.owner}</td>
+                <td>{actor(token.owner_actor_id)?.display_name ?? "Unknown"}</td>
                 <td>
-                  <Person name={token.agent} />
+                  <Person actorId={token.agent_actor_id} />
                 </td>
-                <td>{token.expires}</td>
-                <td>{token.lastUsed}</td>
+                <td>
+                  {new Date(token.expires_at).getTime() <= now ? "Expired " : ""}
+                  {formatDate(token.expires_at)}
+                </td>
+                <td>{token.last_used_at ? formatDate(token.last_used_at) : "Never"}</td>
                 <td>
                   <button
                     className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
-                    onClick={() => onRevoke(token.id)}
+                    onClick={() => onRevoke(token)}
                   >
                     Revoke
                   </button>

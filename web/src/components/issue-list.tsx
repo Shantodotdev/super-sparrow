@@ -1,26 +1,33 @@
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { slugify } from "../lib/format";
-import { issueStatuses, statusIcon } from "../lib/issue-status";
+import {
+  issuePriorityLabel,
+  issueStatusLabel,
+  issueStatuses,
+  statusIcon,
+} from "../lib/issue-status";
 import type { Issue, IssuePriority, IssueStatus } from "../lib/types";
+import { useActor } from "../queries/project";
 import { Avatar } from "./avatar";
+import { useActorTitle } from "./person";
 import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 
 const groupBackground: Record<IssueStatus, string> = {
-  "In Review": "bg-[#2b2634]",
-  "In Progress": "bg-[#1c2736]",
-  Todo: "bg-[#27292c]",
-  Backlog: "bg-[#292c30]",
-  Done: "bg-[#23302a]",
-  Canceled: "bg-[#27292c]",
+  in_review: "bg-[#2b2634]",
+  in_progress: "bg-[#1c2736]",
+  todo: "bg-[#27292c]",
+  backlog: "bg-[#292c30]",
+  done: "bg-[#23302a]",
+  canceled: "bg-[#27292c]",
 };
 
 const priorityStyles: Record<IssuePriority, string> = {
-  Urgent: "text-[#ff8585] [&>span]:opacity-100",
-  High: "text-[#f2ad67] [&>span]:opacity-22 [&>span:nth-child(-n+3)]:opacity-100",
-  Medium: "text-[#d8c66d] [&>span]:opacity-22 [&>span:nth-child(-n+2)]:opacity-100",
-  Low: "text-[#9ba9bc] [&>span]:opacity-22 [&>span:first-child]:opacity-100",
+  urgent: "text-[#ff8585] [&>span]:opacity-100",
+  high: "text-[#f2ad67] [&>span]:opacity-22 [&>span:nth-child(-n+3)]:opacity-100",
+  medium: "text-[#d8c66d] [&>span]:opacity-22 [&>span:nth-child(-n+2)]:opacity-100",
+  low: "text-[#9ba9bc] [&>span]:opacity-22 [&>span:first-child]:opacity-100",
 };
 
 type IssueListProps = {
@@ -32,6 +39,9 @@ type IssueListProps = {
 
 /** Lists issues grouped by status. Each group can be collapsed under its sticky heading. */
 export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: IssueListProps) {
+  const actor = useActor();
+  const actorTitle = useActorTitle();
+
   return (
     <div
       className="scrollbar-thin [scrollbar-color:#465062_transparent] px-[26px] pt-0 pb-[50px] [view-transition-name:issue-view-content] max-[700px]:px-[16px] max-[700px]:pt-0 max-[700px]:pb-[16px] [&_>_section+section]:mt-[8px]"
@@ -59,7 +69,7 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
               >
                 <Icon name={statusIcon[status]} />
               </span>
-              <strong>{status}</strong>
+              <strong>{issueStatusLabel[status]}</strong>
               <span className="text-[13px] font-medium text-[#9ba9bc]">{rows.length}</span>
             </button>
             <div
@@ -78,8 +88,8 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
                     <span
                       className={`inline-flex h-[16px] w-[18px] items-end gap-[2px] [&>span]:flex-[0_0_3px] [&>span]:rounded-t-[2px] [&>span]:bg-current [&>span:nth-child(1)]:h-[4px] [&>span:nth-child(2)]:h-2 [&>span:nth-child(3)]:h-[11px] [&>span:nth-child(4)]:h-[15px] ${priorityStyles[issue.priority]}`}
                       role="img"
-                      aria-label={`${issue.priority} priority`}
-                      title={`${issue.priority} priority`}
+                      aria-label={`${issuePriorityLabel[issue.priority]} priority`}
+                      title={`${issuePriorityLabel[issue.priority]} priority`}
                     >
                       <span aria-hidden="true" />
                       <span aria-hidden="true" />
@@ -90,14 +100,14 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
                       {issue.key}
                     </span>
                     <span className="text-[15px] text-[#eef0f5]">{issue.title}</span>
-                    <LabelChips labels={issue.labels} />
+                    <LabelChips labelIds={issue.label_ids} />
                     <span
                       className="[&_.agent-icon]:h-[32px] [&_.agent-icon]:w-[32px] [&_.avatar]:h-[32px] [&_.avatar]:w-[32px] [&_.avatar]:text-[11px]"
                       role="img"
-                      aria-label={`Assigned to ${issue.assignee}`}
-                      title={issue.assignee}
+                      aria-label={`Assigned to ${actorTitle(actor(issue.assignee_actor_id))}`}
+                      title={actorTitle(actor(issue.assignee_actor_id))}
                     >
-                      <Avatar name={issue.assignee} />
+                      <Avatar actor={actor(issue.assignee_actor_id)} />
                     </span>
                   </Link>
                 ))}

@@ -1,30 +1,42 @@
-import { Tabs } from "../components/tabs";
-import { useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { Discussion } from "../components/discussion";
+import { EventLine, eventIssueId } from "../components/event-line";
 import { Icon } from "../components/icon";
 import { IssuePlan } from "../components/issue-plan";
 import { IssueProperties } from "../components/issue-properties";
 import { NotFoundState } from "../components/not-found-state";
-import { Person } from "../components/person";
 import { ReviewRoundList } from "../components/review-round-list";
-import { sampleIssueDetails } from "../data/issue-details";
+import { Tabs } from "../components/tabs";
 import { slugify } from "../lib/format";
 import { statusIcon } from "../lib/issue-status";
 import { validateIssueSearch, type IssueTab } from "../lib/search";
-import type { Finding, Issue, ReviewRound } from "../lib/types";
+import type { ActivityEvent, Finding, Issue, ReviewRound } from "../lib/types";
 import { findingsQuery } from "../queries/findings";
 import { issuesQuery } from "../queries/issues";
-import { reviewRoundsQuery } from "../queries/review-rounds";
+import {
+  activityQuery,
+  actorsQuery,
+  commentsQuery,
+  labelsQuery,
+  milestonesQuery,
+  reviewRoundsQuery,
+} from "../queries/project";
+import { loadQuery } from "../queries/seeded";
 
 export const Route = createFileRoute("/$issue")({
   staticData: { section: "issues" },
   validateSearch: validateIssueSearch,
   loader: async ({ context }) => {
     await Promise.all([
-      context.queryClient.query({ ...issuesQuery, staleTime: "static" }),
-      context.queryClient.query({ ...findingsQuery, staleTime: "static" }),
-      context.queryClient.query({ ...reviewRoundsQuery, staleTime: "static" }),
+      loadQuery(context.queryClient, issuesQuery),
+      loadQuery(context.queryClient, findingsQuery),
+      loadQuery(context.queryClient, reviewRoundsQuery),
+      loadQuery(context.queryClient, actorsQuery),
+      loadQuery(context.queryClient, labelsQuery),
+      loadQuery(context.queryClient, milestonesQuery),
+      loadQuery(context.queryClient, commentsQuery),
+      loadQuery(context.queryClient, activityQuery),
     ]);
   },
   component: IssuePage,
@@ -36,12 +48,13 @@ const tabs: { id: IssueTab; label: string }[] = [
   { id: "activity", label: "Activity" },
 ];
 
-/** An issue's plan, review rounds, and properties; the selected tab lives in the URL. */
+/** An issue's plan, review rounds, activity, and comments; the selected tab lives in the URL. */
 function IssuePage() {
   const { issue: issueKey } = Route.useParams();
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
+  const { data: events } = useSuspenseQuery(activityQuery);
 
   const issue = issues.find((item) => item.key === issueKey);
   if (!issue) {
@@ -56,23 +69,22 @@ function IssuePage() {
   return (
     <IssueDetail
       issue={issue}
-      rounds={rounds.filter((round) => round.issue === issue.key)}
-      findings={findings.filter((finding) => finding.issue === issue.key)}
+      rounds={rounds.filter((round) => round.issue_id === issue.id)}
+      findings={findings.filter((finding) => finding.issue_id === issue.id)}
+      events={events.filter((event) => eventIssueId(event) === issue.id)}
     />
   );
 }
 
-type IssueDetailProps = { issue: Issue; rounds: ReviewRound[]; findings: Finding[] };
+type IssueDetailProps = {
+  issue: Issue;
+  rounds: ReviewRound[];
+  findings: Finding[];
+  events: ActivityEvent[];
+};
 
-function IssueDetail({ issue, rounds, findings }: IssueDetailProps) {
+function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
   const { tab = "plan" } = Route.useSearch();
-  const [checks, setChecks] = useState(() =>
-    sampleIssueDetails.plan.checklist.map((item) => item.done),
-  );
-  const { branch, commentCount, summary } = sampleIssueDetails;
-
-  const toggleCheck = (index: number) =>
-    setChecks((items) => items.map((done, i) => (i === index ? !done : done)));
 
   return (
     <div className="grid min-h-screen grid-cols-[minmax(0,1fr)_410px] max-[1100px]:grid-cols-[minmax(0,1fr)_310px] max-[700px]:block [&_.issue-icon-approach]:text-[#b28aff] [&_.issue-icon-branch]:text-[#b28aff] [&_.issue-icon-checklist]:text-[#61c99d] [&_.issue-icon-comments]:text-[#7bbdcf] [&_.issue-icon-goal]:text-[#7c9dff] [&_.issue-icon-pull-request]:text-[#7fcd9c] [&_.issue-icon-review]:text-[#a38af1] [&_.issue-icon-warning]:text-[#e8ae62]">
@@ -83,13 +95,18 @@ function IssueDetail({ issue, rounds, findings }: IssueDetailProps) {
         <h1>{issue.title}</h1>
         <div className="mt-4 text-[#a9b8ca]">
           <Icon name={statusIcon[issue.status]} className={`status-${slugify(issue.status)}`} />{" "}
-          &nbsp;{issue.key}　 ·　 <Icon name="git-branch" className="issue-icon-branch" /> &nbsp;
-          {branch}　 ·　 <Icon name="message-square" className="issue-icon-comments" /> &nbsp;{" "}
-          {commentCount} comments
+          &nbsp;{issue.key}
+          {issue.branch_name && (
+            <>
+              {"　 ·　 "}
+              <Icon name="git-branch" className="issue-icon-branch" /> &nbsp;
+              {issue.branch_name}
+            </>
+          )}
+          {"　 ·　 "}
+          <Icon name="message-square" className="issue-icon-comments" /> &nbsp;{" "}
+          {issue.comment_count} {issue.comment_count === 1 ? "comment" : "comments"}
         </div>
-        {issue.plan === undefined && (
-          <p className="mt-[16px] text-[16px] text-[#abb8cc]">{summary}</p>
-        )}
         <Tabs className="mt-[27px] border-b border-b-[#252a32]">
           {tabs.map(({ id, label }) => (
             <Link
@@ -109,35 +126,23 @@ function IssueDetail({ issue, rounds, findings }: IssueDetailProps) {
             </Link>
           ))}
         </Tabs>
-        {tab === "plan" && issue.plan !== undefined && (
-          <div className="max-w-[850px] whitespace-pre-wrap [&_h2]:mb-[8px] [&_ol]:list-decimal [&_ol]:pl-[18px] [&_ol]:leading-[1.55] [&_ol]:text-[#b4c1d3] [&_p]:leading-[1.55] [&_p]:text-[#b4c1d3] [&_section]:mt-[24px] [&_section]:grid [&_section]:grid-cols-[38px_1fr] [&_section]:gap-[10px] [&_ul]:list-disc [&_ul]:pl-[18px] [&_ul]:leading-[1.55] [&_ul]:text-[#b4c1d3]">
-            {issue.plan || "No plan added yet."}
-          </div>
-        )}
-        {tab === "plan" && issue.plan === undefined && (
-          <IssuePlan checks={checks} onToggleCheck={toggleCheck} />
-        )}
+        {tab === "plan" && <IssuePlan issue={issue} />}
         {tab === "rounds" && (
           <div className="px-0 py-[20px]">
-            <ReviewRoundList rounds={rounds} findings={findings} />
+            <ReviewRoundList issue={issue} rounds={rounds} findings={findings} />
           </div>
         )}
         {tab === "activity" && (
           <div className="px-0 py-[20px]">
-            <Person name="Shanto" />{" "}
-            <span className="muted text-[#a2aec2]">
-              created this issue and added the initial plan.
-            </span>
+            {events.length === 0 && <p className="muted text-[#a2aec2]">No activity yet.</p>}
+            {[...events].reverse().map((event) => (
+              <EventLine key={event.id} event={event} />
+            ))}
           </div>
         )}
-        <div className="mx-[-32px] mt-[25px] mb-0 border-t border-t-[#232832] px-[32px] py-[20px] [&_p]:mt-[16px]">
-          <h2>Activity</h2>
-          <p>
-            <Person name="Shanto" />{" "}
-            <span className="muted text-[#a2aec2]">
-              created this issue. Added initial plan and approach.
-            </span>
-          </p>
+        <div className="mx-[-32px] mt-[25px] mb-0 border-t border-t-[#232832] px-[32px] py-[20px]">
+          <h2>Comments</h2>
+          <Discussion issueId={issue.id} findingId="" />
         </div>
       </div>
       <IssueProperties issue={issue} rounds={rounds} findings={findings} />

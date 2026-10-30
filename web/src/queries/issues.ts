@@ -1,29 +1,69 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { seedIssues } from "../data/issues";
+import { seedComments } from "../data/comments";
+import { seedFindings } from "../data/findings";
+import { newIssue, seedIssues } from "../data/issues";
+import { currentPerson } from "../data/team";
 import type { NewIssueValues } from "../components/new-issue-modal";
 import { useToast } from "../components/toast";
-import type { Issue, IssueStatus } from "../lib/types";
+import { checklistItems, setChecked } from "../lib/checklist";
+import { isUnresolved } from "../lib/finding-status";
+import type { ChecklistItem, Issue } from "../lib/types";
 import { seededQuery } from "./seeded";
 
-export const issuesQuery = seededQuery("issues", seedIssues);
+// The server counts unresolved findings and issue comments when it reads an issue; the preview
+// counts them once from its sample data, and its changes keep them current.
+const issuesWithCounts = seedIssues.map((issue) => ({
+  ...issue,
+  unresolved_findings: seedFindings.filter((f) => f.issue_id === issue.id && isUnresolved(f))
+    .length,
+  comment_count: seedComments.filter((c) => c.issue_id === issue.id && c.finding_id === "").length,
+}));
 
-/** Lists every label an issue can carry, including those no issue uses at the moment. */
-export function issueLabelOptions(issues: Issue[]): string[] {
-  return [...new Set([...seedIssues, ...issues].flatMap((issue) => issue.labels))].sort();
-}
+export const issuesQuery = seededQuery("issues", issuesWithCounts);
 
-/** Returns a function that changes the status or labels of one issue. */
+/** Returns a function that changes one issue's fields in the preview. */
 export function useUpdateIssue() {
   const queryClient = useQueryClient();
 
   return useCallback(
-    (key: string, changes: Partial<Pick<Issue, "status" | "labels">>) => {
+    (id: string, change: (issue: Issue) => Partial<Issue>) => {
       queryClient.setQueryData(issuesQuery.queryKey, (issues) =>
-        issues?.map((issue) => (issue.key === key ? { ...issue, ...changes } : issue)),
+        issues?.map((issue) =>
+          issue.id === id
+            ? { ...issue, ...change(issue), updated_at: new Date().toISOString() }
+            : issue,
+        ),
       );
     },
     [queryClient],
+  );
+}
+
+/**
+ * Returns a function that ticks or unticks one checklist item, as PATCH
+ * /api/issues/{key}/checklist does: it rewrites that line of the plan and moves the plan to its
+ * next revision.
+ */
+export function useSetChecklistItem() {
+  const updateIssue = useUpdateIssue();
+
+  return useCallback(
+    (issue: Issue, item: ChecklistItem, checked: boolean) =>
+      updateIssue(issue.id, (current) => {
+        const plan = setChecked(current.plan ?? "", item.index, checked);
+        const checklist = checklistItems(plan);
+        return {
+          plan,
+          checklist,
+          plan_revision: current.plan_revision + 1,
+          checklist_progress: {
+            done: checklist.filter((i) => i.checked).length,
+            total: checklist.length,
+          },
+        };
+      }),
+    [updateIssue],
   );
 }
 
@@ -37,22 +77,23 @@ export function useCreateIssue() {
       const issues = queryClient.getQueryData(issuesQuery.queryKey);
       if (!issues) throw new Error("create issue: issues are not loaded");
 
-      const key = `SP-${Math.max(...issues.map((issue) => Number(issue.key.split("-")[1]))) + 1}`;
-      const issue: Issue = {
-        key,
+      const now = new Date().toISOString();
+      const issue = newIssue({
+        number: Math.max(...issues.map((item) => item.number)) + 1,
         title: values.title,
-        status: values.status as IssueStatus,
+        status: values.status,
         priority: values.priority,
-        labels: values.labels,
-        assignee: values.assignee,
-        findings: 0,
-        milestone: values.milestone,
-        updated: "Just now",
+        labelIds: values.labelIds,
+        assigneeId: values.assigneeId,
+        milestoneId: values.milestoneId,
         plan: values.plan,
-      };
+        createdById: currentPerson.id,
+        createdAt: now,
+        updatedAt: now,
+      });
 
       queryClient.setQueryData(issuesQuery.queryKey, [issue, ...issues]);
-      notify(`${key} created in this preview`);
+      notify(`${issue.key} created in this preview`);
     },
     [queryClient, notify],
   );

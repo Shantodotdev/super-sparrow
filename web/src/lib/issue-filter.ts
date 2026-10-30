@@ -1,24 +1,23 @@
-/** Filters issue rows using the selected project list controls. */
+import type { IssuesSearch } from "./search";
+
+/** Filters issues by the issues page's search text and filters; a missing filter matches all. */
 export function filterIssues<
   T extends {
     key: string;
     title: string;
     status: string;
-    assignee: string;
-    labels: string[];
-    milestone: string;
+    assignee_actor_id: string;
+    label_ids: string[];
+    milestone_id: string;
   },
->(
-  issues: T[],
-  filters: { query: string; status: string; assignee: string; label: string; milestone: string },
-): T[] {
-  const query = filters.query.trim().toLowerCase();
+>(issues: T[], filters: IssuesSearch): T[] {
+  const query = (filters.q ?? "").trim().toLowerCase();
   return issues.filter(
     (issue) =>
       `${issue.key} ${issue.title}`.toLowerCase().includes(query) &&
-      (filters.status === "All" || issue.status === filters.status) &&
-      (filters.assignee === "All" || issue.assignee === filters.assignee) &&
-      (filters.label === "All" || issue.labels.includes(filters.label)) &&
-      (filters.milestone === "All" || issue.milestone === filters.milestone),
+      (!filters.status || issue.status === filters.status) &&
+      (!filters.assignee || issue.assignee_actor_id === filters.assignee) &&
+      (!filters.label || issue.label_ids.includes(filters.label)) &&
+      (!filters.milestone || issue.milestone_id === filters.milestone),
   );
 }
