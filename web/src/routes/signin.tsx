@@ -1,3 +1,5 @@
+import { apiWrite } from "../lib/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 
@@ -6,18 +8,35 @@ export const Route = createFileRoute("/signin")({
   component: SignInPage,
 });
 
-/** Signs in with an emailed code. In this preview no email is sent and any code is accepted. */
+/** Signs in with a server-verified emailed code. */
 function SignInPage() {
   const navigate = useNavigate();
+  const client = useQueryClient();
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-
-    if (sent) void navigate({ to: "/issues" });
-    else setSent(true);
+    if (pending) return;
+    setPending(true);
+    setError("");
+    try {
+      if (sent) {
+        await apiWrite("/api/auth/verify", "POST", { email, code });
+        client.clear();
+        await navigate({ to: "/issues" });
+      } else {
+        await apiWrite("/api/auth/code", "POST", { email });
+        setSent(true);
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Sign-in failed");
+    } finally {
+      setPending(false);
+    }
   };
 
   const resetEmail = () => {
@@ -64,7 +83,10 @@ function SignInPage() {
             />
           </label>
         )}
-        <button className="w-full rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]">
+        <button
+          disabled={pending}
+          className="w-full rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"
+        >
           {sent ? "Sign in" : "Continue with email"}
         </button>
         {sent && (
@@ -77,7 +99,7 @@ function SignInPage() {
           </button>
         )}
         <p className="muted mt-[10px] mb-[25px] text-[12px] leading-normal text-[#a2aec2]">
-          Frontend preview only. No email is sent.
+          {error && <span role="alert">{error}</span>}
         </p>
       </form>
     </div>

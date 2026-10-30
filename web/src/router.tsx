@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { ApiError } from "./lib/api";
 import type { NavSection } from "./lib/types";
@@ -14,6 +14,17 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 /** Creates the router with a shared TanStack Query client in its context. */
 export function getRouter() {
   const queryClient = new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error) => {
+        if (
+          error instanceof ApiError &&
+          error.status === 401 &&
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/signin"
+        )
+          window.location.replace("/signin");
+      },
+    }),
     defaultOptions: { queries: { staleTime: 30_000, retry: shouldRetry } },
   });
 

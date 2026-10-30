@@ -1,3 +1,6 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "../lib/api";
+import { meQuery } from "../queries/project";
 import { useEffect, useState } from "react";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
@@ -9,6 +12,25 @@ import { Sidebar } from "./sidebar";
  */
 export function AppShell() {
   const bare = useMatches({ select: (matches) => matches.some((match) => match.staticData.bare) });
+  const client = useQueryClient();
+  const identity = useQuery({ ...meQuery, enabled: !bare, refetchInterval: 30_000 });
+  useEffect(() => {
+    if (identity.error instanceof ApiError && identity.error.status === 401) {
+      client.clear();
+      window.location.assign("/signin");
+    }
+  }, [identity.error, client]);
+  useEffect(() => {
+    if (bare) return;
+    const stream = new EventSource("/api/events/stream");
+    stream.addEventListener("change", () => {
+      void client.invalidateQueries();
+    });
+    stream.onopen = () => {
+      void client.invalidateQueries();
+    };
+    return () => stream.close();
+  }, [bare, client]);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
