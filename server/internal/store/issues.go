@@ -13,7 +13,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 )
 
-const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.plan_revision, i.status, i.parent_issue_id,
+const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.plan_revision, i.status, i.priority, i.parent_issue_id,
 	i.milestone_id, i.assignee_actor_id, i.branch_name, i.pull_request_url,
 	(SELECT group_concat(label_id) FROM issue_labels WHERE issue_id = i.id),
 	i.created_by_actor_id, i.completed_at, i.created_at, i.updated_at,
@@ -34,6 +34,7 @@ type NewIssue struct {
 	Title           string
 	Plan            string
 	Status          IssueStatus
+	Priority        string
 	ParentIssueID   string
 	MilestoneID     string
 	AssigneeActorID string
@@ -56,6 +57,7 @@ type IssueUpdate struct {
 	BranchName      Field[string]
 	PullRequestURL  Field[string]
 	Status          Field[IssueStatus]
+	Priority        Field[string]
 	LabelIDs        Field[[]string]
 }
 
@@ -73,6 +75,7 @@ type IssueFilter struct {
 // issueFields holds validated issue values, shared by creation and follow-up issues.
 type issueFields struct {
 	title, plan                     string
+	priority                        string
 	status                          IssueStatus
 	parentID, milestoneID           string
 	assigneeID, branch, pullRequest string
@@ -124,6 +127,10 @@ func validateNewIssue(input NewIssue) (issueFields, error) {
 		return fields, invalid("label_ids", "must have at most %d labels", maxLabelsPerIssue)
 	}
 
+	if err := validatePriority(input.Priority); err != nil {
+		return fields, err
+	}
+	fields.priority = input.Priority
 	fields.status = input.Status
 	fields.parentID, fields.milestoneID, fields.assigneeID = input.ParentIssueID, input.MilestoneID, input.AssigneeActorID
 	fields.labelIDs = uniqueSorted(input.LabelIDs)
@@ -151,7 +158,7 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 
 	issue := Issue{
 		ID: newID(), ProjectID: project.ID, ProjectKey: project.Key, Number: number,
-		Title: fields.title, Plan: fields.plan, PlanRevision: 1, Status: fields.status,
+		Title: fields.title, Plan: fields.plan, PlanRevision: 1, Status: fields.status, Priority: fields.priority,
 		ParentIssueID: fields.parentID, MilestoneID: fields.milestoneID, AssigneeActorID: fields.assigneeID,
 		BranchName: fields.branch, PullRequestURL: fields.pullRequest, LabelIDs: fields.labelIDs,
 		CreatedByID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now,
@@ -163,10 +170,10 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 	}
 
 	_, err = w.exec(`
-		INSERT INTO issues (id, project_id, number, title, plan, status, parent_issue_id, milestone_id,
+		INSERT INTO issues (id, project_id, number, title, plan, status, priority, parent_issue_id, milestone_id,
 			assignee_actor_id, branch_name, pull_request_url, created_by_actor_id, completed_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		issue.ID, project.ID, number, issue.Title, issue.Plan, issue.Status, nullString(issue.ParentIssueID),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		issue.ID, project.ID, number, issue.Title, issue.Plan, issue.Status, issue.Priority, nullString(issue.ParentIssueID),
 		nullString(issue.MilestoneID), nullString(issue.AssigneeActorID), nullString(issue.BranchName),
 		nullString(issue.PullRequestURL), w.caller.ID, completedAt, w.timestamp(), w.timestamp())
 	if err != nil {
@@ -178,7 +185,7 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 	}
 
 	err = w.event(project.ID, TargetIssue, issue.ID, "issue.created", map[string]any{
-		"key": issue.Key(), "title": issue.Title, "status": issue.Status, "parent_issue_id": issue.ParentIssueID,
+		"key": issue.Key(), "title": issue.Title, "status": issue.Status, "priority": issue.Priority, "parent_issue_id": issue.ParentIssueID,
 		"milestone_id": issue.MilestoneID, "assignee_actor_id": issue.AssigneeActorID,
 		"branch_name": issue.BranchName, "label_ids": issue.LabelIDs,
 	})
@@ -225,6 +232,7 @@ func updateIssueFields(w *writeTx, current Issue, update IssueUpdate) error {
 	next := current
 	changes := map[string]any{}
 	applyChange(update.Title, &next.Title, "title", changes)
+	applyChange(update.Priority, &next.Priority, "priority", changes)
 	applyChange(update.ParentIssueID, &next.ParentIssueID, "parent_issue_id", changes)
 	applyChange(update.MilestoneID, &next.MilestoneID, "milestone_id", changes)
 	applyChange(update.AssigneeActorID, &next.AssigneeActorID, "assignee_actor_id", changes)
@@ -250,10 +258,10 @@ func updateIssueFields(w *writeTx, current Issue, update IssueUpdate) error {
 	}
 
 	_, err = w.exec(`
-		UPDATE issues SET title = ?, plan = ?, plan_revision = ?, parent_issue_id = ?, milestone_id = ?,
+		UPDATE issues SET title = ?, priority = ?, plan = ?, plan_revision = ?, parent_issue_id = ?, milestone_id = ?,
 			assignee_actor_id = ?, branch_name = ?, pull_request_url = ?, updated_at = ?
 		WHERE id = ?`,
-		next.Title, next.Plan, next.PlanRevision, nullString(next.ParentIssueID), nullString(next.MilestoneID),
+		next.Title, next.Priority, next.Plan, next.PlanRevision, nullString(next.ParentIssueID), nullString(next.MilestoneID),
 		nullString(next.AssigneeActorID), nullString(next.BranchName), nullString(next.PullRequestURL),
 		w.timestamp(), current.ID)
 	if err != nil {
@@ -265,6 +273,11 @@ func updateIssueFields(w *writeTx, current Issue, update IssueUpdate) error {
 
 func validateIssueUpdate(update *IssueUpdate) error {
 	var err error
+	if update.Priority.Set {
+		if err := validatePriority(update.Priority.Value); err != nil {
+			return err
+		}
+	}
 	if update.Title.Set {
 		if update.Title.Value, err = requiredText("title", update.Title.Value, maxTitleLength); err != nil {
 			return err
@@ -669,7 +682,7 @@ func scanIssue(row scanner) (Issue, error) {
 	var created, updated string
 
 	err := row.Scan(&issue.ID, &issue.ProjectID, &issue.ProjectKey, &issue.Number, &issue.Title, &issue.Plan,
-		&issue.PlanRevision, &issue.Status, &parent, &milestone, &assignee, &branch, &pullRequest, &labels,
+		&issue.PlanRevision, &issue.Status, &issue.Priority, &parent, &milestone, &assignee, &branch, &pullRequest, &labels,
 		&issue.CreatedByID, &completed, &created, &updated, &issue.UnresolvedFindings, &issue.CommentCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Issue{}, notFound("issue")
@@ -705,4 +718,13 @@ func uniqueSorted(values []string) []string {
 
 	slices.Sort(result)
 	return slices.Compact(result)
+}
+
+func validatePriority(priority string) error {
+	switch priority {
+	case "", "urgent", "high", "medium", "low":
+		return nil
+	default:
+		return invalid("priority", "must be urgent, high, medium, low, or empty")
+	}
 }

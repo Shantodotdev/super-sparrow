@@ -312,3 +312,34 @@ func issueNumbers(issues []Issue) []int {
 	}
 	return numbers
 }
+
+func TestIssuePriorityPersistsAndRecordsActor(t *testing.T) {
+	tm := newTeam(t)
+	project := tm.project(t, "WP")
+	issue := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: project.ID, Title: "Prioritized", Status: IssueTodo, Priority: "high"})).must(t)
+	if loaded := got(tm.store.GetIssue(tm.ctx, issue.ID)).must(t); loaded.Priority != "high" {
+		t.Fatalf("priority = %q", loaded.Priority)
+	}
+	updated := got(tm.store.UpdateIssue(tm.ctx, tm.agent, issue.ID, IssueUpdate{Priority: Change("urgent")})).must(t)
+	if updated.Priority != "urgent" || updated.PlanRevision != issue.PlanRevision {
+		t.Fatalf("updated %+v", updated)
+	}
+	events := got(tm.store.ListEvents(tm.ctx, EventFilter{TargetType: TargetIssue, TargetID: issue.ID, Limit: MaximumPageLimit})).must(t)
+	found := false
+	for _, event := range events {
+		if event.Kind == "issue.updated" && event.ActorID == tm.agent.ActorID && strings.Contains(string(event.Payload), "priority") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("priority update did not record the agent actor")
+	}
+	_, err := tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{Priority: Change("invalid")})
+	wantInvalid(t, err, "priority")
+	_, err = tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: project.ID, Title: "Invalid", Status: IssueTodo, Priority: "invalid"})
+	wantInvalid(t, err, "priority")
+	cleared := got(tm.store.UpdateIssue(tm.ctx, tm.member, issue.ID, IssueUpdate{Priority: Change("")})).must(t)
+	if cleared.Priority != "" {
+		t.Fatalf("cleared priority = %q", cleared.Priority)
+	}
+}

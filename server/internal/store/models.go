@@ -136,6 +136,7 @@ type Issue struct {
 	// the revision it started from.
 	PlanRevision    int
 	Status          IssueStatus
+	Priority        string
 	ParentIssueID   string
 	MilestoneID     string
 	AssigneeActorID string

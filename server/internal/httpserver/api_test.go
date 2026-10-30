@@ -569,3 +569,32 @@ func TestLabelColorAPI(t *testing.T) {
 		t.Fatalf("legacy label %+v", created.Label)
 	}
 }
+
+func TestIssuePriorityAPI(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+	var response struct {
+		Issue issueView `json:"issue"`
+	}
+	a.call(http.MethodPost, "/api/projects/WP/issues", a.member, map[string]any{"title": "Prioritized", "status": "todo", "priority": "high"}, http.StatusCreated, &response)
+	if response.Issue.Priority != "high" {
+		t.Fatalf("created priority = %q", response.Issue.Priority)
+	}
+	a.call(http.MethodPatch, "/api/issues/WP-2", a.member, map[string]any{"priority": "urgent"}, http.StatusOK, &response)
+	a.call(http.MethodGet, "/api/issues/WP-2", a.member, nil, http.StatusOK, &response)
+	if response.Issue.Priority != "urgent" {
+		t.Fatalf("loaded priority = %q", response.Issue.Priority)
+	}
+	var list struct {
+		Issues []issueView `json:"issues"`
+	}
+	a.call(http.MethodGet, "/api/projects/WP/issues", a.member, nil, http.StatusOK, &list)
+	if len(list.Issues) != 2 || list.Issues[0].Priority != "urgent" {
+		t.Fatalf("listed %+v", list.Issues)
+	}
+	wantField(t, a.request(http.MethodPatch, "/api/issues/WP-2", a.member, map[string]any{"priority": "invalid"}), "priority")
+	a.call(http.MethodPatch, "/api/issues/WP-2", a.member, map[string]any{"priority": nil}, http.StatusOK, &response)
+	if response.Issue.Priority != "" {
+		t.Fatalf("cleared priority = %q", response.Issue.Priority)
+	}
+}

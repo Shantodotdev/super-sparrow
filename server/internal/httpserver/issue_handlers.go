@@ -65,6 +65,7 @@ func (s *server) createIssue(w http.ResponseWriter, r *http.Request) error {
 		Title           string   `json:"title"`
 		Plan            string   `json:"plan"`
 		Status          string   `json:"status"`
+		Priority        string   `json:"priority"`
 		ParentIssueID   string   `json:"parent_issue_id"`
 		MilestoneID     string   `json:"milestone_id"`
 		AssigneeActorID string   `json:"assignee_actor_id"`
@@ -81,7 +82,7 @@ func (s *server) createIssue(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	issue, err := s.store.CreateIssue(r.Context(), identityFrom(r.Context()).caller(), store.NewIssue{
-		ProjectID: project.ID, Title: body.Title, Plan: body.Plan, Status: store.IssueStatus(body.Status),
+		ProjectID: project.ID, Title: body.Title, Plan: body.Plan, Status: store.IssueStatus(body.Status), Priority: body.Priority,
 		ParentIssueID: body.ParentIssueID, MilestoneID: body.MilestoneID, AssigneeActorID: body.AssigneeActorID,
 		BranchName: body.BranchName, PullRequestURL: body.PullRequestURL, LabelIDs: body.LabelIDs,
 	})
@@ -123,6 +124,7 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 		Title           *string   `json:"title"`
 		Plan            *string   `json:"plan"`
 		PlanRevision    int       `json:"plan_revision"`
+		Priority        *string   `json:"priority"`
 		Status          *string   `json:"status"`
 		ParentIssueID   *string   `json:"parent_issue_id"`
 		MilestoneID     *string   `json:"milestone_id"`
@@ -142,7 +144,7 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	update := store.IssueUpdate{
-		Title: patch(body.Title, nulls["title"]), Plan: patch(body.Plan, nulls["plan"]), PlanRevision: body.PlanRevision,
+		Priority: patch(body.Priority, nulls["priority"]), Title: patch(body.Title, nulls["title"]), Plan: patch(body.Plan, nulls["plan"]), PlanRevision: body.PlanRevision,
 		ParentIssueID: patch(body.ParentIssueID, nulls["parent_issue_id"]), MilestoneID: patch(body.MilestoneID, nulls["milestone_id"]),
 		AssigneeActorID: patch(body.AssigneeActorID, nulls["assignee_actor_id"]), BranchName: patch(body.BranchName, nulls["branch_name"]),
 		PullRequestURL: patch(body.PullRequestURL, nulls["pull_request_url"]), LabelIDs: patch(body.LabelIDs, nulls["label_ids"]),
