@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"filippo.io/age"
 	"github.com/shantodotdev/super-sparrow/server/internal/auth"
 	"github.com/shantodotdev/super-sparrow/server/internal/backup"
 	"github.com/shantodotdev/super-sparrow/server/internal/cli"
@@ -38,10 +39,11 @@ Server commands (read the server settings from the environment):
   serve                                     Apply migrations and run the server
   create-owner --name NAME --email EMAIL    Add the team's first owner
   import-linear --project NAME [--team KEY] Import a Linear project (needs LINEAR_API_KEY)
+  backup-keygen                             Make the key pair backups are encrypted with
   restore --list                            List the backup copies in R2 (needs the R2_ settings)
-  restore --copy sync|daily/YYYY-MM-DD --database PATH
-                                            Restore a copy into a new database file (also
-                                            needs BACKUP_ENCRYPTION_KEY)
+  restore --copy sync|daily/YYYY-MM-DD --identity FILE|- --database PATH
+                                            Restore a copy into a new database file, decrypted
+                                            with the private key in FILE, or on standard input
   version                                   Print the version
 
 ` + cli.Usage
@@ -64,6 +66,8 @@ func main() {
 		err = createOwner(ctx, args)
 	case command == "import-linear":
 		err = importLinear(ctx, args)
+	case command == "backup-keygen" && len(args) == 0:
+		err = backupKeygen()
 	case command == "restore":
 		err = restore(ctx, args)
 	case command == "version" && len(args) == 0:
@@ -161,14 +165,30 @@ func importLinear(ctx context.Context, args []string) error {
 	return err
 }
 
+// backupKeygen prints a new age key pair for backups in age-keygen's format, which age itself
+// also reads, and says where each half goes.
+func backupKeygen() error {
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		return fmt.Errorf("make a key pair: %w", err)
+	}
+
+	fmt.Printf("# created: %s\n# public key: %s\n%s\n", time.Now().UTC().Format(time.RFC3339), identity.Recipient(), identity)
+	fmt.Fprintf(os.Stderr, "\nSet BACKUP_AGE_RECIPIENT=%s on the server.\n"+
+		"Save the three lines above in the team's password manager. Restoring needs them; never put them on the server.\n",
+		identity.Recipient())
+	return nil
+}
+
 // restore lists the backup copies, or restores one into a new database file. It needs only the
-// R2 settings and the backup encryption key, so it runs on a fresh machine without the server's
+// R2 settings and the backups' private key, so it runs on a fresh machine without the server's
 // other settings.
 func restore(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
 	list := flags.Bool("list", false, "list the copies in the bucket")
 	copyName := flags.String("copy", "", "sync, daily/YYYY-MM-DD, or a key from --list")
 	target := flags.String("database", "", "where to write the restored database; it must not exist")
+	identityFile := flags.String("identity", "", "the file with the backups' private key, or - to read it from standard input")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -180,17 +200,17 @@ func restore(ctx context.Context, args []string) error {
 	bucket := backup.NewR2Bucket(r2.AccountID, r2.AccessKeyID, r2.SecretAccessKey, r2.Bucket)
 
 	if *list {
-		if flags.NArg() != 0 || *copyName != "" || *target != "" {
+		if flags.NArg() != 0 || *copyName != "" || *target != "" || *identityFile != "" {
 			return errors.New("usage: sparrow restore --list")
 		}
 		return listCopies(ctx, bucket)
 	}
-	if flags.NArg() != 0 || *copyName == "" || *target == "" {
-		return errors.New("usage: sparrow restore --copy sync|daily/YYYY-MM-DD --database PATH")
+	if flags.NArg() != 0 || *copyName == "" || *target == "" || *identityFile == "" {
+		return errors.New("usage: sparrow restore --copy sync|daily/YYYY-MM-DD --identity FILE|- --database PATH")
 	}
-	encryptionKey, err := config.LoadBackupKey(os.Getenv)
+	identities, err := readIdentities(*identityFile)
 	if err != nil {
-		return fmt.Errorf("invalid configuration:\n%w", err)
+		return err
 	}
 
 	key, err := backup.ResolveCopy(*copyName)
@@ -202,12 +222,31 @@ func restore(ctx context.Context, args []string) error {
 		return fmt.Errorf("resolve --database: %w", err)
 	}
 
-	size, err := backup.Restore(ctx, bucket, key, encryptionKey, path)
+	size, err := backup.Restore(ctx, bucket, key, identities, path)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Restored %s into %s (%d bytes); its integrity check passed.\n", key, path, size)
 	return nil
+}
+
+// readIdentities reads the age private keys in path, or on standard input when path is "-".
+func readIdentities(path string) ([]age.Identity, error) {
+	in := os.Stdin
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("open --identity: %w", err)
+		}
+		defer file.Close()
+		in = file
+	}
+
+	identities, err := age.ParseIdentities(in)
+	if err != nil {
+		return nil, fmt.Errorf("read the private key from --identity; it must hold a line starting with AGE-SECRET-KEY-1: %w", err)
+	}
+	return identities, nil
 }
 
 func listCopies(ctx context.Context, bucket *backup.Bucket) error {
@@ -266,15 +305,15 @@ func serve(ctx context.Context) error {
 	var jobs sync.WaitGroup
 	if cfg.Backups != nil {
 		runner := backup.NewRunner(backup.Options{
-			Store:         st,
-			Bucket:        backup.NewR2Bucket(cfg.Backups.R2.AccountID, cfg.Backups.R2.AccessKeyID, cfg.Backups.R2.SecretAccessKey, cfg.Backups.R2.Bucket),
-			EncryptionKey: cfg.Backups.EncryptionKey,
-			WorkDir:       filepath.Dir(cfg.DatabasePath),
-			KeepDays:      cfg.Backups.KeepDays,
-			DailyAt:       cfg.Backups.DailyAt,
-			TimeZone:      cfg.Backups.TimeZone,
-			Logger:        logger,
-			Now:           time.Now,
+			Store:     st,
+			Bucket:    backup.NewR2Bucket(cfg.Backups.R2.AccountID, cfg.Backups.R2.AccessKeyID, cfg.Backups.R2.SecretAccessKey, cfg.Backups.R2.Bucket),
+			Recipient: cfg.Backups.Recipient,
+			WorkDir:   filepath.Dir(cfg.DatabasePath),
+			KeepDays:  cfg.Backups.KeepDays,
+			DailyAt:   cfg.Backups.DailyAt,
+			TimeZone:  cfg.Backups.TimeZone,
+			Logger:    logger,
+			Now:       time.Now,
 		})
 		jobs.Go(func() { runner.Run(jobsCtx) })
 	} else {

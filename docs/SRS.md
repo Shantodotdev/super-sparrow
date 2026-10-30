@@ -157,7 +157,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 
 ## 7. Backups
 
-The Go server runs two jobs that write to Cloudflare R2. Both take a consistent copy of the database with SQLite's `VACUUM INTO`, never by copying the live file, then compress it, encrypt it with [age](https://age-encryption.org) under one encryption key, and upload it.
+The Go server runs two jobs that write to Cloudflare R2. Both take a consistent copy of the database with SQLite's `VACUUM INTO`, never by copying the live file, then compress it, encrypt it with [age](https://age-encryption.org) to the team's public key, and upload it.
 
 | Job          | When       | What it keeps in R2                                       | Protects against                                   |
 | ------------ | ---------- | --------------------------------------------------------- | -------------------------------------------------- |
@@ -166,8 +166,8 @@ The Go server runs two jobs that write to Cloudflare R2. Both take a consistent 
 
 - The sync replaces its copy only after the new upload succeeds, so a failed run never leaves R2 without a copy.
 - Both jobs record each run (start, finish, size, result) and log a failure. The settings page shows the last successful run of each.
-- `APP_ENV=production` requires the encryption key, R2 credentials, bucket, the daily backup time, and the number of days to keep, so a production server never runs without backups. In development they are optional, all or none, so a development machine runs without R2. The same key decrypts backups, so the team keeps a copy of it outside the server. Staging keeps daily backups for 30 days.
-- A `restore` CLI command downloads a chosen copy, decrypts it with the encryption key, checks it with `PRAGMA integrity_check`, and writes it as the database file.
+- `APP_ENV=production` requires the public key, R2 credentials, bucket, the daily backup time, and the number of days to keep, so a production server never runs without backups. In development they are optional, all or none, so a development machine runs without R2. The server holds only the public key and cannot decrypt its own backups; the matching private key, which the team keeps outside the server, decrypts them. Staging keeps daily backups for 30 days.
+- A `restore` CLI command downloads a chosen copy, decrypts it with the private key, checks it with `PRAGMA integrity_check`, and writes it as the database file.
 
 ## 8. Deployment
 

@@ -37,7 +37,7 @@ func productionEnv(t *testing.T) map[string]string {
 	env["TRUSTED_PROXIES"] = "127.0.0.1, 10.0.0.0/8"
 	env["WEB_DIR"] = webDir
 	env["GITHUB_WEBHOOK_SECRET"] = "a-long-enough-webhook-secret"
-	env["BACKUP_ENCRYPTION_KEY"] = "fedcba9876543210fedcba9876543210"
+	env["BACKUP_AGE_RECIPIENT"] = "age1gsdyrs7gwehv0unafknt05d0kkl202qp4uazx4y7y5acp8n7uudq3p92hk"
 	env["BACKUP_DAILY_TIME"] = "03:00"
 	env["BACKUP_TIME_ZONE"] = "Asia/Dhaka"
 	env["BACKUP_KEEP_DAYS"] = "30"
@@ -75,7 +75,7 @@ func TestProductionReadsEverySetting(t *testing.T) {
 	if cfg.WebDir != env["WEB_DIR"] || cfg.GitHubWebhookSecret != "a-long-enough-webhook-secret" {
 		t.Errorf("web dir %q, webhook secret %q", cfg.WebDir, cfg.GitHubWebhookSecret)
 	}
-	if cfg.Backups == nil || cfg.Backups.EncryptionKey != "fedcba9876543210fedcba9876543210" ||
+	if cfg.Backups == nil || cfg.Backups.Recipient.String() != "age1gsdyrs7gwehv0unafknt05d0kkl202qp4uazx4y7y5acp8n7uudq3p92hk" ||
 		cfg.Backups.DailyAt != 3*time.Hour || cfg.Backups.TimeZone.String() != "Asia/Dhaka" || cfg.Backups.KeepDays != 30 || cfg.Backups.R2.Bucket != "sparrow-backups" {
 		t.Errorf("backups %+v", cfg.Backups)
 	}
@@ -123,7 +123,7 @@ func TestDevelopmentNeedsAllBackupSettingsOrNone(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load accepted half of the backup settings")
 	}
-	for _, name := range []string{"BACKUP_ENCRYPTION_KEY", "BACKUP_DAILY_TIME", "BACKUP_TIME_ZONE", "BACKUP_KEEP_DAYS", "R2_ACCOUNT_ID"} {
+	for _, name := range []string{"BACKUP_AGE_RECIPIENT", "BACKUP_DAILY_TIME", "BACKUP_TIME_ZONE", "BACKUP_KEEP_DAYS", "R2_ACCOUNT_ID"} {
 		if !strings.Contains(err.Error(), name+" is required") {
 			t.Errorf("error does not name %s:\n%v", name, err)
 		}
@@ -155,7 +155,7 @@ func TestLoadRejectsMalformedSettings(t *testing.T) {
 		"TRUSTED_PROXIES":       "10.0.0.0/8, proxy.local",
 		"WEB_DIR":               "/no/such/folder",
 		"GITHUB_WEBHOOK_SECRET": "short",
-		"BACKUP_ENCRYPTION_KEY": "too-short",
+		"BACKUP_AGE_RECIPIENT":  "age1notakey",
 		"BACKUP_DAILY_TIME":     "25:00",
 		"BACKUP_TIME_ZONE":      "Mars/Olympus",
 		"BACKUP_KEEP_DAYS":      "0",

@@ -42,7 +42,7 @@ sparrow.example.com {
 
 ## Backups
 
-Two jobs run inside the server, always in production and in development when the backup settings are set. Each takes a consistent copy with `VACUUM INTO`, compresses it, encrypts it with [age](https://age-encryption.org) under `BACKUP_ENCRYPTION_KEY`, and uploads it to R2:
+Two jobs run inside the server, always in production and in development when the backup settings are set. Each takes a consistent copy with `VACUUM INTO`, compresses it, encrypts it with [age](https://age-encryption.org) to the public key in `BACKUP_AGE_RECIPIENT`, and uploads it to R2. The server holds only the public key, so someone who takes the server or its settings still cannot read a backup.
 
 - The **sync** runs when the server starts and then every hour, replacing `sync/sparrow.db.gz.age`. R2 replaces the old copy only once the new upload has finished.
 - The **daily backup** runs at `BACKUP_DAILY_TIME` in `BACKUP_TIME_ZONE` (03:00 in `Asia/Dhaka` on staging) as `daily/sparrow-YYYY-MM-DD.db.gz.age`, dated in that time zone, then deletes dated copies older than `BACKUP_KEEP_DAYS`. A daily backup that fails, or that was missed while the server was down, runs again after each hourly sync until one succeeds that day.
@@ -51,17 +51,17 @@ Each run is recorded, failures are logged, and `GET /api/backups` shows the last
 
 To set them up:
 
-1. Make an encryption key with `openssl rand -hex 32`, and store a copy in the team's password manager. A backup cannot be restored without it.
+1. Run `sparrow backup-keygen`. It prints a key pair: save the three lines it prints in the team's password manager, because a backup cannot be restored without the private key. Never put them on the server.
 2. Create an R2 bucket, and an R2 API token with Object Read & Write on that bucket only.
-3. Set `BACKUP_ENCRYPTION_KEY` to the key, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_DAILY_TIME` and `BACKUP_TIME_ZONE` (`03:00` and `Asia/Dhaka`), and `BACKUP_KEEP_DAYS` (`30` on staging).
+3. Set `BACKUP_AGE_RECIPIENT` to the public key, starting with `age1`, that `backup-keygen` printed, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_DAILY_TIME` and `BACKUP_TIME_ZONE` (`03:00` and `Asia/Dhaka`), and `BACKUP_KEEP_DAYS` (`30` on staging).
 
 ## Restoring
 
-`sparrow restore` needs only the four `R2_` settings and `BACKUP_ENCRYPTION_KEY`, so it runs on a fresh machine before the server is set up there.
+`sparrow restore` needs only the four `R2_` settings and the private key, so it runs on a fresh machine before the server is set up there.
 
-1. Export the four R2 settings and the encryption key in the shell.
+1. Export the four R2 settings in the shell, and copy the private key from the password manager.
 2. `sparrow restore --list` shows the copies.
-3. `sparrow restore --copy sync --database /var/lib/sparrow/sparrow.db` restores the hourly copy. Use `--copy daily/2026-03-01` for a dated copy. The command decrypts the copy, runs `PRAGMA integrity_check`, and only then writes the database file. It refuses to overwrite an existing database, so move a damaged one aside first.
+3. `sparrow restore --copy sync --identity - --database /var/lib/sparrow/sparrow.db` restores the hourly copy, reading the private key from standard input, so paste it and press Ctrl-D. `--identity` also takes a file, such as one saved by `backup-keygen`; delete that file afterwards. Use `--copy daily/2026-03-01` for a dated copy. The command decrypts the copy, runs `PRAGMA integrity_check`, and only then writes the database file. It refuses to overwrite an existing database, so move a damaged one aside first. The copies are standard age files, so `age -d -i key.txt copy.db.gz.age | gunzip > sparrow.db` also works.
 4. Start the server. It applies any newer migrations at startup.
 
 A sync loses at most the last hour of changes. Restore a daily copy to undo a mistake that the sync has already copied, such as a bad delete.

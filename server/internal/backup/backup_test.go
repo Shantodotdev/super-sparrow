@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"filippo.io/age"
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
@@ -109,9 +110,12 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	endpoint, _ := url.Parse(server.URL)
 	bucket := newBucket(endpoint, "auto", "key-id", "secret", "bucket", time.Now)
 
-	const encryptionKey = "test-backup-encryption-key-0123456789"
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := NewRunner(Options{
-		Store: st, Bucket: bucket, EncryptionKey: encryptionKey, WorkDir: dir, KeepDays: 3, DailyAt: 3 * time.Hour,
+		Store: st, Bucket: bucket, Recipient: identity.Recipient(), WorkDir: dir, KeepDays: 3, DailyAt: 3 * time.Hour,
 		TimeZone: dhaka(t), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: clock,
 	})
 
@@ -175,7 +179,7 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 			t.Fatal(err)
 		}
 		target := filepath.Join(t.TempDir(), "restored.db")
-		if _, err := Restore(ctx, bucket, key, encryptionKey, target); err != nil {
+		if _, err := Restore(ctx, bucket, key, []age.Identity{identity}, target); err != nil {
 			t.Fatalf("Restore %s: %v", name, err)
 		}
 
@@ -190,12 +194,16 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 			t.Fatalf("restored %s holds %q (%v)", name, projectName, err)
 		}
 
-		if _, err := Restore(ctx, bucket, key, encryptionKey, target); err == nil || !strings.Contains(err.Error(), "already exists") {
+		if _, err := Restore(ctx, bucket, key, []age.Identity{identity}, target); err == nil || !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("restore over an existing database: %v", err)
 		}
 	}
 
-	if _, err := Restore(ctx, bucket, SyncKey, "another-backup-encryption-key-012345", filepath.Join(t.TempDir(), "x.db")); err == nil {
+	other, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(ctx, bucket, SyncKey, []age.Identity{other}, filepath.Join(t.TempDir(), "x.db")); err == nil {
 		t.Fatal("restored with the wrong key")
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 3 {

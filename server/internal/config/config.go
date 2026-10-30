@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"filippo.io/age"
 	// The time zone database is built in, so BACKUP_TIME_ZONE works on servers without one.
 	_ "time/tzdata"
 )
@@ -23,7 +25,6 @@ import (
 const (
 	minWebhookSecretLength = 20
 	minCodeKeyLength       = 32
-	minBackupKeyLength     = 32
 )
 
 var r2AccountPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -40,7 +41,7 @@ const (
 
 // backupSettings are the settings of the backup jobs. Development needs all of them or none.
 var backupSettings = []string{
-	"BACKUP_ENCRYPTION_KEY", "BACKUP_DAILY_TIME", "BACKUP_TIME_ZONE", "BACKUP_KEEP_DAYS",
+	"BACKUP_AGE_RECIPIENT", "BACKUP_DAILY_TIME", "BACKUP_TIME_ZONE", "BACKUP_KEEP_DAYS",
 	"R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET",
 }
 
@@ -74,8 +75,9 @@ type Config struct {
 
 // Backups holds the settings of the hourly sync and the daily backup.
 type Backups struct {
-	// EncryptionKey encrypts every backup, and the restore command decrypts them with it.
-	EncryptionKey string
+	// Recipient is the age public key every backup is encrypted to. Its private key, which only
+	// the team holds, decrypts them on restore.
+	Recipient *age.X25519Recipient
 	// DailyAt is when the daily backup runs, as hours and minutes after midnight in TimeZone.
 	DailyAt time.Duration
 	// TimeZone is where DailyAt is read and where a daily backup's date comes from, such as
@@ -212,9 +214,14 @@ func loadBackups(getenv func(string) string) (*Backups, error) {
 	var backups Backups
 	var problems []error
 
-	key, err := LoadBackupKey(getenv)
+	recipient, err := required(getenv, "BACKUP_AGE_RECIPIENT")
+	if err == nil {
+		backups.Recipient, err = age.ParseX25519Recipient(recipient)
+		if err != nil {
+			err = errors.New("BACKUP_AGE_RECIPIENT must be an age public key starting with age1, such as the one sparrow backup-keygen prints")
+		}
+	}
 	problems = append(problems, err)
-	backups.EncryptionKey = key
 
 	dailyAt, err := required(getenv, "BACKUP_DAILY_TIME")
 	if err == nil {
@@ -252,16 +259,6 @@ func loadBackups(getenv func(string) string) (*Backups, error) {
 		return nil, err
 	}
 	return &backups, nil
-}
-
-// LoadBackupKey reads the key backups are encrypted with, which the backup jobs and the restore
-// command share.
-func LoadBackupKey(getenv func(string) string) (string, error) {
-	key, err := required(getenv, "BACKUP_ENCRYPTION_KEY")
-	if err == nil && len(key) < minBackupKeyLength {
-		err = fmt.Errorf("BACKUP_ENCRYPTION_KEY must be at least %d characters, such as the output of openssl rand -hex 32", minBackupKeyLength)
-	}
-	return key, err
 }
 
 // LoadR2 reads the R2 bucket settings, which the backup jobs and the restore command share.

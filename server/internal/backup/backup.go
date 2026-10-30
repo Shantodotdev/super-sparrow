@@ -1,9 +1,10 @@
 // Package backup copies the database to an R2 bucket, encrypted, and restores it.
 //
-// Both jobs take a consistent copy with VACUUM INTO, compress it with gzip, encrypt it with age
-// under the backup encryption key, and upload it. The hourly sync replaces one copy; the daily
-// backup keeps a dated copy per day and deletes those older than the configured number of days.
-// The same key decrypts the copies on restore. A daily backup that fails is tried again with each
+// Both jobs take a consistent copy with VACUUM INTO, compress it with gzip, encrypt it with age to
+// the team's public key, and upload it. The hourly sync replaces one copy; the daily backup keeps
+// a dated copy per day and deletes those older than the configured number of days. The server
+// holds only the public key, so it cannot read its own backups; restoring needs the private key,
+// which the team keeps outside the server. A daily backup that fails is tried again with each
 // hourly sync until one succeeds that day.
 package backup
 
@@ -42,23 +43,23 @@ func DailyKey(day time.Time) string {
 
 // Runner runs the backup jobs.
 type Runner struct {
-	store         *store.Store
-	bucket        *Bucket
-	encryptionKey string
-	workDir       string
-	keepDays      int
-	dailyAt       time.Duration
-	timeZone      *time.Location
-	logger        *slog.Logger
-	now           func() time.Time
+	store     *store.Store
+	bucket    *Bucket
+	recipient age.Recipient
+	workDir   string
+	keepDays  int
+	dailyAt   time.Duration
+	timeZone  *time.Location
+	logger    *slog.Logger
+	now       func() time.Time
 }
 
 // Options configures a Runner.
 type Options struct {
 	Store  *store.Store
 	Bucket *Bucket
-	// EncryptionKey encrypts each copy. Restore needs the same key.
-	EncryptionKey string
+	// Recipient is the public key each copy is encrypted to. Restore needs its private key.
+	Recipient age.Recipient
 	// WorkDir holds the temporary copies while a job runs. Keep it on the database's disk, which
 	// has room for a copy of the database.
 	WorkDir  string
@@ -74,7 +75,7 @@ type Options struct {
 // NewRunner returns a Runner.
 func NewRunner(opts Options) *Runner {
 	return &Runner{
-		store: opts.Store, bucket: opts.Bucket, encryptionKey: opts.EncryptionKey, workDir: opts.WorkDir,
+		store: opts.Store, bucket: opts.Bucket, recipient: opts.Recipient, workDir: opts.WorkDir,
 		keepDays: opts.KeepDays, dailyAt: opts.DailyAt, timeZone: opts.TimeZone, logger: opts.Logger, now: opts.Now,
 	}
 }
@@ -207,7 +208,7 @@ func (r *Runner) upload(ctx context.Context, key string) (int64, error) {
 	}
 
 	encrypted := filepath.Join(dir, "snapshot.db.gz.age")
-	if err := encryptFile(snapshot, encrypted, r.encryptionKey); err != nil {
+	if err := encryptFile(snapshot, encrypted, r.recipient); err != nil {
 		return 0, err
 	}
 	if err := os.Remove(snapshot); err != nil {
@@ -247,14 +248,8 @@ func (r *Runner) prune(ctx context.Context, today time.Time) error {
 	return errors.Join(problems...)
 }
 
-// encryptFile writes the gzip-compressed, age-encrypted contents of source to target, encrypted
-// with key as an age passphrase.
-func encryptFile(source, target, key string) error {
-	recipient, err := age.NewScryptRecipient(key)
-	if err != nil {
-		return fmt.Errorf("use the encryption key: %w", err)
-	}
-
+// encryptFile writes the gzip-compressed contents of source to target, encrypted to recipient.
+func encryptFile(source, target string, recipient age.Recipient) error {
 	in, err := os.Open(source)
 	if err != nil {
 		return fmt.Errorf("open copy: %w", err)
@@ -309,10 +304,10 @@ func ResolveCopy(name string) (string, error) {
 	return "", fmt.Errorf("copy %q must be sync, daily/YYYY-MM-DD, or a key from --list", name)
 }
 
-// Restore downloads the copy at key, decrypts it with encryptionKey, and writes it as the database
-// at target after PRAGMA integrity_check passes. It refuses to replace an existing database, so a
+// Restore downloads the copy at key, decrypts it with identities, the private keys the copies may
+// be encrypted to, and writes it as the database at target after PRAGMA integrity_check passes. It refuses to replace an existing database, so a
 // restore never overwrites data by accident; move the old file aside first.
-func Restore(ctx context.Context, bucket *Bucket, key, encryptionKey, target string) (int64, error) {
+func Restore(ctx context.Context, bucket *Bucket, key string, identities []age.Identity, target string) (int64, error) {
 	for _, path := range []string{target, target + "-wal", target + "-shm"} {
 		if _, err := os.Stat(path); err == nil {
 			return 0, fmt.Errorf("%s already exists; move the old database aside before restoring", path)
@@ -334,7 +329,7 @@ func Restore(ctx context.Context, bucket *Bucket, key, encryptionKey, target str
 	defer body.Close()
 
 	restored := filepath.Join(dir, "restored.db")
-	size, err := decryptTo(body, encryptionKey, restored)
+	size, err := decryptTo(body, identities, restored)
 	if err != nil {
 		return 0, err
 	}
@@ -349,14 +344,10 @@ func Restore(ctx context.Context, bucket *Bucket, key, encryptionKey, target str
 }
 
 // decryptTo decrypts and decompresses an encrypted copy into path and returns its size.
-func decryptTo(encrypted io.Reader, key, path string) (int64, error) {
-	identity, err := age.NewScryptIdentity(key)
+func decryptTo(encrypted io.Reader, identities []age.Identity, path string) (int64, error) {
+	decrypting, err := age.Decrypt(encrypted, identities...)
 	if err != nil {
-		return 0, fmt.Errorf("use the encryption key: %w", err)
-	}
-	decrypting, err := age.Decrypt(encrypted, identity)
-	if err != nil {
-		return 0, fmt.Errorf("decrypt the copy; is BACKUP_ENCRYPTION_KEY the key it was made with? %w", err)
+		return 0, fmt.Errorf("decrypt the copy; is this the private key of the BACKUP_AGE_RECIPIENT it was made with? %w", err)
 	}
 	decompressing, err := gzip.NewReader(decrypting)
 	if err != nil {
