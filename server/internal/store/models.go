@@ -33,6 +33,7 @@ type Actor struct {
 	ID           string
 	Kind         ActorKind
 	DisplayName  string
+	AvatarID     string
 	Email        string
 	Role         Role
 	AgentName    string

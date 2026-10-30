@@ -13,23 +13,25 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 
 ## Sign-in, sessions, people, and tokens
 
-| Method and path                 | Access | What it does                                                                                  |
-| ------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
-| `GET /api/health`               | public | `{"status": "ok"}` when the database answers                                                  |
-| `POST /api/auth/code`           | public | `{email}`; emails a code to an active teammate, with the same answer either way               |
-| `POST /api/auth/verify`         | public | `{email, code}`; sets the session cookie and returns `{actor}`. Ten checks per IP an hour     |
-| `POST /api/auth/sign-out`       | person | Ends this browser's session                                                                   |
-| `GET /api/me`                   |        | `{actor}`, the caller                                                                         |
-| `GET /api/sessions`             | person | The caller's signed-in devices, with `current` marking this one                               |
-| `DELETE /api/sessions`          | person | Signs out everywhere                                                                          |
-| `DELETE /api/sessions/{id}`     | person | Signs out one device                                                                          |
-| `GET /api/people`               |        | Every actor: people, agents, and the system. Agents get no email addresses                    |
-| `POST /api/people`              | owner  | `{display_name, email, role}`; adds and emails a teammate. Returns `{actor, invitation_sent}` |
-| `POST /api/people/{id}/disable` | owner  | Disables a person and their agents, and ends their sessions and tokens                        |
-| `GET /api/tokens`               | person | The caller's agent tokens; `?all=true` lists everyone's, for owners                           |
-| `POST /api/tokens`              | person | `{agent_name, label}`; returns `{token, secret}`. The secret is shown only here               |
-| `POST /api/tokens/{id}/renew`   | person | Another 90 days, for the token's own person                                                   |
-| `DELETE /api/tokens/{id}`       | person | Revokes a token; owners can revoke anyone's                                                   |
+| Method and path                 | Access | What it does                                                                                                                |
+| ------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`               | public | `{"status": "ok"}` when the database answers                                                                                |
+| `POST /api/auth/code`           | public | `{email}`; emails a code to an active teammate, with the same answer either way                                             |
+| `POST /api/auth/verify`         | public | `{email, code}`; sets the session cookie and returns `{actor}`. Ten checks per IP an hour                                   |
+| `POST /api/auth/sign-out`       | person | Ends this browser's session                                                                                                 |
+| `GET /api/me`                   |        | `{actor}`, the caller                                                                                                       |
+| `PATCH /api/me`                 | person | `{display_name?, avatar_id?}`; changes only the signed-in person. Empty or null avatar restores initials. Returns `{actor}` |
+| `GET /api/avatars`              | person | `{avatars: [{id, name, url}]}`; built-in avatar choices accepted by profile updates                                         |
+| `GET /api/sessions`             | person | The caller's signed-in devices, with `current` marking this one                                                             |
+| `DELETE /api/sessions`          | person | Signs out everywhere                                                                                                        |
+| `DELETE /api/sessions/{id}`     | person | Signs out one device                                                                                                        |
+| `GET /api/people`               |        | Every actor: people, agents, and the system. Agents get no email addresses                                                  |
+| `POST /api/people`              | owner  | `{display_name, email, role}`; adds and emails a teammate. Returns `{actor, invitation_sent}`                               |
+| `POST /api/people/{id}/disable` | owner  | Disables a person and their agents, and ends their sessions and tokens                                                      |
+| `GET /api/tokens`               | person | The caller's agent tokens; `?all=true` lists everyone's, for owners                                                         |
+| `POST /api/tokens`              | person | `{agent_name, label}`; returns `{token, secret}`. The secret is shown only here                                             |
+| `POST /api/tokens/{id}/renew`   | person | Another 90 days, for the token's own person                                                                                 |
+| `DELETE /api/tokens/{id}`       | person | Revokes a token; owners can revoke anyone's                                                                                 |
 
 ## Projects, milestones, and labels
 

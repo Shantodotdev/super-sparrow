@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 )
 
-const actorColumns = `id, kind, display_name, email, role, agent_name, owner_actor_id, disabled_at, created_at, updated_at`
+const actorColumns = `id, kind, display_name, avatar_id, email, role, agent_name, owner_actor_id, disabled_at, created_at, updated_at`
 
 // NewHuman describes a person to add to the team.
 type NewHuman struct {
@@ -275,7 +276,7 @@ func scanActor(row scanner) (Actor, error) {
 	var email, role, agentName, owner, disabled sql.NullString
 	var created, updated string
 
-	err := row.Scan(&actor.ID, &actor.Kind, &actor.DisplayName, &email, &role, &agentName, &owner, &disabled, &created, &updated)
+	err := row.Scan(&actor.ID, &actor.Kind, &actor.DisplayName, &actor.AvatarID, &email, &role, &agentName, &owner, &disabled, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Actor{}, notFound("actor")
 	}
@@ -292,4 +293,43 @@ func scanActor(row scanner) (Actor, error) {
 	}
 
 	return actor, nil
+}
+
+// ProfileUpdate contains the caller's editable human profile fields.
+type ProfileUpdate struct {
+	DisplayName Field[string]
+	AvatarID    Field[string]
+}
+
+// UpdateProfile updates only the authenticated person's own profile and records their actor.
+func (s *Store) UpdateProfile(ctx context.Context, by Caller, update ProfileUpdate) (Actor, error) {
+	if update.DisplayName.Set {
+		name, err := singleLineText("display_name", update.DisplayName.Value, maxNameLength)
+		if err != nil {
+			return Actor{}, err
+		}
+		update.DisplayName.Value = name
+	}
+	if update.AvatarID.Set && update.AvatarID.Value != "" && !slices.Contains(profileAvatarIDs, update.AvatarID.Value) {
+		return Actor{}, invalid("avatar_id", "must be one of the available avatars or empty for initials")
+	}
+	var actor Actor
+	err := s.write(ctx, by, func(w *writeTx) error {
+		if err := w.requireHuman("edit your profile"); err != nil {
+			return err
+		}
+		actor = w.caller
+		changes := map[string]any{}
+		applyChange(update.DisplayName, &actor.DisplayName, "display_name", changes)
+		applyChange(update.AvatarID, &actor.AvatarID, "avatar_id", changes)
+		if len(changes) == 0 {
+			return nil
+		}
+		if _, err := w.exec(`UPDATE actors SET display_name = ?, avatar_id = ?, updated_at = ? WHERE id = ?`, actor.DisplayName, actor.AvatarID, w.timestamp(), actor.ID); err != nil {
+			return fmt.Errorf("update profile %s: %w", actor.ID, err)
+		}
+		actor.UpdatedAt = w.now
+		return w.event("", TargetActor, actor.ID, "actor.updated", changes)
+	})
+	return actor, err
 }

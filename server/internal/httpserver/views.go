@@ -15,6 +15,7 @@ type actorView struct {
 	ID           string     `json:"id"`
 	Kind         string     `json:"kind"`
 	DisplayName  string     `json:"display_name"`
+	AvatarID     string     `json:"avatar_id"`
 	Email        string     `json:"email,omitempty"`
 	Role         string     `json:"role,omitempty"`
 	AgentName    string     `json:"agent_name,omitempty"`
@@ -25,7 +26,7 @@ type actorView struct {
 
 func newActorView(actor store.Actor) actorView {
 	return actorView{
-		ID: actor.ID, Kind: string(actor.Kind), DisplayName: actor.DisplayName, Email: actor.Email,
+		ID: actor.ID, Kind: string(actor.Kind), DisplayName: actor.DisplayName, AvatarID: actor.AvatarID, Email: actor.Email,
 		Role: string(actor.Role), AgentName: actor.AgentName, OwnerActorID: actor.OwnerActorID,
 		DisabledAt: actor.DisabledAt, CreatedAt: actor.CreatedAt,
 	}
