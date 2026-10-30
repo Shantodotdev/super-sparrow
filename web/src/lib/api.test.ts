@@ -21,4 +21,27 @@ describe("apiGet", () => {
     await expect(request).rejects.toBeInstanceOf(ApiError);
     await expect(request).rejects.toMatchObject({ status: 503 });
   });
+
+  test("keeps the server's error message and the field it names", async () => {
+    const request = apiGet(
+      "/api/issues",
+      respondWith(422, { error: "title is required", field: "title" }),
+    );
+
+    await expect(request).rejects.toMatchObject({
+      status: 422,
+      message: "title is required",
+      field: "title",
+    });
+  });
+
+  test("falls back to the status when the body is not the server's error", async () => {
+    const fetcher = (async () =>
+      new Response("Bad gateway", { status: 502 })) as unknown as typeof fetch;
+
+    await expect(apiGet("/api/health", fetcher)).rejects.toMatchObject({
+      status: 502,
+      message: "GET /api/health failed with status 502",
+    });
+  });
 });
