@@ -47,7 +47,7 @@ Two jobs run inside the server, always in production and in development when the
 - The **sync** runs when the server starts and then every hour, replacing `sync/sparrow.db.gz.age`. R2 replaces the old copy only once the new upload has finished.
 - The **daily backup** runs at `BACKUP_DAILY_TIME` in `BACKUP_TIME_ZONE` (03:00 in `Asia/Dhaka` on staging) as `daily/sparrow-YYYY-MM-DD.db.gz.age`, dated in that time zone, then deletes dated copies older than `BACKUP_KEEP_DAYS`. A daily backup that fails, or that was missed while the server was down, runs again after each hourly sync until one succeeds that day.
 
-Each run is recorded, failures are logged, and `GET /api/backups` shows the last run and last success of each job.
+Each run is recorded in the database, and failures are logged.
 
 To set them up:
 

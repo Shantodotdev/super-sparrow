@@ -101,7 +101,7 @@ The importer is in `server/internal/linear` and the webhook in `server/internal/
 - [x] Build the backup jobs: a consistent copy with `VACUUM INTO`, compression, age encryption, and upload to R2.
 - [x] Schedule the hourly sync, which replaces its copy only after a successful upload.
 - [x] Schedule the daily backup, with dated copies and deletion of copies older than the configured number of days.
-- [x] Record each backup run and show the last successful sync and backup in settings.
+- [x] Record each backup run and log failures.
 - [x] Add the `restore` CLI command, with an integrity check before it writes the database file.
 - [ ] Deploy to the staging server behind the reverse proxy with HTTPS.
 - [ ] Restore both the latest sync and a daily backup into a fresh machine, and document the steps. The steps are in [DEPLOYMENT.md](DEPLOYMENT.md#restoring); the restore on a fresh machine is not done yet.

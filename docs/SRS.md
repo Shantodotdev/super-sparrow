@@ -165,7 +165,7 @@ The Go server runs two jobs that write to Cloudflare R2. Both take a consistent 
 | Daily backup | Once a day | A dated full copy, kept for the configured number of days | Mistakes the sync would copy, such as a bad delete |
 
 - The sync replaces its copy only after the new upload succeeds, so a failed run never leaves R2 without a copy.
-- Both jobs record each run (start, finish, size, result) and log a failure. The settings page shows the last successful run of each.
+- Both jobs record each run (start, finish, size, result) and log a failure.
 - `APP_ENV=production` requires the public key, R2 credentials, bucket, the daily backup time, and the number of days to keep, so a production server never runs without backups. In development they are optional, all or none, so a development machine runs without R2. The server holds only the public key and cannot decrypt its own backups; the matching private key, which the team keeps outside the server, decrypts them. Staging keeps daily backups for 30 days.
 - A `restore` CLI command downloads a chosen copy, decrypts it with the private key, checks it with `PRAGMA integrity_check`, and writes it as the database file.
 

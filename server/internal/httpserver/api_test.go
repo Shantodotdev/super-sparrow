@@ -129,7 +129,6 @@ func TestAgentsAreRefusedPersonAndOwnerActions(t *testing.T) {
 		{http.MethodPatch, "/api/projects/WP", map[string]string{"name": "Renamed"}},
 		{http.MethodDelete, "/api/projects/WP", nil},
 		{http.MethodPost, "/api/projects/WP/milestones", map[string]string{"name": "M", "status": "planned"}},
-		{http.MethodGet, "/api/backups", nil},
 	} {
 		if response := a.request(attempt.method, attempt.path, a.agent, attempt.body); response.Code != http.StatusForbidden {
 			t.Errorf("agent %s %s: status %d", attempt.method, attempt.path, response.Code)
@@ -418,19 +417,6 @@ func TestReportedModelComesFromTheHeader(t *testing.T) {
 	events, err := a.store.ListEvents(context.Background(), store.EventFilter{TargetType: store.TargetComment, Limit: 1})
 	if err != nil || len(events) != 1 || events[0].ReportedModel != "claude-opus-5-5" {
 		t.Fatalf("comment events %+v (%v)", events, err)
-	}
-}
-
-func TestBackupStatusForPeople(t *testing.T) {
-	a := newAPITeam(t)
-
-	var status struct {
-		Enabled bool                       `json:"enabled"`
-		Jobs    map[string]json.RawMessage `json:"jobs"`
-	}
-	a.call(http.MethodGet, "/api/backups", a.member, nil, http.StatusOK, &status)
-	if status.Enabled || len(status.Jobs) != 2 {
-		t.Fatalf("backup status %+v", status)
 	}
 }
 

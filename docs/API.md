@@ -91,7 +91,6 @@ A finding moves `open` → `fix`, `wontfix` (needs a `reason`), or `later`, and 
 | `GET /api/issues/{key}/events`              | `{events, next_after}`: the issue's history, including its rounds, findings, and comments. Pages with `?after` and `?limit`            |
 | `GET /api/events`                           | Every event, oldest first. Filters: `?project=WP`, `?target_type=` with `?target_id=`, `?actor=<id>`. Pages with `?after` and `?limit` |
 | `GET /api/events/stream`                    | Server-Sent Events of new events (see below)                                                                                           |
-| `GET /api/backups`                          | _Person._ `{enabled, jobs: {sync, daily}}`, each with `last_run` and `last_success`                                                    |
 
 An event has `sequence`, `kind` (such as `finding.status_changed`), `target_type`, `target_id`, `project_id`, `actor_id`, `reported_model`, `payload`, and `created_at`. Agents see only project events, never those about people, sessions, or tokens.
 

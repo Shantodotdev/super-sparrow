@@ -288,7 +288,6 @@ func serve(ctx context.Context) error {
 			TrustedProxies:      cfg.TrustedProxies,
 			Now:                 time.Now,
 			Stop:                stopStreams,
-			BackupsEnabled:      cfg.Backups != nil,
 			Version:             version,
 			WebDir:              cfg.WebDir,
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,

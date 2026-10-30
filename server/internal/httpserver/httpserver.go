@@ -38,8 +38,6 @@ type Options struct {
 	// Stop is closed when the server starts shutting down, which ends open event streams so
 	// shutdown does not wait for them.
 	Stop <-chan struct{}
-	// BackupsEnabled says whether the backup jobs run, which settings show.
-	BackupsEnabled bool
 	// Version is the server's version, which MCP clients are told.
 	Version string
 	// WebDir is the folder of the built frontend to serve, or "" to serve none.
@@ -59,7 +57,6 @@ type server struct {
 	trustedProxies []netip.Prefix
 	perToken       *ratelimit.Limiter
 	stop           <-chan struct{}
-	backupsEnabled bool
 	mcp            *mcp.Server
 	webhookSecret  string
 	mux            *http.ServeMux
@@ -79,7 +76,6 @@ func New(opts Options) http.Handler {
 		trustedProxies: opts.TrustedProxies,
 		perToken:       ratelimit.New(tokenRequestsPerMinute, time.Minute, opts.Now),
 		stop:           opts.Stop,
-		backupsEnabled: opts.BackupsEnabled,
 		mcp:            mcp.New(opts.Store, opts.PublicURL, opts.Logger, opts.Version),
 		webhookSecret:  opts.GitHubWebhookSecret,
 		mux:            http.NewServeMux(),
@@ -147,7 +143,6 @@ func New(opts Options) http.Handler {
 
 	s.route("GET /api/events", signedIn, s.listEvents)
 	s.route("GET /api/events/stream", signedIn, s.streamEvents)
-	s.route("GET /api/backups", humanOnly, s.backupStatus)
 
 	// The MCP endpoint takes agent tokens only. It offers no server-to-client stream and keeps no
 	// sessions, so GET and DELETE are refused as the transport allows.

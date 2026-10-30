@@ -284,22 +284,3 @@ func newEventView(event store.Event) eventView {
 		Payload: json.RawMessage(event.Payload), CreatedAt: event.CreatedAt,
 	}
 }
-
-type backupRunView struct {
-	ObjectKey  string     `json:"object_key"`
-	Result     string     `json:"result"`
-	SizeBytes  int64      `json:"size_bytes"`
-	Error      string     `json:"error"`
-	StartedAt  time.Time  `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at"`
-}
-
-func newBackupRunView(run *store.BackupRun) *backupRunView {
-	if run == nil {
-		return nil
-	}
-	return &backupRunView{
-		ObjectKey: run.ObjectKey, Result: string(run.Result), SizeBytes: run.SizeBytes, Error: run.Error,
-		StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
-	}
-}
