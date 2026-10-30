@@ -10,7 +10,7 @@ const statusLabel: Record<MilestoneStatus, string> = {
   active: "Active",
   done: "Done",
 };
-import { loadQuery } from "../queries/seeded";
+import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/milestones")({
   staticData: { section: "milestones" },

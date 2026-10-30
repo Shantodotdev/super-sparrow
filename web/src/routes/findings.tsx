@@ -17,7 +17,7 @@ import type { Finding } from "../lib/types";
 import { findingsQuery } from "../queries/findings";
 import { issuesQuery } from "../queries/issues";
 import { actorsQuery, commentsQuery, reviewRoundsQuery } from "../queries/project";
-import { loadQuery } from "../queries/seeded";
+import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/findings")({
   staticData: { section: "findings" },

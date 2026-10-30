@@ -10,7 +10,7 @@ import { activityQuery, actorsQuery } from "../queries/project";
 
 /** The actor the timeline is filtered to, by ID; missing shows everyone. */
 type ActivitySearch = { actor?: string };
-import { loadQuery } from "../queries/seeded";
+import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/activity")({
   staticData: { section: "activity" },

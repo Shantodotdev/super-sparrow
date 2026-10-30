@@ -17,7 +17,7 @@ import {
   reviewRoundsQuery,
   useActor,
 } from "../queries/project";
-import { loadQuery } from "../queries/seeded";
+import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/$issue_/reviews/$round")({
   staticData: { section: "issues" },
