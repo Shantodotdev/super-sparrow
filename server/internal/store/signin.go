@@ -266,6 +266,22 @@ func (s *Store) AuthenticateSession(ctx context.Context, hash []byte) (Authentic
 	return result, nil
 }
 
+// SessionCurrent reports whether a session is still unrevoked and unexpired and its person still
+// active. Unlike AuthenticateSession, it renews nothing, so a long-running request can check it
+// repeatedly.
+func (s *Store) SessionCurrent(ctx context.Context, sessionID string) (bool, error) {
+	var current bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM sessions s JOIN actors a ON a.id = s.actor_id
+			WHERE s.id = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND a.disabled_at IS NULL)`,
+		sessionID, s.now().UTC().Format(timeLayout)).Scan(&current)
+	if err != nil {
+		return false, fmt.Errorf("check session: %w", err)
+	}
+	return current, nil
+}
+
 // ListSessions returns a person's current sessions, most recently used first.
 func (s *Store) ListSessions(ctx context.Context, actorID string) ([]Session, error) {
 	now := s.now().UTC().Format(timeLayout)

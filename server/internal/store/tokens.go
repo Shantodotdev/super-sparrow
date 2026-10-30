@@ -252,6 +252,23 @@ func (s *Store) AuthenticateToken(ctx context.Context, hash []byte) (Authenticat
 	return AuthenticatedToken{Actor: agent, Token: token}, nil
 }
 
+// TokenCurrent reports whether an agent token is still unrevoked and unexpired and its agent and
+// person still active. Unlike AuthenticateToken, it records no use.
+func (s *Store) TokenCurrent(ctx context.Context, tokenID string) (bool, error) {
+	var current bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM agent_tokens t
+			JOIN actors a ON a.id = t.actor_id
+			JOIN actors o ON o.id = a.owner_actor_id
+			WHERE t.id = ? AND t.revoked_at IS NULL AND t.expires_at > ? AND a.disabled_at IS NULL AND o.disabled_at IS NULL)`,
+		tokenID, s.now().UTC().Format(timeLayout)).Scan(&current)
+	if err != nil {
+		return false, fmt.Errorf("check agent token: %w", err)
+	}
+	return current, nil
+}
+
 func scanToken(row scanner) (AgentToken, error) {
 	var token AgentToken
 	var lastUsed, revoked sql.NullString

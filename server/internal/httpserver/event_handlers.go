@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -127,9 +128,16 @@ func (s *server) streamEvents(w http.ResponseWriter, r *http.Request) error {
 	heartbeat := time.NewTicker(streamHeartbeat)
 	defer heartbeat.Stop()
 
+	id := identityFrom(r.Context())
 	for {
 		// Take the change signal before reading, so a change committed during the read still wakes us.
 		changed := s.store.Changed()
+
+		// A person removed or signed out, or a token revoked, while the stream is open must stop
+		// receiving changes. The client's reconnect then fails to authenticate.
+		if current, err := s.stillCurrent(r.Context(), id); err != nil || !current {
+			return nil
+		}
 		if err := s.sendNewEvents(w, r, &filter); err != nil {
 			return nil
 		}
@@ -149,6 +157,14 @@ func (s *server) streamEvents(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 	}
+}
+
+// stillCurrent reports whether the session or token a request was made with still works.
+func (s *server) stillCurrent(ctx context.Context, id identity) (bool, error) {
+	if id.tokenID != "" {
+		return s.store.TokenCurrent(ctx, id.tokenID)
+	}
+	return s.store.SessionCurrent(ctx, id.sessionID)
 }
 
 // sendNewEvents writes every event after filter.AfterSequence and moves it past them.

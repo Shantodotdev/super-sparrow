@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shantodotdev/super-sparrow/server/internal/auth"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
@@ -503,4 +504,58 @@ func TestEventStreamCatchesUpFromLastEventID(t *testing.T) {
 		}
 	}
 	t.Fatalf("stream replayed nothing: %v", lines.Err())
+}
+
+func TestEventStreamEndsWhenAccessIsRevoked(t *testing.T) {
+	cases := map[string]func(a *apiTeam) (credential string, revoke func()){
+		"revoked token": func(a *apiTeam) (string, func()) {
+			secret, id := a.createToken(a.member)
+			return secret, func() { a.call(http.MethodDelete, "/api/tokens/"+id, a.member, nil, http.StatusNoContent, nil) }
+		},
+		"signed out session": func(a *apiTeam) (string, func()) {
+			session := a.signIn("max@example.com")
+			return session, func() { a.call(http.MethodDelete, "/api/sessions", a.member, nil, http.StatusOK, nil) }
+		},
+	}
+
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := newAPITeam(t)
+			a.project()
+			server := httptest.NewServer(a.handler)
+			t.Cleanup(server.Close)
+			credential, revoke := setup(a)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/events/stream?project=WP", nil)
+			if strings.HasPrefix(credential, auth.TokenPrefix) {
+				request.Header.Set("Authorization", "Bearer "+credential)
+			} else {
+				request.AddCookie(&http.Cookie{Name: "__Host-sparrow_session", Value: credential})
+			}
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatalf("open stream: %v", err)
+			}
+			defer response.Body.Close()
+
+			lines := bufio.NewScanner(response.Body)
+			if !lines.Scan() || lines.Text() != "retry: 3000" {
+				t.Fatalf("first line %q", lines.Text())
+			}
+
+			// The change after the revocation wakes the stream, which must end instead of sending it.
+			revoke()
+			a.call(http.MethodPost, "/api/issues/WP-1/comments", a.owner, map[string]string{"body": "Not for you."}, http.StatusCreated, nil)
+			for lines.Scan() {
+				if strings.HasPrefix(lines.Text(), "data: ") {
+					t.Fatalf("stream sent %s after access was revoked", lines.Text())
+				}
+			}
+			if ctx.Err() != nil {
+				t.Fatal("stream stayed open after access was revoked")
+			}
+		})
+	}
 }
