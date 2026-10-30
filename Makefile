@@ -2,7 +2,7 @@
 # Super Sparrow - Developer Automation
 # ==============================================================================
 
-.PHONY: help install create-owner dev dev-server dev-web dev-desktop build build-server build-web check check-go check-web check-desktop test test-go test-web format format-go format-web format-check clean env-file
+.PHONY: help install create-owner dev dev-server dev-web dev-desktop build build-server build-web check check-go check-web check-desktop test test-go test-web test-e2e format format-go format-web format-check clean env-file
 
 # The server and the web dev server read their settings from the repository .env.
 LOAD_ENV := set -a && . ./.env && set +a
@@ -101,6 +101,11 @@ test-go:
 
 test-web:
 	bun --filter @super-sparrow/web test
+
+# The browser binary is explicit so machines without it fail with an actionable setting name.
+test-e2e: build-web
+	@test -n "$(SPARROW_E2E_CHROME)" || { echo "SPARROW_E2E_CHROME must name a Chromium browser binary"; exit 1; }
+	cd server && SPARROW_E2E_CHROME="$(SPARROW_E2E_CHROME)" go test -count=1 -v ./internal/httpserver -run '^TestBrowserSmoke$$'
 
 # --- Formatting ---
 format: format-go format-web

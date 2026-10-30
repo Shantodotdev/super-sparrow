@@ -84,3 +84,9 @@ The same `sparrow` binary is also the command-line client. With `SPARROW_URL` an
 2. Commit, then push a matching tag, such as `v0.2.0`.
 
 `.github/workflows/release.yml` then creates the GitHub Release with Linux server binaries for amd64 and arm64 and the built frontend they serve, and adds desktop installers for Linux, macOS (universal), and Windows. The repository is private, so only teammates with access can download them.
+
+## Browser integration test
+
+Run `SPARROW_E2E_CHROME=/usr/bin/google-chrome make test-e2e`, substituting the installed Chromium browser's absolute path. This builds the SPA, starts the Go HTTP handler with a temporary SQLite database, and drives the built interface with Chromium through Bun. No browser automation dependency or external email service is needed: the test's loopback server uses the existing fake mailbox. It never opens the development database.
+
+The test covers sign-in redirects, emailed-code verification, issue creation, checklist and plan changes, comments after reload, live updates, keyboard finding decisions and their actor, follow-up issues, token creation, and signing out all devices. `make test-go` skips this browser test unless `SPARROW_E2E_CHROME` is set; `make test-web` runs the independent Bun unit tests.

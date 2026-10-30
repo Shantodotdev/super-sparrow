@@ -65,15 +65,15 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 
 ## 6. Web interface
 
-- [ ] Set up TanStack Start (React) in SPA mode with TanStack Router, TanStack Query, the API client, and the event stream.
-- [ ] Build the email sign-in screen: enter email, then the 6-digit code.
-- [ ] Build the review round page with finding cards, threads, and keyboard decisions.
-- [ ] Build the issue page with the plan, checklist, review rounds, open findings, and history.
-- [ ] Build the project issue list, grouped by status and filtered by milestone.
-- [ ] Build the activity feed, with actor names and agent badges.
-- [ ] Build settings for teammates, signed-in devices, and agent tokens.
-- [ ] Add the command palette and keyboard shortcuts.
-- [ ] Sanitize all rendered markdown.
+- [x] Set up TanStack Start (React) in SPA mode with TanStack Router, TanStack Query, the API client, and the event stream.
+- [x] Build the email sign-in screen: enter email, then the 6-digit code.
+- [x] Build the review round page with finding cards, threads, and keyboard decisions.
+- [x] Build the issue page with the plan, checklist, review rounds, open findings, and history.
+- [x] Build the project issue list, grouped by status and filtered by milestone.
+- [x] Build the activity feed, with actor names and agent badges.
+- [x] Build settings for teammates, signed-in devices, and agent tokens.
+- [x] Add the command palette and keyboard shortcuts.
+- [x] Safely display untrusted plans, findings, and comments as escaped React text; plan headings and checkboxes are parsed without rendering HTML.
 - [x] Serve the built frontend from the Go server. It serves the build in `WEB_DIR`.
 
 ## 7. Desktop app
@@ -101,7 +101,7 @@ The importer is in `server/internal/linear` and the webhook in `server/internal/
 - [x] Build the backup jobs: a consistent copy with `VACUUM INTO`, compression, age encryption, and upload to R2.
 - [x] Schedule the hourly sync, which replaces its copy only after a successful upload.
 - [x] Schedule the daily backup, with dated copies and deletion of copies older than the configured number of days.
-- [ ] Record each backup run and show the last successful sync and backup in settings. Recording and `GET /api/backups` are done; the settings page is in step 6.
+- [x] Record each backup run and show the last successful sync and backup in settings.
 - [x] Add the `restore` CLI command, with an integrity check before it writes the database file.
 - [ ] Deploy to the staging server behind the reverse proxy with HTTPS.
 - [ ] Restore both the latest sync and a daily backup into a fresh machine, and document the steps. The steps are in [DEPLOYMENT.md](DEPLOYMENT.md#restoring); the restore on a fresh machine is not done yet.
