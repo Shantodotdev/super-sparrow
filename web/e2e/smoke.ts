@@ -271,6 +271,10 @@ try {
   );
   checks++;
   await click("Comments");
+  await until(
+    () => evaluate(`!!document.querySelector('input[aria-label="Add a comment"]')`),
+    "open the comments tab",
+  );
   await input('input[aria-label="Add a comment"]', "Browser persisted comment");
   await click("Send");
   await waitText("Browser persisted comment");
@@ -285,6 +289,10 @@ try {
     throw new Error("Label color did not survive a reload");
   checks++;
   await click("Plan");
+  await until(
+    () => evaluate(`!!document.querySelector('[contenteditable="true"][aria-label="Issue plan"]')`),
+    "open the plan tab",
+  );
   await evaluate(`(() => {
     const editor = document.querySelector('[contenteditable="true"][aria-label="Issue plan"]');
     editor.focus();
