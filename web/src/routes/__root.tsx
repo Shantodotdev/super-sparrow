@@ -20,7 +20,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="app-scrollbar">
+    <html lang="en" className="scrollbar-thin [scrollbar-color:#465062_transparent]">
       <head>
         <HeadContent />
       </head>

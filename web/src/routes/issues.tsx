@@ -82,14 +82,16 @@ function IssuesPage() {
 
   return (
     <>
-      <div className="issues-toolbar" ref={toolbarRef}>
-        <div className="issue-controls">
-          <div className="issue-topline">
-            <div className="breadcrumb">Projects / Sparrow</div>
+      <div className="sticky top-0 z-2 bg-[#08090b] max-[700px]:overflow-visible" ref={toolbarRef}>
+        <div className="px-[26px] pt-[24px] pb-0 max-[700px]:px-[16px] max-[700px]:pt-[16px] max-[700px]:pb-0">
+          <div className="mb-[16px] flex items-center justify-between gap-[16px] [&_.breadcrumb]:mb-0">
+            <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
+              Projects / Sparrow
+            </div>
           </div>
-          <div className="filters issue-filters">
+          <div className="mb-0 flex flex-nowrap items-center gap-[12px] pb-[20px] max-[700px]:flex-wrap">
             <input
-              className="filter-search"
+              className="w-[295px] max-w-[295px] min-w-[100px] flex-[1_1_180px] rounded-full"
               placeholder="Search issues..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -105,26 +107,35 @@ function IssuesPage() {
               options={milestones}
             />
             <div
-              className={`view-switch ${view === "board" ? "view-switch--board" : ""}`}
+              className={`relative isolate ml-auto inline-flex shrink-0 gap-[2px] rounded-full border border-[#292e38] bg-[#101216] p-[3px] before:pointer-events-none before:absolute before:inset-y-[3px] before:left-[3px] before:z-0 before:w-[calc(50%-4px)] before:rounded-full before:bg-[#273142] before:transition-transform before:duration-220 before:ease-[cubic-bezier(0.2,0.8,0.2,1)] before:content-[''] motion-reduce:before:transition-none ${view === "board" ? "before:translate-x-[calc(100%+2px)]" : ""}`}
               role="group"
               aria-label="Issue view"
             >
               <button
                 type="button"
+                className="relative z-1 inline-flex flex-[0_0_84px] items-center justify-center gap-[6px] rounded-full border-0 bg-transparent px-[10px] py-[6px] text-[12px] text-[#9ba9bc] transition-colors duration-180 ease-[ease] hover:text-[#edf0f6] aria-pressed:text-[#edf0f6] motion-reduce:transition-none"
                 aria-pressed={view !== "board"}
                 onClick={() => switchView("list")}
               >
-                <Icon name="list" /> List
+                <Icon name="list" className="h-[15px] w-[15px]" /> List
               </button>
               <button
                 type="button"
+                className="relative z-1 inline-flex flex-[0_0_84px] items-center justify-center gap-[6px] rounded-full border-0 bg-transparent px-4 py-[8px] text-[12px] text-[#9ba9bc] transition-colors duration-180 ease-[ease] hover:text-[#edf0f6] aria-pressed:text-[#edf0f6] motion-reduce:transition-none"
                 aria-pressed={view === "board"}
                 onClick={() => switchView("board")}
               >
-                <Columns3 aria-hidden="true" className="icon" /> Board
+                <Columns3
+                  aria-hidden="true"
+                  className="inline-block size-[15px] flex-none align-[-3px]"
+                />{" "}
+                Board
               </button>
             </div>
-            <button className="primary new-issue-button" onClick={() => setCreating(true)}>
+            <button
+              className="rounded-full border border-[#5f7fff] bg-[#2455eb] px-[15px] py-[6px] font-[550] whitespace-nowrap text-white shadow-[0_4px_14px_#2455eb38,inset_0_1px_#ffffff24] transition-[background-color,border-color,box-shadow,transform] duration-160 ease-[ease] hover:-translate-y-px hover:border-[#89a0ff] hover:bg-[#3566f6] hover:shadow-[0_6px_18px_#2455eb55,inset_0_1px_#ffffff33] motion-reduce:transition-none"
+              onClick={() => setCreating(true)}
+            >
               <Icon name="plus" /> &nbsp; New issue
             </button>
           </div>

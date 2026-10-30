@@ -31,7 +31,7 @@ function SettingsPage() {
         title="People and agents"
         description="Manage your team members, their agents, and agent tokens."
       />
-      <div className="settings-content">
+      <div className="grid gap-[22px] px-[32px] py-[20px] max-[700px]:p-[16px]">
         <MembersPanel members={members} onAdd={() => setDialog("member")} />
         <TokensPanel tokens={tokens} onCreate={() => setDialog("token")} onRevoke={revokeToken} />
       </div>

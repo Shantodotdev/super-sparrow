@@ -9,6 +9,8 @@
   "arrowParens": "always",
   "endOfLine": "lf",
   "bracketSpacing": true,
-  "plugins": ["prettier-plugin-tailwindcss"],
-  "tailwindStylesheet": "./web/src/styles.css"
+  "plugins": ["prettier-plugin-tailwindcss", "prettier-plugin-tailwindcss-canonical-classes"],
+  "tailwindStylesheet": "./web/src/styles.css",
+  "tailwindcssCanonicalStylesheet": "./web/src/styles.css",
+  "tailwindcssCanonicalRootFontSize": 14
 }

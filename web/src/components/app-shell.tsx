@@ -27,9 +27,9 @@ export function AppShell() {
   if (bare) return <Outlet />;
 
   return (
-    <div className="app-shell">
+    <div className="flex min-h-screen">
       <Sidebar />
-      <main className="main-area">
+      <main className="min-w-0 flex-1 [&:has(>_.issue-board)]:flex [&:has(>_.issue-board)]:h-dvh [&:has(>_.issue-board)]:min-h-0 [&:has(>_.issue-board)]:flex-col [&:has(>_.issue-board)]:overflow-hidden">
         <Outlet />
       </main>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

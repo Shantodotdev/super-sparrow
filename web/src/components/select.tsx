@@ -92,14 +92,26 @@ export function Select({
 
   return (
     <div
-      className={`custom-select custom-select--${variant} ${open ? "is-open" : ""}`}
+      className={`custom-select relative min-w-0 ${variant === "filter" ? "flex-none" : ""}`}
       ref={container}
     >
       <button
         ref={trigger}
         type="button"
         role="combobox"
-        className="custom-select-trigger"
+        className={`flex items-center justify-between border text-left transition-[border-color,background,box-shadow] duration-140 ease-[ease] focus-visible:border-[#404957] focus-visible:bg-[#1b2028] focus-visible:outline-none motion-reduce:transition-none ${
+          variant === "chip"
+            ? "min-h-[29px] w-auto gap-[6px] rounded-full border-[#36383e] px-[9px] py-[4px] text-[12px] hover:focus-visible:border-[#484b54] hover:focus-visible:bg-[#383b42] [&>svg:first-child]:size-4 [&>svg:first-child]:text-[#a9adb6]"
+            : variant === "filter"
+              ? "min-h-12 w-full gap-[8px] rounded-[10px] px-[10px] py-0 text-[13px]"
+              : "min-h-12 w-full gap-4 rounded-[10px] px-[12px] py-0"
+        } ${
+          open
+            ? `border-[#404957] bg-[#1b2028] outline-none ${variant === "chip" ? "hover:border-[#484b54] hover:bg-[#383b42]" : ""}`
+            : variant === "chip"
+              ? "bg-[#2a2c31] hover:border-[#484b54] hover:bg-[#383b42]"
+              : "border-[#303642] bg-[#101216] hover:border-[#485264] hover:bg-[#171b22]"
+        } text-[#d7dfeb]`}
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -112,26 +124,40 @@ export function Select({
         }}
       >
         {icon && <Icon name={icon} />}
-        {variant === "filter" && <span className="custom-select-label">{label}</span>}
-        <span className="custom-select-value">{options[selected]?.label ?? value}</span>
-        <Icon name="chevron-down" className="custom-select-chevron" />
+        {variant === "filter" && <span className="text-[#e5e8ef]">{label}</span>}
+        <span
+          className={`custom-select-value truncate ${variant === "filter" ? "text-[#a9b6c8]" : ""}`}
+        >
+          {options[selected]?.label ?? value}
+        </span>
+        {variant !== "chip" && (
+          <Icon
+            name="chevron-down"
+            className={`h-4 w-4 flex-none transition-[transform,color] duration-150 ease-[ease] motion-reduce:transition-none ${open ? "rotate-180 text-[#c2cdde]" : "text-[#8999ad]"}`}
+          />
+        )}
       </button>
       {open && (
-        <div className="custom-select-menu" id={`${id}-listbox`} role="listbox" aria-label={label}>
+        <div
+          className="absolute top-[calc(100%+6px)] left-0 z-30 max-h-[260px] min-w-[max(100%,165px)] animate-[select-in_120ms_ease-out] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-[5px] shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
+          id={`${id}-listbox`}
+          role="listbox"
+          aria-label={label}
+        >
           {options.map((option, index) => (
             <div
               key={option.value}
               id={`${id}-option-${index}`}
               role="option"
               aria-selected={option.value === value}
-              className={`custom-select-option ${index === active ? "is-active" : ""}`}
+              className={`flex min-h-[34px] cursor-pointer items-center justify-between gap-[18px] rounded-[5px] px-[9px] py-2 whitespace-nowrap aria-selected:text-[#f2f5fc] ${index === active ? "bg-[#283140] text-white" : "text-[#bfcbdc]"}`}
               onPointerMove={() => setActive(index)}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(index)}
             >
               <span>{option.label}</span>
               {option.value === value && (
-                <span className="custom-select-check" aria-hidden="true">
+                <span className="text-[#7896ff]" aria-hidden="true">
                   <Icon name="check" />
                 </span>
               )}

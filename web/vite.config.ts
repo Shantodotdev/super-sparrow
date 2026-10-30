@@ -23,8 +23,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
   const env = { ...loadEnv(mode, repositoryRoot, ""), ...process.env } as Record<string, string>;
   const port = Number(requireSetting(env, "WEB_PORT"));
-  if (!Number.isInteger(port) || port <= 0)
-    throw new Error("WEB_PORT must be a port number");
+  if (!Number.isInteger(port) || port <= 0) throw new Error("WEB_PORT must be a port number");
 
   return {
     plugins,

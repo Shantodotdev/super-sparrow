@@ -26,14 +26,14 @@ function SignInPage() {
   };
 
   return (
-    <div className="signin-page">
-      <div className="signin-brand">
-        <img src="/logo.png" className="brand-mark" alt="" /> Super Sparrow
+    <div className="grid min-h-screen place-items-center">
+      <div className="absolute top-[27px] left-[32px] flex items-center gap-[12px] text-[17px] font-[650]">
+        <img src="/logo.png" className="h-[40px] w-[40px] flex-none" alt="" /> Super Sparrow
       </div>
-      <form className="signin-card" onSubmit={submit}>
-        <img src="/logo.png" className="signin-icon" alt="" />
-        <h1>{sent ? "Check your email" : "Welcome to Super Sparrow"}</h1>
-        <p className="muted">
+      <form className="w-[min(100%-40px,390px)]" onSubmit={submit}>
+        <img src="/logo.png" className="mb-[22px] h-[48px] w-[48px]" alt="" />
+        <h1 className="text-[27px]">{sent ? "Check your email" : "Welcome to Super Sparrow"}</h1>
+        <p className="muted mt-[10px] mb-[25px] leading-normal text-[#a2aec2]">
           {sent
             ? "If this email belongs to a teammate, a sign-in code is on its way."
             : "Sign in with your team email to continue."}
@@ -64,13 +64,21 @@ function SignInPage() {
             />
           </label>
         )}
-        <button className="primary full">{sent ? "Sign in" : "Continue with email"}</button>
+        <button className="w-full rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]">
+          {sent ? "Sign in" : "Continue with email"}
+        </button>
         {sent && (
-          <button type="button" className="text-button centered" onClick={resetEmail}>
+          <button
+            type="button"
+            className="text-button mx-auto my-[16px] block border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
+            onClick={resetEmail}
+          >
             Use another email
           </button>
         )}
-        <p className="muted small">Frontend preview only. No email is sent.</p>
+        <p className="muted mt-[10px] mb-[25px] text-[12px] leading-normal text-[#a2aec2]">
+          Frontend preview only. No email is sent.
+        </p>
       </form>
     </div>
   );

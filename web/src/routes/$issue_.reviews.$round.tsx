@@ -73,17 +73,17 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
 
   return (
     <>
-      <header className="review-header">
-        <div className="breadcrumb">
+      <header className="px-8 pt-[25px] pb-[18px] max-[700px]:px-[16px] max-[700px]:py-[22px] [&_.breadcrumb]:mb-[24px]">
+        <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
           <Link to="/$issue" params={{ issue: issue.key }}>
             {issue.key}
           </Link>{" "}
           / Reviews / Round {round}
         </div>
-        <div className="title-row">
+        <div className="flex items-start justify-between gap-[24px] max-[700px]:flex-wrap">
           <div>
             <h1>Review round {round}</h1>
-            <p className="issue-meta">
+            <p className="mt-4 text-[#a9b8ca]">
               {currentRound && (
                 <>
                   <Icon name="git-branch" /> &nbsp; {currentRound.from} &nbsp;{" "}
@@ -93,11 +93,11 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
                 </>
               )}
             </p>
-            <p className="issue-summary">
+            <p className="mt-[16px] text-[16px] text-[#abb8cc]">
               {currentRound?.summary ?? "This review round is not available in the preview."}
             </p>
           </div>
-          <div className="review-actions">
+          <div className="flex gap-[20px] max-[700px]:w-full [&_>_.custom-select]:w-[150px] [&_select]:w-[150px]">
             <Select
               label="Review round"
               value={round}
@@ -107,20 +107,26 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
                 label: `Round ${item.number}`,
               }))}
             />
-            <Link to="/findings" className="text-button">
+            <Link
+              to="/findings"
+              className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
+            >
               {openCount} open findings
               <Icon name="chevron-down" />
             </Link>
           </div>
         </div>
       </header>
-      <div className="review-split">
+      <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(380px,1fr)] border-t border-t-[#252a32] max-[700px]:block [&_>_div:first-child]:min-w-0">
         <div>
-          <div className="review-tab">
-            Findings <span className="count">{roundFindings.length}</span>
+          <div className="border-b border-b-[#252a32] px-8 py-[18px] font-semibold after:relative after:top-[18px] after:block after:h-[3px] after:w-32 after:bg-[#6486ff] after:content-['']">
+            Findings{" "}
+            <span className="count rounded-[5px] bg-[#262b34] px-2 py-[3px] text-[12px] text-[#dce2ec]">
+              {roundFindings.length}
+            </span>
           </div>
           {roundFindings.length ? (
-            <div className="finding-cards">
+            <div className="p-[12px]">
               {roundFindings.map((finding, index) => (
                 <FindingCard
                   key={finding.id}
@@ -132,7 +138,7 @@ function ReviewRoundView({ issue, round, rounds, issueFindings }: ReviewRoundVie
               ))}
             </div>
           ) : (
-            <div className="empty-state">
+            <div className="mx-auto my-40 max-w-120 p-[24px] text-center text-[#93a0b2] [&_h2]:mx-0 [&_h2]:mt-[18px] [&_h2]:mb-2 [&_h2]:text-[#e9edf5]">
               <h2>No findings in this preview</h2>
               <p>There are no findings for this round.</p>
             </div>

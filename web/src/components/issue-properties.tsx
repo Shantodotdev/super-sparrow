@@ -27,9 +27,11 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
   const { branch, pullRequest } = sampleIssueDetails;
 
   return (
-    <aside className="properties">
+    <aside className="border-l border-l-[#242932] p-[30px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_>_.custom-select]:w-full [&_h3]:mx-0 [&_h3]:mt-[22px] [&_h3]:mb-[9px] [&_h3]:text-[14px] [&_h3:first-child]:mt-0">
       <h3>Status</h3>
-      <div className={`issue-status status-${slugify(issue.status)}`}>
+      <div
+        className={`[--issue-status-color:#98a9c3] [&_.custom-select-value]:flex-1 [&_[role=combobox]>svg:first-child]:text-(--issue-status-color) [&.status-backlog]:text-[#a9b6c8] [&.status-backlog]:[--issue-status-color:#a9b6c8] [&.status-done]:text-[#44ce91] [&.status-done]:[--issue-status-color:#44ce91] [&.status-in-progress]:text-[#4c7aff] [&.status-in-progress]:[--issue-status-color:#4c7aff] [&.status-in-review]:text-[#a574ff] [&.status-in-review]:[--issue-status-color:#a574ff] status-${slugify(issue.status)}`}
+      >
         <Select
           label="Status"
           value={issue.status}
@@ -39,28 +41,28 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
         />
       </div>
       <h3>Assignee</h3>
-      <div className="property">
+      <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
         <Person name={issue.assignee} />
       </div>
       <h3>Milestone</h3>
-      <div className="property">
+      <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
         <Icon name="target" className="issue-icon-goal" /> &nbsp;{issue.milestone}
       </div>
       <h3>Branch</h3>
-      <div className="property">
+      <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
         <Icon name="git-branch" className="issue-icon-branch" /> &nbsp; {branch}
       </div>
       <h3>Pull request</h3>
-      <div className="property">
+      <div className="rounded-[6px] border border-[#252b34] p-[10px] text-[#c7d1df]">
         <Icon name="github" className="issue-icon-pull-request" /> &nbsp;{" "}
-        <span className="link-blue">#{pullRequest.number}</span> &nbsp; {pullRequest.title}
+        <span className="text-[#719bff]">#{pullRequest.number}</span> &nbsp; {pullRequest.title}
       </div>
-      <div className="property-section">
-        <div className="section-heading">
+      <div className="mt-8 border-t border-t-[#252b34] pt-[22px] [&_p]:mt-[15px]">
+        <div className="mb-[10px] flex justify-between">
           <strong>Review rounds</strong>
           {rounds.length > 0 && (
             <Link
-              className="text-link"
+              className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
               to="/$issue"
               params={{ issue: issue.key }}
               search={{ tab: "rounds" }}
@@ -71,11 +73,11 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
         </div>
         <ReviewRoundList rounds={rounds} findings={findings} />
       </div>
-      <div className="property-section">
-        <div className="section-heading">
+      <div className="mt-8 border-t border-t-[#252b34] pt-[22px] [&_p]:mt-[15px]">
+        <div className="mb-[10px] flex justify-between">
           <strong>Labels</strong>
           <button
-            className="text-link"
+            className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
             type="button"
             aria-expanded={editingLabels}
             onClick={() => setEditingLabels(!editingLabels)}
@@ -84,7 +86,9 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
           </button>
         </div>
         <LabelChips labels={issue.labels} />
-        {issue.labels.length === 0 && <p className="muted small">No labels</p>}
+        {issue.labels.length === 0 && (
+          <p className="muted mt-[3px] text-[12px] text-[#a2aec2]">No labels</p>
+        )}
         {editingLabels && (
           <LabelPicker
             options={issueLabelOptions(issues)}

@@ -93,14 +93,14 @@ export function Modal({
   if (!present) return null;
   return (
     <div
-      className={`overlay modal-overlay ${open ? "is-entering" : "is-exiting"} ${overlayClassName}`}
+      className={`fixed inset-0 z-10 flex items-start justify-center bg-[#0009] px-[20px] pt-[12vh] pb-[20px] [transition:background-color_180ms_cubic-bezier(0.4,0,0.6,1)] motion-reduce:[transition:none] motion-reduce:[&_.modal-surface]:[transition:none] starting:[&.is-entering]:bg-transparent starting:[&.is-entering_.modal-surface]:transform-[scale(0.9)] starting:[&.is-entering_.modal-surface]:opacity-0 [&.is-exiting]:pointer-events-none [&.is-exiting]:bg-transparent [&.is-exiting_.modal-surface]:transform-[scale(0.9)] [&.is-exiting_.modal-surface]:opacity-0 ${open ? "is-entering" : "is-exiting"} ${overlayClassName}`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && open) onClose();
       }}
     >
       <div
         ref={dialog}
-        className={`modal-surface ${className}`}
+        className={`modal-surface transform-[scale(1)] opacity-100 outline-none [transition:opacity_210ms_cubic-bezier(0.4,0,0.6,1),transform_210ms_cubic-bezier(0.4,0,0.6,1)] ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={label}

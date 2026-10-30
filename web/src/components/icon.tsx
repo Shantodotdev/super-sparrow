@@ -72,5 +72,10 @@ export type IconName = keyof typeof icons;
 export function Icon({ name, className = "" }: { name: IconName; className?: string }) {
   const LucideIcon = icons[name];
 
-  return <LucideIcon aria-hidden="true" className={`icon ${className}`} />;
+  return (
+    <LucideIcon
+      aria-hidden="true"
+      className={`icon inline-block size-[17px] flex-none align-[-3px] [&.plan-icon]:h-6 [&.plan-icon]:w-6 [&.project-logo]:h-[19px] [&.project-logo]:w-[19px] [&.status-backlog]:text-[#a9b6c8] [&.status-done]:text-[#44ce91] [&.status-icon]:text-[17px] [&.status-icon]:text-[#98a9c3] [&.status-in-progress]:text-[#4c7aff] [&.status-in-review]:text-[#a574ff] ${className}`}
+    />
+  );
 }
