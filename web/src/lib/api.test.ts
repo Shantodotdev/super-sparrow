@@ -45,3 +45,30 @@ describe("apiGet", () => {
     });
   });
 });
+
+describe("apiWrite", () => {
+  test("sends JSON and the session cookie and accepts an empty delete response", async () => {
+    const { apiWrite } = await import("./api");
+    let options: RequestInit | undefined;
+    const fetcher = (async (_path: unknown, init?: RequestInit) => {
+      options = init;
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    await apiWrite("/api/tokens/token-id", "DELETE", undefined, fetcher);
+    expect(options?.credentials).toBe("same-origin");
+    expect(options?.method).toBe("DELETE");
+    expect(options?.body).toBeUndefined();
+  });
+
+  test("preserves conflict details so an unsaved plan can be recovered", async () => {
+    const { apiWrite } = await import("./api");
+    await expect(
+      apiWrite(
+        "/api/issues/WP-1",
+        "PATCH",
+        { plan: "changed", plan_revision: 1 },
+        respondWith(409, { error: "plan changed", field: "plan_revision" }),
+      ),
+    ).rejects.toMatchObject({ status: 409, message: "plan changed", field: "plan_revision" });
+  });
+});

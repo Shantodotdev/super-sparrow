@@ -43,3 +43,20 @@ export async function apiGet<T>(path: string, fetcher: typeof fetch = fetch): Pr
 
   return (await response.json()) as T;
 }
+
+/** Sends a JSON mutation and accepts empty successful responses. */
+export async function apiWrite<T>(
+  path: string,
+  method: string,
+  body?: unknown,
+  fetcher: typeof fetch = fetch,
+): Promise<T> {
+  const response = await fetcher(path, {
+    method,
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw await errorFrom(response, `${method} ${path}`);
+  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+}
