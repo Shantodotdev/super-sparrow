@@ -143,22 +143,22 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[28px] font-semibold text-[#f2f5fc]"
           />
         </h1>
-        <div className="mt-3">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[#a9b8ca]">
+          <span className="inline-flex items-center gap-2">
+            <Icon name={statusIcon[issue.status]} className={`status-${slugify(issue.status)}`} />
+            {issue.key}
+          </span>
           <IssuePrioritySelect issue={issue} />
-        </div>
-        <div className="mt-4 text-[#a9b8ca]">
-          <Icon name={statusIcon[issue.status]} className={`status-${slugify(issue.status)}`} />{" "}
-          &nbsp;{issue.key}
           {issue.branch_name && (
-            <>
-              {"　 ·　 "}
-              <Icon name="git-branch" className="issue-icon-branch" /> &nbsp;
-              {issue.branch_name}
-            </>
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <Icon name="git-branch" className="issue-icon-branch" />
+              <span className="truncate">{issue.branch_name}</span>
+            </span>
           )}
-          {"　 ·　 "}
-          <Icon name="message-square" className="issue-icon-comments" /> &nbsp;{" "}
-          {issue.comment_count} {issue.comment_count === 1 ? "comment" : "comments"}
+          <span className="inline-flex items-center gap-2">
+            <Icon name="message-square" className="issue-icon-comments" />
+            {issue.comment_count} {issue.comment_count === 1 ? "comment" : "comments"}
+          </span>
         </div>
         <Tabs className="mt-[27px] overflow-x-auto border-b border-b-[#252a32] [&>a.selected]:after:hidden">
           {tabs.map(({ id, label, icon }) => (
