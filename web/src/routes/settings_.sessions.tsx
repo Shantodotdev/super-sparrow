@@ -38,7 +38,7 @@ function SessionsPage() {
   });
   return (
     <>
-      <SettingsHeader title="Signed-in devices" description="Manage your active sessions." />
+      <SettingsHeader />
       <section className="grid gap-4 p-8">
         {sessions.error && <p role="alert">{sessions.error.message}</p>}
         {sessions.isPending && <p>Loading devices…</p>}

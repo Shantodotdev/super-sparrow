@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { projectsQuery } from "../queries/project";
 import { useState } from "react";
-import { Link, useMatches, useParams } from "@tanstack/react-router";
+import { useMatches, useParams } from "@tanstack/react-router";
 import { Icon } from "./icon";
 import { NavItem } from "./nav-item";
 import { NewProjectModal } from "./new-project-modal";
@@ -104,12 +104,6 @@ export function Sidebar() {
           })}
         </nav>
         <div className="mt-auto">
-          <Link
-            to="/settings/sessions"
-            className="text-button mx-[12px] mt-0 mb-[8px] border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
-          >
-            Signed-in devices
-          </Link>
           <NavItem
             to="/settings"
             icon="settings"

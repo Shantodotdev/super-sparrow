@@ -29,23 +29,28 @@ function SettingsPage() {
   const revokeToken = useRevokeToken();
   const [dialog, setDialog] = useState<SettingsDialogKind | null>(null);
   const [revoking, setRevoking] = useState<AgentToken | null>(null);
+  const [revokeOpen, setRevokeOpen] = useState(false);
 
   const revokingAgent = actors.find((actor) => actor.id === revoking?.agent_actor_id);
 
   return (
     <>
-      <SettingsHeader
-        title="People and agents"
-        description="Manage your team members, their agents, and agent tokens."
-      />
+      <SettingsHeader />
       <div className="grid gap-[22px] px-[32px] py-[20px] max-[700px]:p-[16px]">
         <MembersPanel actors={actors} onAdd={() => setDialog("member")} />
-        <TokensPanel tokens={tokens} onCreate={() => setDialog("token")} onRevoke={setRevoking} />
+        <TokensPanel
+          tokens={tokens}
+          onCreate={() => setDialog("token")}
+          onRevoke={(token) => {
+            setRevoking(token);
+            setRevokeOpen(true);
+          }}
+        />
       </div>
       <SettingsDialog kind={dialog} onClose={() => setDialog(null)} />
       <Modal
-        open={revoking !== null}
-        onClose={() => setRevoking(null)}
+        open={revokeOpen}
+        onClose={() => setRevokeOpen(false)}
         className="w-[min(100%,510px)] rounded-[10px] border border-[#303641] bg-[#12151a] p-[24px] shadow-[0_20px_70px_#000a] [&_h2]:mb-[12px] [&_p]:mb-[16px]"
         label="Revoke token"
       >
@@ -59,7 +64,7 @@ function SettingsPage() {
             autoFocus
             className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b]"
             type="button"
-            onClick={() => setRevoking(null)}
+            onClick={() => setRevokeOpen(false)}
           >
             Cancel
           </button>
@@ -68,7 +73,7 @@ function SettingsPage() {
             type="button"
             onClick={() => {
               if (revoking) revokeToken(revoking.id);
-              setRevoking(null);
+              setRevokeOpen(false);
             }}
           >
             Revoke token

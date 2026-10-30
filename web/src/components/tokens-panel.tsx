@@ -71,19 +71,23 @@ export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
                 </td>
                 <td>{token.last_used_at ? formatDate(token.last_used_at) : "Never"}</td>
                 <td>
-                  <button
-                    className="mr-3"
-                    disabled={renew.isPending}
-                    onClick={() => renew.mutate(token.id)}
-                  >
-                    Renew
-                  </button>
-                  <button
-                    className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
-                    onClick={() => onRevoke(token)}
-                  >
-                    Revoke
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-full border border-[#303641] bg-[#14171c] px-3 py-1.5 text-[12px] font-[550] whitespace-nowrap text-[#d6dfed] transition-colors hover:border-[#484f5d] hover:bg-[#20242b] focus-visible:border-[#6486ff] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={renew.isPending}
+                      onClick={() => renew.mutate(token.id)}
+                    >
+                      Renew
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-full border border-[#713440] bg-[#30191f] px-3 py-1.5 text-[12px] font-[550] whitespace-nowrap text-[#f2a9ae] transition-colors hover:border-[#a33a48] hover:bg-[#4a222b] focus-visible:border-[#f2a9ae] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => onRevoke(token)}
+                    >
+                      Revoke
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
