@@ -22,6 +22,8 @@ const primaryClass =
 export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
   const addMember = useAddMember();
   const createToken = useCreateToken();
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [agentName, setAgentName] = useState(agentTools[0]!.agentName);
@@ -43,15 +45,30 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
     onClose();
   };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
 
-    if (isMember) {
-      addMember({ name, email });
-      close();
-      return;
+    if (pending) return;
+    setPending(true);
+    setError("");
+    try {
+      if (isMember) {
+        const result = await addMember({ name, email });
+        if (!result.invitation_sent) {
+          setError(
+            "Member added, but invitation email could not be sent. They can sign in with their email.",
+          );
+          return;
+        }
+        close();
+        return;
+      }
+      setCreated(await createToken({ label: name, agentName, toolName }));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Request failed");
+    } finally {
+      setPending(false);
     }
-    setCreated(createToken({ label: name, agentName, toolName }));
   };
 
   const copy = async (secret: string) => {
@@ -95,6 +112,7 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
         </div>
       ) : (
         <form onSubmit={submit}>
+          {error && <p role="alert">{error}</p>}
           <h2>{isMember ? "Add member" : "Create agent token"}</h2>
           <label>
             {isMember ? "Name" : "Token label, such as the machine"}
@@ -130,7 +148,9 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
             <button className={buttonClass} type="button" onClick={close}>
               Cancel
             </button>
-            <button className={primaryClass}>{isMember ? "Add member" : "Create token"}</button>
+            <button disabled={pending} className={primaryClass}>
+              {isMember ? "Add member" : "Create token"}
+            </button>
           </div>
         </form>
       )}

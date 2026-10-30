@@ -1,3 +1,4 @@
+import { BackupStatusPanel } from "../components/backup-status";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -8,7 +9,7 @@ import { SettingsHeader } from "../components/settings-header";
 import { TokensPanel } from "../components/tokens-panel";
 import type { AgentToken } from "../lib/types";
 import { actorsQuery } from "../queries/project";
-import { loadQuery } from "../queries/seeded";
+import { loadQuery } from "../queries/options";
 import { tokensQuery, useRevokeToken } from "../queries/team";
 
 export const Route = createFileRoute("/settings")({
@@ -39,6 +40,7 @@ function SettingsPage() {
         description="Manage your team members, their agents, and agent tokens."
       />
       <div className="grid gap-[22px] px-[32px] py-[20px] max-[700px]:p-[16px]">
+        <BackupStatusPanel />
         <MembersPanel actors={actors} onAdd={() => setDialog("member")} />
         <TokensPanel tokens={tokens} onCreate={() => setDialog("token")} onRevoke={setRevoking} />
       </div>

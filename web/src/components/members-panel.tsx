@@ -1,3 +1,7 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiWrite } from "../lib/api";
+import { meQuery } from "../queries/project";
+import { useToast } from "./toast";
 import { formatDate } from "../lib/format";
 import type { Actor } from "../lib/types";
 import { Avatar } from "./avatar";
@@ -7,6 +11,14 @@ type MembersPanelProps = { actors: Actor[]; onAdd: () => void };
 
 /** The team member table, each person with the agents they own. */
 export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
+  const { data: me } = useQuery(meQuery);
+  const client = useQueryClient();
+  const { notify } = useToast();
+  const disable = useMutation({
+    mutationFn: (id: string) => apiWrite(`/api/people/${id}/disable`, "POST"),
+    onSuccess: () => client.invalidateQueries(),
+    onError: (error) => notify(error.message),
+  });
   const members = actors.filter((actor) => actor.kind === "human");
   const agents = actors.filter((actor) => actor.kind === "agent");
 
@@ -21,6 +33,7 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
         </div>
         <button
           className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"
+          hidden={me?.role !== "owner"}
           onClick={onAdd}
         >
           <Icon name="plus" /> &nbsp; Add member
@@ -34,6 +47,7 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
               <th>Agents</th>
               <th>Role</th>
               <th>Joined</th>
+              {me?.role === "owner" && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -75,6 +89,25 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
                   </span>
                 </td>
                 <td className="muted text-[#a2aec2]">{formatDate(member.created_at)}</td>
+                {me?.role === "owner" && (
+                  <td>
+                    {!member.disabled_at && member.id !== me.id && (
+                      <button
+                        disabled={disable.isPending}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Disable ${member.display_name}? This signs them out and revokes their agent tokens.`,
+                            )
+                          )
+                            disable.mutate(member.id);
+                        }}
+                      >
+                        Disable
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

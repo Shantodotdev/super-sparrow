@@ -1,3 +1,6 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiWrite } from "../lib/api";
+import { useToast } from "./toast";
 import { formatDate } from "../lib/format";
 import type { AgentToken } from "../lib/types";
 import { useActor } from "../queries/project";
@@ -14,6 +17,13 @@ type TokensPanelProps = {
 /** The agent token table. Tokens show only their hint; the secret is shown once, when created. */
 export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
   const actor = useActor();
+  const client = useQueryClient();
+  const { notify } = useToast();
+  const renew = useMutation({
+    mutationFn: (id: string) => apiWrite(`/api/tokens/${id}/renew`, "POST"),
+    onSuccess: () => client.invalidateQueries(),
+    onError: (error) => notify(error.message),
+  });
   const now = Date.now();
 
   return (
@@ -61,6 +71,13 @@ export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
                 </td>
                 <td>{token.last_used_at ? formatDate(token.last_used_at) : "Never"}</td>
                 <td>
+                  <button
+                    className="mr-3"
+                    disabled={renew.isPending}
+                    onClick={() => renew.mutate(token.id)}
+                  >
+                    Renew
+                  </button>
                   <button
                     className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
                     onClick={() => onRevoke(token)}

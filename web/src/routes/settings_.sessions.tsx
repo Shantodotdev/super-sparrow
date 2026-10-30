@@ -1,39 +1,72 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiWrite } from "../lib/api";
+import { formatDate } from "../lib/format";
 import { SettingsHeader } from "../components/settings-header";
 import { useToast } from "../components/toast";
+
+type Session = {
+  id: string;
+  device_label: string;
+  current: boolean;
+  last_seen_at: string;
+  expires_at: string;
+};
 
 export const Route = createFileRoute("/settings_/sessions")({
   staticData: { section: "settings" },
   component: SessionsPage,
 });
 
-/** The browsers and devices signed in to the current account. */
+/** Lists real signed-in devices and revokes one or all sessions. */
 function SessionsPage() {
+  const client = useQueryClient();
   const { notify } = useToast();
-
+  const sessions = useQuery({
+    queryKey: ["sessions"],
+    queryFn: async () => (await apiGet<{ sessions: Session[] }>("/api/sessions")).sessions,
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => apiWrite(id ? `/api/sessions/${id}` : "/api/sessions", "DELETE"),
+    onSuccess: (_, id) => {
+      if (!id || sessions.data?.find((s) => s.id === id)?.current) {
+        client.clear();
+        window.location.assign("/signin");
+      } else void client.invalidateQueries({ queryKey: ["sessions"] });
+    },
+    onError: (error) => notify(error.message),
+  });
   return (
     <>
       <SettingsHeader title="Signed-in devices" description="Manage your active sessions." />
-      <div className="grid gap-[22px] px-[32px] py-[20px] max-[700px]:p-[16px]">
-        <section className="rounded-[8px] border border-[#222730] bg-[#0d0f12] p-[22px] max-[700px]:p-[16px]">
-          <h2>Signed-in devices</h2>
-          <div className="flex items-center justify-between border-t border-t-[#20252c] px-0 py-[16px]">
+      <section className="grid gap-4 p-8">
+        {sessions.error && <p role="alert">{sessions.error.message}</p>}
+        {sessions.isPending && <p>Loading devices…</p>}
+        {sessions.data?.map((session) => (
+          <div
+            key={session.id}
+            className="flex items-center justify-between border-b border-[#303641] p-4"
+          >
             <div>
-              <strong>Current browser</strong>{" "}
-              <span className="inline-block rounded-full border border-[#2b313a] bg-[#191c22] px-2 py-[4px] text-[12px] text-[#adb9c9] capitalize">
-                Current
-              </span>
-              <div className="muted mt-[3px] text-[12px] text-[#a2aec2]">Last seen just now</div>
+              <strong>{session.device_label}</strong>
+              {session.current && " · Current"}
+              <p>
+                Last seen {formatDate(session.last_seen_at)} · Expires{" "}
+                {formatDate(session.expires_at)}
+              </p>
             </div>
-            <button
-              className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b]"
-              onClick={() => notify("This is a frontend preview")}
-            >
+            <button disabled={revoke.isPending} onClick={() => revoke.mutate(session.id)}>
               Sign out
             </button>
           </div>
-        </section>
-      </div>
+        ))}
+        <button
+          disabled={revoke.isPending || !sessions.data?.length}
+          onClick={() => revoke.mutate("")}
+        >
+          Sign out all devices
+        </button>
+      </section>
     </>
   );
 }
