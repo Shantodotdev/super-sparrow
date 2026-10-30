@@ -198,10 +198,69 @@ try {
     'textarea[aria-label="Description or plan"]',
     "## Goal\nBrowser verification\n- [ ] Browser checklist",
   );
+  await click("Labels");
+  await input('input[aria-label="Search or create labels"]', "Browser label");
+  await click('Create new label:"Browser label"');
+  await waitText("Choose a color");
+  if (!(await evaluate(`!document.querySelector('[aria-label="Remove Browser label label"]')`)))
+    throw new Error("Label was attached before choosing a color");
+  if (
+    !(await evaluate(
+      `fetch('/api/projects/WP/labels').then(r=>r.json()).then(b=>!b.labels.some(label=>label.name === 'Browser label'))`,
+    ))
+  )
+    throw new Error("Label was saved before choosing a color");
+  checks++;
+  await click("Red");
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Remove Browser label label"]')`),
+    "select the newly created label",
+  );
+  checks++;
+  await evaluate(`document.querySelector('button[aria-label="Labels"]').click()`);
+  await input('input[aria-label="Search or create labels"]', "browser LABEL");
+  if (
+    !(await evaluate(
+      `!document.querySelector('[aria-label="Create new label"]') && [...document.querySelectorAll('[aria-label="Choose labels"] button')].some(button=>button.textContent.trim() === 'Browser label' && button.getAttribute('aria-pressed') === 'true')`,
+    ))
+  )
+    throw new Error(
+      "Searching for an existing label should show it without a duplicate creation action",
+    );
+  checks++;
+  await evaluate(
+    `document.querySelector('input[aria-label="Search or create labels"]').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))`,
+  );
+  await until(
+    () => evaluate(`!document.querySelector('[aria-label="Remove Browser label label"]')`),
+    "toggle matching label with Enter",
+  );
+  checks++;
+  await input('input[aria-label="Search or create labels"]', "Browser label");
+  await evaluate(
+    `document.querySelector('input[aria-label="Search or create labels"]').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))`,
+  );
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Remove Browser label label"]')`),
+    "reselect the existing label",
+  );
+  checks++;
+  await evaluate(
+    `document.querySelector('input[aria-label="Search or create labels"]').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))`,
+  );
   await click("Create issue");
   await waitText("Browser persisted issue");
   await evaluate(`document.querySelector('a[href="/${projectSlug}/issues/WP-2"]').click()`);
   await waitText("Browser checklist");
+  await until(
+    () =>
+      evaluate(
+        `Promise.all([fetch('/api/projects/WP/labels').then(r=>r.json()), fetch('/api/issues/WP-2').then(r=>r.json())]).then(([labels, detail])=>labels.labels.some(label=>label.name === 'Browser label' && label.color === '#f2a9ae' && detail.issue.label_ids.includes(label.id)))`,
+      ),
+    "persist label in the project and attach it to the issue",
+  );
+  checks++;
+
   await evaluate(`document.querySelector('input[type="checkbox"]').click()`);
   await until(
     () =>
@@ -216,6 +275,13 @@ try {
   await waitText("Browser persisted comment");
   await navigate(`/${projectSlug}/issues/WP-2`);
   await waitText("Browser persisted comment");
+  if (
+    !(await evaluate(
+      `(() => {const chip=[...document.querySelectorAll('.label-chip')].find(e=>e.textContent === 'Browser label'); return chip && getComputedStyle(chip).color === 'rgb(242, 169, 174)';})()`,
+    ))
+  )
+    throw new Error("Label color did not survive a reload");
+  checks++;
   await click("Edit plan");
   await input(
     'textarea[aria-label="Edit plan"]',

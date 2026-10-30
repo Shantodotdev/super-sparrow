@@ -32,6 +32,7 @@ export type Milestone = {
 };
 
 export type Label = {
+  color: string;
   id: string;
   project_id: string;
   name: string;

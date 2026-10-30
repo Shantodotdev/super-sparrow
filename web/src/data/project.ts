@@ -9,7 +9,7 @@ export function at(date: string, time = "09:00"): string {
 }
 
 function label(name: string): Label {
-  return { id: `label-${name.toLowerCase()}`, project_id: project.id, name, created_at: at("2024-10-28") };
+  return { id: `label-${name.toLowerCase()}`, project_id: project.id, name, color: "#a7c0ff", created_at: at("2024-10-28") };
 }
 
 export const seedLabels: Label[] = [

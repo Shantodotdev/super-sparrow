@@ -1,35 +1,26 @@
-import { useLabelName } from "../queries/project";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { labelsQuery } from "../queries/project";
 
-const labelStyles: Record<string, string> = {
-  ux: "border-[#3b255b] bg-[#211634] text-[#c5a8ff]",
-  ui: "border-[#3b255b] bg-[#211634] text-[#c5a8ff]",
-  frontend: "border-[#3b255b] bg-[#211634] text-[#c5a8ff]",
-  feature: "border-[#1b493b] bg-[#102820] text-[#a1e4cd]",
-  backend: "border-[#1b493b] bg-[#102820] text-[#a1e4cd]",
-  bug: "border-[#62303a] bg-[#32171e] text-[#f2a9ae]",
-  security: "border-[#62303a] bg-[#32171e] text-[#f2a9ae]",
-  documentation: "border-[#594626] bg-[#302513] text-[#f2cf87]",
-  research: "border-[#594626] bg-[#302513] text-[#f2cf87]",
-  realtime: "border-[#235057] bg-[#10292d] text-[#8fd5da]",
-  accessibility: "border-[#235057] bg-[#10292d] text-[#8fd5da]",
-  database: "border-[#235057] bg-[#10292d] text-[#8fd5da]",
-};
-
-/** Shows an issue's labels by ID, each in its color. */
+/** Shows an issue's labels using their persisted colors. */
 export function LabelChips({ labelIds }: { labelIds: string[] }) {
-  const labelName = useLabelName();
-  const labels = labelIds.map(labelName);
+  const { data: labels } = useSuspenseQuery(labelsQuery);
+  const byId = new Map(labels.map((label) => [label.id, label]));
 
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-[5px]">
-      {labels.map((label) => (
-        <span
-          className={`label-chip inline-block rounded-full border px-[8px] py-[4px] text-[12px] ${labelStyles[label.toLowerCase()] ?? "border-[#1d356d] bg-[#101d3c] text-[#a7c0ff]"}`}
-          key={label}
-        >
-          {label}
-        </span>
-      ))}
+      {labelIds.map((id) => {
+        const label = byId.get(id);
+        const color = label?.color ?? "#a7c0ff";
+        return (
+          <span
+            key={id}
+            className="label-chip inline-block rounded-full border px-[8px] py-[4px] text-[12px]"
+            style={{ color, borderColor: `${color}40`, backgroundColor: `${color}18` }}
+          >
+            {label?.name ?? id}
+          </span>
+        );
+      })}
     </span>
   );
 }
