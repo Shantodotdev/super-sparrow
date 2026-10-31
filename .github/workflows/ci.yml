@@ -4,10 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -53,3 +54,59 @@ jobs:
         with:
           workspaces: desktop/src-tauri
       - run: make check-desktop
+
+  deployment:
+    name: Deployment checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: python3 -m unittest discover -s deploy -p '*_test.py'
+      - run: bash -n deploy/install-doppler.sh
+      - run: docker compose -f deploy/compose.production.yaml config --no-interpolate --no-env-resolution --quiet
+
+  deploy:
+    name: Deploy production
+    needs: [server, web, desktop, deployment]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://sparrow.premiumcommerce.site
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Build and publish the immutable server image
+        id: image
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}"
+          docker build --platform linux/amd64 -f deploy/Dockerfile \
+            --build-arg "VERSION=sha-${GITHUB_SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" -t "$image" .
+          registry_config="$(mktemp -d)"
+          trap 'rm -rf "$registry_config"' EXIT
+          export DOCKER_CONFIG="$registry_config"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          docker push "$image"
+          digest="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')"
+          printf 'ref=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - name: Install the pinned Doppler CLI
+        run: |
+          doppler="$(bash deploy/install-doppler.sh)"
+          dirname "$doppler" >> "$GITHUB_PATH"
+      - name: Deploy with production settings from Doppler
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.image.outputs.ref }}
+        run: |
+          python3 deploy/deploy.py --project super-sparrow --config prd \
+            --mode release --image "$IMAGE" --commit "$GITHUB_SHA"

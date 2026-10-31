@@ -95,7 +95,7 @@ The importer is in `server/internal/linear` and the webhook in `server/internal/
 
 ## 9. Deployment and backups
 
-`deploy/` holds the Docker and systemd files, `server/internal/backup` the jobs and restore, and [DEPLOYMENT.md](DEPLOYMENT.md) the steps. The last three items need the staging server and an R2 bucket.
+`deploy/` holds the Docker and systemd files, `server/internal/backup` the jobs and restore, and [DEPLOYMENT.md](DEPLOYMENT.md) the steps. Super Sparrow's production instance shares WP Agent's staging host, reached over SSH as `wpstaging`.
 
 - [x] Write the systemd unit or Docker Compose file for the server.
 - [x] Build the backup jobs: a consistent copy with `VACUUM INTO`, compression, age encryption, and upload to R2.
@@ -103,7 +103,7 @@ The importer is in `server/internal/linear` and the webhook in `server/internal/
 - [x] Schedule the daily backup, with dated copies and deletion of copies older than the configured number of days.
 - [x] Record each backup run and log failures.
 - [x] Add the `restore` CLI command, with an integrity check before it writes the database file.
-- [ ] Deploy to the staging server behind the reverse proxy with HTTPS.
+- [x] Deploy production to `wpstaging` behind the reverse proxy with HTTPS.
 - [ ] Restore both the latest sync and a daily backup into a fresh machine, and document the steps. The steps are in [DEPLOYMENT.md](DEPLOYMENT.md#restoring); the restore on a fresh machine is not done yet.
 - [ ] Measure memory and response times against the SRS limits.
 

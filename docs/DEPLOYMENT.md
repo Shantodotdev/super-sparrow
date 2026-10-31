@@ -21,6 +21,75 @@ Set `APP_ENV=production` on a server. Production requires every setting in `.env
 
 The database lives in the `sparrow-data` volume. The container listens on `127.0.0.1:8090` only, for the reverse proxy.
 
+## Production on wpstaging
+
+Super Sparrow runs at `https://sparrow.premiumcommerce.site` on WP Agent's staging VPS.
+This is Super Sparrow production, with `APP_ENV=production`, its own SQLite volume, and encrypted
+R2 backups. WP Agent's Caddy provides HTTPS; Super Sparrow deployments do not restart it.
+
+### Doppler and GitHub settings
+
+Doppler is the source of truth for production secrets and deployment settings:
+
+- **`super-sparrow` / `prd`** holds the application settings from `.env.example` and
+  `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR`, `DEPLOY_SSH_KEY`, and `DEPLOY_KNOWN_HOSTS`.
+  The image's environment, listen address, and paths stay in `deploy/compose.production.yaml`.
+- **`super-sparrow-recovery` / `prd`** holds `BACKUP_AGE_IDENTITY`, the backup private key, and
+  references to the production R2 settings. No CI service token is created for this project.
+- `RESEND_API_KEY` is the sending-only key imported from Super Sparrow's local `.env`.
+  Manage and rotate it in this project's production config.
+- GitHub's **`production`** environment holds only `DOPPLER_TOKEN`, a read-only service token
+  scoped to `super-sparrow/prd`. Only the `main` branch may use this environment. GHCR uses
+  GitHub's short-lived job token rather than a stored registry password.
+
+The deployment client sends only the named application settings to the VPS, not the SSH key,
+Doppler token, or backup private key. SSH uses the previously verified host key and a dedicated
+key pair. Its temporary local key file and the host's temporary registry login are deleted
+when those operations end.
+
+### Deployments and settings changes
+
+`.github/workflows/ci.yml` checks Go, the frontend, formatting, the desktop app, and deployment
+logic. A successful push to `main` then builds a Linux amd64 image with `deploy/Dockerfile`,
+publishes it to GHCR with a commit tag, and deploys its immutable digest over SSH. Pull requests
+run checks without accessing production secrets. The Docker build verifies that the SPA shell's
+assets exist, and excludes secret files and generated local build output.
+
+Production runs are serialized and are not canceled by a newer push. The host also holds a
+deployment lock. Before changing files, it validates the proposed Compose configuration and
+pulls the image. It saves a consistent SQLite snapshot, then replaces only the Super Sparrow
+container. HTTPS health and frontend asset checks must succeed before the release is recorded.
+The host keeps the three most recent pre-deployment snapshots with owner-only access.
+
+To change settings, edit `super-sparrow/prd` in Doppler and run **Apply production settings** in
+GitHub Actions on `main`. This updates settings without building or changing the running image.
+The same validation and smoke checks apply. A failed deployment restores the previous settings
+and image only when no migrations were applied; it preserves the current database, including
+accepted writes. If the schema changed, it stops the failed release and reports the snapshot
+path for manual recovery. It never automatically overwrites the live database.
+
+### Existing host and recovery
+
+The deployment directory is `/opt/super-sparrow/staging`, using `compose.production.yaml`;
+`compose.staging.yaml` remains a compatibility symlink. The Compose project
+`super-sparrow-staging`, data volume `super-sparrow-staging_sparrow-data`, and external network
+`sparrow-staging-proxy` retain their original names to preserve existing data and proxy routing.
+Never remove these resources during an update. The proxy network must exist before deploying.
+
+`sparrow.env` on the host is generated from Doppler and readable only by root (`0600`).
+Previous settings are retained with the same permissions for rollback. These are plaintext
+runtime files, and Docker administrators can inspect the container environment. Do not edit
+these files manually or commit secrets. The backup private key stays off the VPS.
+
+Local recovery copies remain at `~/.local/state/super-sparrow/staging/backup-identity.txt` and
+`~/Documents/Super Sparrow Recovery/backup-private-key.txt`, with `0600` file permissions and
+`0700` directories. The separate Doppler recovery project provides an off-device copy.
+[Restoring](#restoring) documents recovery from encrypted R2 copies. The pre-deployment SQLite
+snapshots are local recovery aids; they are not the encrypted off-site backups.
+
+The WP Agent proxy changes must remain in that repository's deployment configuration. A rollback
+of WP Agent to a revision without them can remove Super Sparrow's public route.
+
 ## Run it with systemd
 
 1. Download `sparrow-<version>-linux-amd64` and `sparrow-<version>-web.tar.gz` from the GitHub Release, or build both with `make build`. Install the binary at `/usr/local/bin/sparrow`, and unpack the frontend into `/srv/sparrow/web` (from a build, copy `web/dist/client` there).
@@ -45,7 +114,7 @@ sparrow.example.com {
 Two jobs run inside the server, always in production and in development when the backup settings are set. Each takes a consistent copy with `VACUUM INTO`, compresses it, encrypts it with [age](https://age-encryption.org) to the public key in `BACKUP_AGE_RECIPIENT`, and uploads it to R2. The server holds only the public key, so someone who takes the server or its settings still cannot read a backup.
 
 - The **sync** runs when the server starts and then every hour, replacing `sync/sparrow.db.gz.age`. R2 replaces the old copy only once the new upload has finished.
-- The **daily backup** runs at `BACKUP_DAILY_TIME` in `BACKUP_TIME_ZONE` (03:00 in `Asia/Dhaka` on staging) as `daily/sparrow-YYYY-MM-DD.db.gz.age`, dated in that time zone, then deletes dated copies older than `BACKUP_KEEP_DAYS`. A daily backup that fails, or that was missed while the server was down, runs again after each hourly sync until one succeeds that day.
+- The **daily backup** runs at `BACKUP_DAILY_TIME` in `BACKUP_TIME_ZONE` (03:00 in `Asia/Dhaka` in production) as `daily/sparrow-YYYY-MM-DD.db.gz.age`, dated in that time zone, then deletes dated copies older than `BACKUP_KEEP_DAYS`. A daily backup that fails, or that was missed while the server was down, runs again after each hourly sync until one succeeds that day.
 
 Each run is recorded in the database, and failures are logged.
 
@@ -53,7 +122,7 @@ To set them up:
 
 1. Run `sparrow backup-keygen`. It prints a key pair: save the three lines it prints in the team's password manager, because a backup cannot be restored without the private key. Never put them on the server.
 2. Create an R2 bucket, and an R2 API token with Object Read & Write on that bucket only.
-3. Set `BACKUP_AGE_RECIPIENT` to the public key, starting with `age1`, that `backup-keygen` printed, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_DAILY_TIME` and `BACKUP_TIME_ZONE` (`03:00` and `Asia/Dhaka`), and `BACKUP_KEEP_DAYS` (`30` on staging).
+3. Set `BACKUP_AGE_RECIPIENT` to the public key, starting with `age1`, that `backup-keygen` printed, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `BACKUP_DAILY_TIME` and `BACKUP_TIME_ZONE` (`03:00` and `Asia/Dhaka`), and `BACKUP_KEEP_DAYS` (`30` in production).
 
 ## Restoring
 

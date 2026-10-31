@@ -107,7 +107,7 @@ The MCP endpoint uses the streamable HTTP transport without sessions: each reque
 
 ## 5. Non-functional requirements
 
-- NFR-1 Performance: API reads under 50 ms at the 95th percentile on the staging server. The issue and review pages render in under 200 ms.
+- NFR-1 Performance: API reads under 50 ms at the 95th percentile on the production server. The issue and review pages render in under 200 ms.
 - NFR-2 Resources: the server idles under 100 MB of RAM. The desktop app idles under 150 MB.
 - NFR-3 Durability: an accepted write is committed to SQLite before the response returns. A server loss loses at most one hour of data.
 - NFR-4 Recovery: restoring from the latest sync and from any daily backup into a fresh server is documented and tested before launch.
@@ -166,13 +166,18 @@ The Go server runs two jobs that write to Cloudflare R2. Both take a consistent 
 
 - The sync replaces its copy only after the new upload succeeds, so a failed run never leaves R2 without a copy.
 - Both jobs record each run (start, finish, size, result) and log a failure.
-- `APP_ENV=production` requires the public key, R2 credentials, bucket, the daily backup time, and the number of days to keep, so a production server never runs without backups. In development they are optional, all or none, so a development machine runs without R2. The server holds only the public key and cannot decrypt its own backups; the matching private key, which the team keeps outside the server, decrypts them. Staging keeps daily backups for 30 days.
+- `APP_ENV=production` requires the public key, R2 credentials, bucket, the daily backup time, and the number of days to keep, so a production server never runs without backups. In development they are optional, all or none, so a development machine runs without R2. The server holds only the public key and cannot decrypt its own backups; the matching private key, which the team keeps outside the server, decrypts them. Production keeps daily backups for 30 days.
 - A `restore` CLI command downloads a chosen copy, decrypts it with the private key, checks it with `PRAGMA integrity_check`, and writes it as the database file.
 
 ## 8. Deployment
 
+Super Sparrow production runs on the host reached over SSH as `wpstaging`. That host is staging
+for WP Agent and production for Super Sparrow; the applications have independent environments.
+
 - One binary, run as a systemd service or one Docker Compose service.
 - Behind the existing reverse proxy with HTTPS.
+- Doppler holds production configuration and a separate recovery project holds the backup private key, outside CI and the VPS.
+- Successful GitHub Actions checks on `main` publish an immutable GHCR image and deploy it over verified SSH. Settings-only updates are available through a manual workflow.
 - GitHub Actions builds versioned server binaries and the desktop installers for Linux, macOS, and Windows, and publishes them to GitHub Releases when a version tag is pushed.
 - The repository is private, so only team members with repository access can download the installers.
 - Database migrations run at startup, in order, inside a transaction, and are recorded in a migrations table.

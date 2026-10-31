@@ -1,6 +1,10 @@
 **/node_modules
 **/dist
 **/.tanstack
+**/.output
+**/.env
+**/.env.*
+**/*.env
 .git
 .env
 data

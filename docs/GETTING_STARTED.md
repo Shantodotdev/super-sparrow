@@ -76,7 +76,7 @@ The same `sparrow` binary is also the command-line client. With `SPARROW_URL` an
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request. It runs the Go checks, tests, and build; the web checks, tests, and build; the repository-wide format check; and the desktop `cargo check`.
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request. It runs the Go checks, tests, and build; the web checks, tests, and build; the repository-wide format check; and the desktop `cargo check`. Deployment checks also cover secret filtering and failure recovery. After every check succeeds on `main`, the workflow publishes an immutable image to GHCR and deploys production with settings from Doppler. The manual **Apply production settings** workflow refreshes configuration without rebuilding the image. [DEPLOYMENT.md](DEPLOYMENT.md#production-on-wpstaging) describes the setup and recovery behavior.
 
 ## Releases
 

@@ -1,0 +1,30 @@
+name: Apply production settings
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://sparrow.premiumcommerce.site
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install the pinned Doppler CLI
+        run: |
+          doppler="$(bash deploy/install-doppler.sh)"
+          dirname "$doppler" >> "$GITHUB_PATH"
+      - name: Apply settings without building or changing the release image
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: python3 deploy/deploy.py --project super-sparrow --config prd --mode configure

@@ -1,0 +1,38 @@
+# Production on wpstaging. Keep the original resource names to reuse the live database and proxy.
+name: super-sparrow-staging
+
+services:
+  sparrow:
+    image: ${SPARROW_IMAGE:?set SPARROW_IMAGE to the release image tag or digest}
+    restart: unless-stopped
+    env_file: sparrow.env
+    environment:
+      APP_ENV: production
+      LISTEN_ADDR: 0.0.0.0:8090
+      DATABASE_PATH: /data/sparrow.db
+      WEB_DIR: /srv/web
+    volumes:
+      - sparrow-data:/data
+    networks:
+      proxy:
+        ipv4_address: 172.30.90.3
+        aliases: [sparrow]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  proxy:
+    external: true
+    name: sparrow-staging-proxy
+
+volumes:
+  sparrow-data:
