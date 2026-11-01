@@ -8,7 +8,6 @@ import type { Issue } from "../lib/types";
 import { issueQuery, issuesQuery } from "../queries/issues";
 import { markdownExtensions } from "./markdown-editor";
 import { useToast } from "./toast";
-import "./issue-plan.css";
 
 /** An inline Markdown editor that saves serially using the server's plan revision. */
 export function IssuePlan({ issue }: { issue: Issue }) {

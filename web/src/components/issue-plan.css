@@ -1,4 +1,5 @@
 .issue-plan-editor .tiptap {
+  position: relative;
   min-height: 180px;
   border: 0;
   outline: none;
@@ -6,6 +7,9 @@
   font-size: 15px;
   line-height: 1.7;
   overflow-wrap: anywhere;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
 }
 
 .issue-plan-editor .tiptap > :first-child {
@@ -69,6 +73,7 @@
   font-size: 0.9em;
 }
 .issue-plan-editor pre {
+  white-space: pre-wrap;
   overflow-x: auto;
   border-radius: 8px;
   background: #101216;

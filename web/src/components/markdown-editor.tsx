@@ -7,7 +7,6 @@ import TaskItem from "@tiptap/extension-task-item";
 import { TableKit } from "@tiptap/extension-table";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
-import "./issue-plan.css";
 
 /** The Markdown editor's extensions, shared by every place that edits an issue's Markdown. */
 export function markdownExtensions(placeholder: string) {
