@@ -132,10 +132,15 @@ try {
       `(() => {const button = [...(document.querySelector('[role=dialog]') ?? document).querySelectorAll('button,a')].find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw new Error('Missing control'); button.click();})()`,
     );
   };
-  const input = (selector: string, value: string) =>
-    evaluate(
+  const input = async (selector: string, value: string) => {
+    await until(
+      () => evaluate(`!!document.querySelector(${JSON.stringify(selector)})`),
+      `find input ${selector}`,
+    );
+    return evaluate(
       `(() => {const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('Missing input'); Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(value)}); e.dispatchEvent(new Event('input', {bubbles:true}));})()`,
     );
+  };
   const navigate = async (path: string, destination = path) => {
     await call("Page.navigate", { url: base + path });
     await until(
@@ -147,19 +152,18 @@ try {
     );
   };
   await navigate("/", "/signin");
-  await waitText("Welcome to Super Sparrow").catch(async (error) => {
+  await waitText("Sign in").catch(async (error) => {
     console.error(await evaluate("({url: location.href, text: document.body.innerText})"));
     throw error;
   });
   await input('input[type="email"]', "olive@example.com");
-  await click("Continue with email");
-  await waitText("Check your email");
+  await click("Continue");
+  await waitText("Enter your code");
   const code = await until(async () => {
     const response = await fetch(base + "/__test/code");
     return response.ok ? response.text() : undefined;
   }, "test mailbox");
   await input('input[autocomplete="one-time-code"]', code);
-  await click("Sign in");
   await waitText("Meta comments");
   const projectSlug = await evaluate(
     `fetch('/api/projects').then(r=>r.json()).then(b=>b.projects.find(p=>p.key === 'WP').slug)`,
@@ -202,10 +206,20 @@ try {
   });
   checks++;
 
-  await input(
-    'textarea[aria-label="Description or plan"]',
-    "## Goal\nBrowser verification\n- [ ] Browser checklist",
+  await until(
+    () =>
+      evaluate(
+        `!!document.querySelector('[contenteditable="true"][aria-label="Description or plan"]')`,
+      ),
+    "open description editor",
   );
+  await evaluate(`(() => {
+    const editor = document.querySelector('[contenteditable="true"][aria-label="Description or plan"]');
+    editor.focus();
+    const data = new DataTransfer();
+    data.setData('text/plain', '## Goal\\nBrowser verification\\n- [ ] Browser checklist');
+    editor.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+  })()`);
   await click("Labels");
   await input('input[aria-label="Search or create labels"]', "Browser label");
   await click('Create new label:"Browser label"');
@@ -256,7 +270,67 @@ try {
   await evaluate(
     `document.querySelector('input[aria-label="Search or create labels"]').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))`,
   );
+  await call("Network.emulateNetworkConditions", {
+    offline: false,
+    latency: 200,
+    downloadThroughput: 125000,
+    uploadThroughput: 62500,
+  });
+  await evaluate(`(() => {
+    const original = window.fetch.bind(window);
+    const state = window.__issuePerf = {trace: [], blocked: [], failNext: true};
+    window.fetch = async (path, options) => {
+      if (String(path).includes('/issues') && options?.method === 'POST') {
+        if (state.failNext) {
+          state.failNext = false;
+          return new Response(JSON.stringify({error: 'Simulated creation failure'}), {status: 503});
+        }
+        state.trace.push({event: 'POST started', time: performance.now()});
+        const response = await original(path, options);
+        state.trace.push({event: 'POST response', time: performance.now(), status: response.status});
+        return response;
+      }
+      if (String(path).startsWith('/api/') && (!options?.method || options.method === 'GET')) {
+        state.trace.push({event: 'GET held', path, time: performance.now()});
+        return new Promise(resolve => state.blocked.push(() => resolve(original(path, options))));
+      }
+      return original(path, options);
+    };
+    state.restore = () => {window.fetch = original; state.blocked.forEach(release => release());};
+  })()`);
   await click("Create issue");
+  await waitText("Simulated creation failure");
+  if (
+    !(await evaluate(
+      `document.querySelector('[role=dialog] input[aria-label="Issue title"]').value === 'Browser persisted issue'`,
+    ))
+  )
+    throw new Error("Failed creation lost the issue draft");
+  checks++;
+  await click("Create issue");
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[role=dialog]') && document.body.innerText.includes('Browser persisted issue')`,
+      ),
+    "close the dialog and show the committed issue while all follow-up GETs are held",
+  );
+  console.log(
+    "Issue creation network trace:",
+    await evaluate(`(() => {
+    const state = window.__issuePerf;
+    state.trace.push({event: 'dialog closed and issue visible', time: performance.now()});
+    state.restore();
+    return state.trace;
+  })()`),
+  );
+  checks++;
+  await call("Network.emulateNetworkConditions", {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput: -1,
+  });
   await waitText("Browser persisted issue");
   await evaluate(`document.querySelector('a[href="/${projectSlug}/issues/WP-2"]').click()`);
   await waitText("Browser checklist");
@@ -280,10 +354,10 @@ try {
   checks++;
   await click("Comments");
   await until(
-    () => evaluate(`!!document.querySelector('input[aria-label="Add a comment"]')`),
+    () => evaluate(`!!document.querySelector('textarea[aria-label="Add a comment"]')`),
     "open the comments tab",
   );
-  await input('input[aria-label="Add a comment"]', "Browser persisted comment");
+  await input('textarea[aria-label="Add a comment"]', "Browser persisted comment");
   await click("Send");
   await waitText("Browser persisted comment");
   await navigate(`/${projectSlug}/issues/WP-2`);
@@ -443,6 +517,24 @@ try {
     "show every built-in avatar plus initials",
   );
   checks++;
+  const avatarLoads = await evaluate(`(async () => {
+    const url = new URL('/avatars/v1/nerdy-owl-astronomer-96.webp', location.href).href;
+    performance.clearResourceTimings();
+    const cold = await fetch(url, {cache: 'reload'});
+    const bytes = (await cold.arrayBuffer()).byteLength;
+    const warm = await fetch(url);
+    await warm.arrayBuffer();
+    return {bytes, cache: cold.headers.get('Cache-Control'), type: cold.headers.get('Content-Type'),
+      loads: performance.getEntriesByName(url).map(entry => ({duration: entry.duration, transferred: entry.transferSize}))};
+  })()`);
+  if (
+    avatarLoads.bytes > 20000 ||
+    !avatarLoads.cache.includes("immutable") ||
+    avatarLoads.type !== "image/webp"
+  )
+    throw new Error("Avatar must be compressed WebP with immutable caching");
+  console.log("Cold and warm avatar loads:", avatarLoads);
+  checks++;
   await input('[role="dialog"] input', "Cancelled profile name");
   await click("Cancel");
   await until(
@@ -470,7 +562,7 @@ try {
   await waitText("Browser Profile");
   if (
     !(await evaluate(
-      `fetch('/api/me').then(r=>r.json()).then(b=>b.actor.avatar_id === 'adventurers-cat-pilot' && !!document.querySelector('img[src="/avatars/adventurers-cat-pilot.png"]'))`,
+      `fetch('/api/me').then(r=>r.json()).then(b=>b.actor.avatar_id === 'adventurers-cat-pilot' && !!document.querySelector('img[src="/avatars/v1/adventurers-cat-pilot-48.webp"]'))`,
     ))
   )
     throw new Error("Profile avatar did not survive a reload");
@@ -633,7 +725,7 @@ try {
   await navigate("/settings/sessions");
   await waitText("Current");
   await click("Sign out all devices");
-  await waitText("Welcome to Super Sparrow");
+  await waitText("Sign in");
   if (browserErrors.length) throw new Error(`${browserErrors.length} browser runtime errors`);
   console.log(`${checks} browser assertions passed`);
 } finally {
