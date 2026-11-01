@@ -44,3 +44,4 @@ CLAUDE.local.md
 # Logs and test output
 *.log
 coverage.out
+output/
