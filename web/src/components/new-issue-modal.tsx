@@ -5,7 +5,7 @@ import { apiWrite } from "../lib/api";
 import { labelsQuery } from "../queries/project";
 import { statusIcon, statusIconColor } from "../lib/issue-status";
 import { Input, Textarea } from "./input";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "./icon";
 import { Select } from "./select";
 import { Modal } from "./modal";
@@ -23,7 +23,7 @@ export type NewIssueValues = {
   labelIds: string[];
 };
 
-type Option = { value: string; label: string; projectId?: string };
+type Option = { value: string; label: string; projectId?: string; leading?: ReactNode };
 
 type NewIssueModalProps = {
   project: Project;
@@ -223,7 +223,7 @@ export function NewIssueModal({
           onChange={(event) => setPlan(event.target.value)}
           placeholder="Add a description or plan..."
         />
-        <div className="flex flex-wrap gap-[6px]">
+        <div className="flex flex-wrap gap-[6px] [&_button]:min-h-[35px] [&_button]:px-[11px] [&_button]:py-[6px] [&_button]:text-[13px]">
           <Select
             variant="chip"
             label="Status"

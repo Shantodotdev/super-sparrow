@@ -1,3 +1,4 @@
+import { Avatar } from "../components/avatar";
 import { Input } from "../components/input";
 import { useProject } from "../hooks/use-project";
 import { useState } from "react";
@@ -60,6 +61,15 @@ function IssuesPage() {
   const assigneeOptions = assignable.map((actor) => ({
     value: actor.id,
     label: actor.display_name,
+  }));
+  const newIssueAssigneeOptions = assignable.map((actor) => ({
+    value: actor.id,
+    label: actor.display_name,
+    leading: (
+      <span className="flex shrink-0 [&_.agent-icon]:size-6 [&_.avatar]:size-6 [&_.avatar]:basis-6 [&_.avatar]:text-[10px]">
+        <Avatar actor={actor} />
+      </span>
+    ),
   }));
   const labelOptions = labels
     .filter((label) => label.project_id === project.id)
@@ -215,7 +225,7 @@ function IssuesPage() {
         project={project}
         open={creating}
         statuses={statusOptions}
-        assignees={assigneeOptions}
+        assignees={newIssueAssigneeOptions}
         milestones={milestoneOptions}
         labels={labels}
         onCreate={createIssue}
