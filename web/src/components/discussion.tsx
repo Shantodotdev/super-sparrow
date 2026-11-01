@@ -1,7 +1,7 @@
-import { Input } from "./input";
-import { useState, type FormEvent } from "react";
+import { Textarea } from "./input";
+import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { formatDate } from "../lib/format";
+import { formatRelative } from "../lib/format";
 import type { Comment } from "../lib/types";
 import { useAddComment } from "../queries/findings";
 import { commentsQuery, useActor } from "../queries/project";
@@ -52,41 +52,56 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
     }
   };
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  };
+
   return (
-    <>
-      {comments.length === 0 && <p className="muted text-[#a2aec2]">No comments yet.</p>}
-      {threaded(comments).map(({ comment, reply }) => {
-        const author = actor(comment.author_actor_id);
-        return (
-          <div
-            key={comment.id}
-            className={`mx-0 my-[12px] flex gap-[10px] text-[#b2bfd0] [&_p]:leading-normal [&_small]:ml-[6px] [&_small]:text-[#8b9ab0] [&_strong]:text-[#eef0f5] ${reply ? "ml-[46px]" : ""}`}
-          >
-            <Avatar actor={author} />
-            <p>
-              <strong>{author?.display_name ?? "Unknown"}</strong>{" "}
-              <small>{formatDate(comment.created_at)}</small>
-              <br />
-              <span className="whitespace-pre-wrap">{comment.body}</span>
-            </p>
-          </div>
-        );
-      })}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {threaded(comments).map(({ comment, reply }) => {
+          const author = actor(comment.author_actor_id);
+          return (
+            <div
+              key={comment.id}
+              className={`flex gap-[10px] py-[6px] ${reply ? "pl-[44px]" : ""}`}
+            >
+              <Avatar actor={author} />
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-[8px]">
+                  <strong className="text-[#eef0f5]">{author?.display_name ?? "Unknown"}</strong>
+                  <small className="text-[12px] text-[#8b9ab0]">
+                    {formatRelative(comment.created_at)}
+                  </small>
+                </div>
+                <p className="mt-[4px] inline-block max-w-[560px] rounded-[14px] rounded-tl-[4px] bg-[#1c2029] px-[14px] py-[9px] leading-normal break-words whitespace-pre-wrap text-[#d5dce8]">
+                  {comment.body}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
       {error && <p role="alert">{error}</p>}
-      <form className="mt-[16px] flex gap-[8px]" onSubmit={submit}>
-        <Input
+      <form className="mt-[16px] flex shrink-0 items-end gap-[8px]" onSubmit={submit}>
+        <Textarea
           aria-label="Add a comment"
+          rows={3}
           value={body}
           onChange={(event) => setBody(event.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Add a comment..."
+          className="min-h-[88px] flex-1 resize-y"
         />
         <button
-          className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b]"
+          className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b] disabled:cursor-default"
           disabled={pending || !body.trim()}
         >
           Send
         </button>
       </form>
-    </>
+    </div>
   );
 }

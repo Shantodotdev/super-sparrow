@@ -37,7 +37,7 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
   const pullNumber = /\/pull\/(\d+)/.exec(pullRequestUrl)?.[1];
 
   return (
-    <aside className="border-l border-l-[#242932] p-[30px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_>_.custom-select]:w-full [&_h3]:mx-0 [&_h3]:mt-[22px] [&_h3]:mb-[9px] [&_h3]:text-[14px] [&_h3:first-child]:mt-0">
+    <aside className="min-h-0 overflow-y-auto border-l border-l-[#242932] p-[30px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_>_.custom-select]:w-full [&_h3]:mx-0 [&_h3]:mt-[22px] [&_h3]:mb-[9px] [&_h3]:text-[14px] [&_h3:first-child]:mt-0">
       <h3>Status</h3>
       <div
         className={`[--issue-status-color:#98a9c3] [&_.custom-select-value]:flex-1 [&_[role=combobox]>svg:first-child]:text-(--issue-status-color) [&.status-backlog]:text-[#a9b6c8] [&.status-backlog]:[--issue-status-color:#a9b6c8] [&.status-done]:text-[#44ce91] [&.status-done]:[--issue-status-color:#44ce91] [&.status-in-progress]:text-[#4c7aff] [&.status-in-progress]:[--issue-status-color:#4c7aff] [&.status-in-review]:text-[#a574ff] [&.status-in-review]:[--issue-status-color:#a574ff] status-${slugify(issue.status)}`}

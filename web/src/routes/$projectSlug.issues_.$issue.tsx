@@ -126,8 +126,8 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-[minmax(0,1fr)_320px] max-[1100px]:grid-cols-[minmax(0,1fr)_280px] max-[700px]:block [&_.issue-icon-approach]:text-[#b28aff] [&_.issue-icon-branch]:text-[#b28aff] [&_.issue-icon-checklist]:text-[#61c99d] [&_.issue-icon-comments]:text-[#7bbdcf] [&_.issue-icon-goal]:text-[#7c9dff] [&_.issue-icon-pull-request]:text-[#7fcd9c] [&_.issue-icon-review]:text-[#a38af1] [&_.issue-icon-warning]:text-[#e8ae62]">
-      <div className="px-[32px] pt-[27px] pb-0 max-[700px]:px-[20px] max-[700px]:py-[24px]">
+    <div className={`grid grid-cols-[minmax(0,1fr)_320px] max-[1100px]:grid-cols-[minmax(0,1fr)_280px] max-[700px]:block [&_.issue-icon-approach]:text-[#b28aff] [&_.issue-icon-branch]:text-[#b28aff] [&_.issue-icon-checklist]:text-[#61c99d] [&_.issue-icon-comments]:text-[#7bbdcf] [&_.issue-icon-goal]:text-[#7c9dff] [&_.issue-icon-pull-request]:text-[#7fcd9c] [&_.issue-icon-review]:text-[#a38af1] [&_.issue-icon-warning]:text-[#e8ae62] ${tab === "comments" ? "h-dvh grid-rows-[minmax(0,1fr)] overflow-hidden max-[700px]:h-auto max-[700px]:overflow-visible" : "min-h-screen"}`}>
+      <div className={`px-[32px] pt-[27px] pb-0 max-[700px]:px-[20px] max-[700px]:py-[24px] ${tab === "comments" ? "flex min-h-0 flex-col" : ""}`}>
         <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
           <Link to="/$projectSlug/issues" params={{ projectSlug: project.slug }}>
             Issues
@@ -198,7 +198,9 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             </Link>
           ))}
         </Tabs>
-        <div className="flow-root [view-transition-name:issue-tab-content]">
+        <div
+          className={`[view-transition-name:issue-tab-content] ${tab === "comments" ? "flex min-h-0 flex-1 flex-col" : "flow-root"}`}
+        >
           {tab === "plan" && <IssuePlan key={issue.id} issue={issue} />}
           {tab === "findings" && (
             <section className="mt-8">
@@ -235,7 +237,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             </div>
           )}
           {tab === "comments" && (
-            <div className="py-[20px]">
+            <div className="flex min-h-0 flex-1 flex-col pt-[20px] pb-[24px]">
               <Discussion issueId={issue.id} findingId="" />
             </div>
           )}

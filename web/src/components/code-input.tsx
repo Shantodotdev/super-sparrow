@@ -63,7 +63,7 @@ export function CodeInput({ digits, onChange, disabled = false }: CodeInputProps
   };
 
   return (
-    <div className="flex justify-center gap-[10px]">
+    <div className="flex gap-[10px]">
       {digits.map((digit, index) => (
         <Input
           key={index}
