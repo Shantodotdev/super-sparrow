@@ -65,6 +65,20 @@ Priority is `urgent`, `high`, `medium`, `low`, or an empty string for no priorit
 
 Issue statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and `canceled`. Lists leave out `plan` and `checklist`, and every issue carries `checklist_progress: {done, total}` and `plan_revision`, which goes up with every change to the plan, ticked checklist items included.
 
+## Subissues
+
+Subissues are lightweight children, separate from full issues and their existing `parent_issue_id` links. Their only content fields are title, Markdown description, ID, and status. They have no reviews, findings, comments, assignees, labels, priorities, milestones, branches, pull requests, or nested children. Review and discussion endpoints accept full issues only.
+
+| Method and path                          | What it does                                                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/issues/{key}/subissues`        | `{subissues}` in ascending number order, including descriptions; an empty list is `[]`                                                                        |
+| `POST /api/issues/{key}/subissues`       | `{title, description?, status}`; returns `{subissue}` with 201                                                                                                |
+| `PATCH /api/issues/{key}/subissues/{id}` | Supplied `title`, `description`, and/or `status`; returns `{subissue}`. Description edits require `description_revision`; a stale edit returns 409 atomically |
+
+Each subissue returns `id` (UUID), `key` (such as `WP-142.1`), `issue_id`, `title`, `description`, `description_revision`, and `status`. Numbers increase within the parent without consuming project issue numbers. Title is required (up to 200 characters), description supports up to 100,000 characters, and status is required on creation and uses the issue statuses. `description: null` clears the description when paired with its revision; null titles and statuses are rejected. Omitted update fields are preserved. The subissue ID must belong to the issue in the path; otherwise the server returns 404.
+
+People and agents use the same authenticated endpoints. Actor fields are rejected; the server derives identity from the session or token. Each committed creation or edit emits `issue.subissue_created` or `issue.subissue_updated` on the parent issue, with the subissue ID and number in its payload. These events appear in the parent history and event stream. The web interface shows subissues below the description and instead of review rounds in the sidebar, with creation and Markdown editing available from either list. The existing MCP tools and CLI issue commands operate on full issues; agents manage subissues through these HTTP endpoints.
+
 ## Reviews and findings
 
 | Method and path                                            | What it does                                                                                                                                  |

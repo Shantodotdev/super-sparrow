@@ -22,6 +22,7 @@ Done. The schema is in `server/migrations/`; the data access layer is `server/in
 - [x] Build the data access layer.
 - [x] Write each change and its event in the same transaction.
 - [x] Add tests for issue numbering, round and finding numbering, and status transitions.
+- [x] Store lightweight subissues separately, with parent-scoped numbering, description revision checks, and transactional actor events.
 
 ## 3. Authentication and identity
 
@@ -43,6 +44,7 @@ Done. Secrets and emails are in `server/internal/auth` and `server/internal/emai
 Done. The endpoints are in `server/internal/httpserver` and listed in [API.md](API.md).
 
 - [x] Add endpoints for projects, milestones, and issues.
+- [x] Add authenticated endpoints to create, list, and edit lightweight subissues, without review or discussion targets.
 - [x] Add the branch-to-issue lookup.
 - [x] Add endpoints for review rounds and findings, including decisions and duplicates.
 - [x] Create the follow-up issue when a finding is decided `later`.
@@ -69,6 +71,7 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 - [x] Build the email sign-in screen: enter email, then the 6-digit code.
 - [x] Build the review round page with finding cards, threads, and keyboard decisions.
 - [x] Build the issue page with the plan, checklist, review rounds, open findings, and history.
+- [x] Show editable subissues below the description and replace the sidebar review rounds with subissues.
 - [x] Build the project issue list, grouped by status and filtered by milestone.
 - [x] Build the activity feed, with actor names and agent badges.
 - [x] Build settings for teammates, signed-in devices, and agent tokens.

@@ -4,7 +4,7 @@ This document defines the requirements and architecture of the first version of 
 
 ## 1. Scope
 
-Version 1 covers projects, milestones, issues with plans, review rounds, findings, comments, actor identity for humans and agents, an activity history, the MCP server, the CLI, the web and desktop interfaces, a Linear importer, deployment, and backups.
+Version 1 covers projects, milestones, issues with plans and lightweight subissues, review rounds, findings, comments, actor identity for humans and agents, an activity history, the MCP server, the CLI, the web and desktop interfaces, a Linear importer, deployment, and backups.
 
 Out of scope for version 1: documents, secrets, CI/CD, cycles, estimates, roadmaps, custom fields, email notifications, fine-grained permissions, and GitHub sync beyond closing an issue when its pull request merges.
 
@@ -45,6 +45,7 @@ The schema lives in `server/migrations/`, and `server/internal/store` is the onl
 - **Milestone:** project, name, position, status (`planned`, `active`, `done`).
 - **Label:** project, name, six-digit hexadecimal color. Names are unique within a project.
 - **Issue:** project, number (shown as `WP-142`), title, plan (markdown), plan revision, status, priority (urgent, high, medium, low, or unset), label set, parent issue, milestone, assignee, branch name, pull request URL, created by, completed at. The parent, milestone, and labels must be in the same project, and parent links never form a cycle. A branch name belongs to at most one issue per project. The plan revision goes up with every change to the plan, ticked checklist items included; saving an edited plan names the revision it started from and is refused when the plan has changed since, so no edit silently undoes another.
+- **Subissue:** parent issue, number within that issue (shown as `WP-142.1`), title, description (markdown), and progress status using the issue statuses. Subissues have no assignee, priority, labels, milestone, branch, pull request, reviews, findings, comments, or nested subissues. They are stored separately from full issues and do not appear in project issue lists. IDs are immutable; numbering increases per parent and never reuses a number. Description revisions prevent concurrent edits from silently overwriting each other. Creator and timestamps are persistence metadata; every change records its authenticated actor in the parent issue's history in the same transaction. Existing parent links between full issues remain separate from lightweight subissues.
 - **Review round:** issue, round number, reviewed range (from commit, to commit), whether uncommitted changes were included, plan coverage note, summary, author actor, finished at. An issue has at most one round in progress. A round without a from commit starts at the previous round's to commit. A finished round takes no new findings.
 - **Finding:** round, number within the round (R1, R2), severity, title, problem, fix, evidence, file path, line, commit, status, decision reason, decided by actor, found by actor, fixed by actor, fixed in commit, verified by actor, duplicate-of finding, follow-up issue. A duplicate points to a finding on the same issue, and duplicates never chain.
 - **Comment:** target (issue or finding), body (markdown), author actor, parent comment.
@@ -66,6 +67,7 @@ Issue, round, and finding numbers come from counters on their parent, so a numbe
 - FR-2: Store the plan as markdown in the issue description, with checklists that can be ticked. The inline editor formats Markdown as it is typed and automatically saves with revision checks; unsaved drafts are kept in the browser tab for recovery.
 - FR-3: Link an issue to a branch name and a pull request URL.
 - FR-4: Find an issue from a branch name that contains its key, such as `feat/wp-142-meta-comments`.
+- FR-26: Create, list, and edit lightweight subissues under an issue. Each exposes only a title, Markdown description, ID, and progress status. Reviews, findings, and discussions stay attached to full issues (including existing finding threads); subissues cannot receive them. Display subissues below the main issue description and in the right sidebar in place of review rounds. Review rounds remain available in their issue tab. Members and agents can manage subissues through the authenticated HTTP API.
 
 ### Reviews and findings
 
