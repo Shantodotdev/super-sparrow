@@ -173,3 +173,15 @@ test("a delayed creation response preserves a newer teammate edit", () => {
   expect(cache.getQueryData(["issues", "WP"])).toEqual([newer]);
   cache.clear();
 });
+
+test("subissue events refresh both lists for the parent, including an initially empty list", () => {
+  const cache = client();
+  cache.setQueryData(["issue", issue.key], issue);
+  cache.setQueryData(["subissues", issue.key], []);
+  cache.setQueryData(["subissues", "SS-1"], []);
+  refreshLiveEvents(cache, [{ ...creation(), kind: "issue.subissue_created" }]);
+  expect(cache.getQueryState(["subissues", issue.key])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["subissues", "SS-1"])?.isInvalidated).toBe(false);
+  expect(cache.getQueryState(["issue", issue.key])?.isInvalidated).toBe(true);
+  cache.clear();
+});

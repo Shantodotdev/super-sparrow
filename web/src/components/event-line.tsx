@@ -24,6 +24,13 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
   switch (event.kind) {
     case "issue.created":
       return { action: "created" };
+    case "issue.subissue_created":
+      return {
+        action: `added subissue ${String(p.number)} to`,
+        detail: typeof p.title === "string" ? p.title : undefined,
+      };
+    case "issue.subissue_updated":
+      return { action: `updated subissue ${String(p.number)} on` };
     case "issue.status_changed":
       return { action: `moved to ${issueStatusLabel[p.to as IssueStatus] ?? String(p.to)}` };
     case "issue.checklist_changed":

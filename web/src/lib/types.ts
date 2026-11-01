@@ -140,6 +140,17 @@ export type Comment = {
   updated_at: string;
 };
 
+/** A lightweight child whose reviews and discussions remain on its parent issue. */
+export type Subissue = {
+  id: string;
+  key: string;
+  issue_id: string;
+  title: string;
+  description: string;
+  description_revision: number;
+  status: IssueStatus;
+};
+
 export type EventTarget =
   "actor" | "project" | "milestone" | "label" | "issue" | "review_round" | "finding" | "comment";
 

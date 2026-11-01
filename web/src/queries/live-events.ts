@@ -54,6 +54,16 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
   void client.invalidateQueries({
     predicate: (query) => {
       const [resource, key] = query.queryKey;
+      if (resource === "subissues") {
+        return events.some(
+          (event) =>
+            event.kind.startsWith("issue.subissue_") &&
+            (client.getQueryData<Issue>(["issue", key])?.id === event.target_id ||
+              (query.state.data as { issue_id: string }[] | undefined)?.some(
+                (item) => item.issue_id === event.target_id,
+              )),
+        );
+      }
       if (resource === "issue") {
         const issue = query.state.data as Issue | undefined;
         return (

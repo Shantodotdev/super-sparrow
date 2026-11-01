@@ -1,9 +1,7 @@
-import { useProjectSlugs } from "../hooks/use-project";
-import { Link } from "@tanstack/react-router";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { slugify, webUrl } from "../lib/format";
-import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
-import type { Finding, Issue, IssueStatus, ReviewRound } from "../lib/types";
+import { webUrl } from "../lib/format";
+import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
+import type { Issue, IssueStatus } from "../lib/types";
 import { usePatchIssue } from "../queries/issues";
 import { actorsQuery, labelsQuery, milestonesQuery } from "../queries/project";
 import { Icon } from "./icon";
@@ -12,20 +10,17 @@ import { ResourceSelector } from "./resource-selector";
 import { apiWrite } from "../lib/api";
 import { useProject } from "../hooks/use-project";
 import type { Label, Milestone } from "../lib/types";
-import { ReviewRoundList } from "./review-round-list";
+import { SubissueList } from "./subissue-list";
 import { Select } from "./select";
 import { Avatar } from "./avatar";
 import { IssueTextField } from "./issue-text-field";
 
 type IssuePropertiesProps = {
   issue: Issue;
-  rounds: ReviewRound[];
-  findings: Finding[];
 };
 
-/** The side panel of an issue page: status, people, branch, review rounds, and labels. */
-export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProps) {
-  const projectSlug = useProjectSlugs();
+/** The side panel of an issue page: status, people, branch, subissues, and labels. */
+export function IssueProperties({ issue }: IssuePropertiesProps) {
   const project = useProject();
   const client = useQueryClient();
   const { data: actors } = useSuspenseQuery(actorsQuery);
@@ -37,11 +32,9 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
   const pullNumber = /\/pull\/(\d+)/.exec(pullRequestUrl)?.[1];
 
   return (
-    <aside className="min-h-0 overflow-y-auto border-l border-l-[#242932] p-[30px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_>_.custom-select]:w-full [&_h3]:mx-0 [&_h3]:mt-[22px] [&_h3]:mb-[9px] [&_h3]:text-[14px] [&_h3:first-child]:mt-0">
+    <aside className="min-h-0 overflow-y-auto border-l border-l-[#242932] p-[24px] text-[13px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_.icon]:size-[15px] [&_>_.custom-select]:w-full [&_button[aria-expanded]]:min-h-[36px] [&_button[aria-expanded]]:py-0 [&_button[aria-expanded]]:text-[13px] [&_h3]:mx-0 [&_h3]:mt-[16px] [&_h3]:mb-[6px] [&_h3]:text-[12px] [&_h3:first-child]:mt-0 [&_input]:h-[36px] [&_input]:min-h-[36px] [&_input]:py-0 [&_input]:text-[13px] [&_strong]:text-[13px]">
       <h3>Status</h3>
-      <div
-        className={`[--issue-status-color:#98a9c3] [&_.custom-select-value]:flex-1 [&_[role=combobox]>svg:first-child]:text-(--issue-status-color) [&.status-backlog]:text-[#a9b6c8] [&.status-backlog]:[--issue-status-color:#a9b6c8] [&.status-done]:text-[#44ce91] [&.status-done]:[--issue-status-color:#44ce91] [&.status-in-progress]:text-[#4c7aff] [&.status-in-progress]:[--issue-status-color:#4c7aff] [&.status-in-review]:text-[#a574ff] [&.status-in-review]:[--issue-status-color:#a574ff] status-${slugify(issue.status)}`}
-      >
+      <div className="[&_.custom-select-value]:flex-1">
         <Select
           label="Status"
           value={issue.status}
@@ -50,6 +43,8 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
           options={issueStatuses.map((status) => ({
             value: status,
             label: issueStatusLabel[status],
+            icon: statusIcon[status],
+            iconClassName: statusIconColor[status],
           }))}
         />
       </div>
@@ -77,7 +72,7 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
               value: actor.id,
               label: actor.display_name,
               leading: (
-                <span className="flex shrink-0 [&_.avatar]:size-6 [&_.avatar]:basis-6 [&_.avatar]:text-[10px]">
+                <span className="flex shrink-0 [&_.avatar]:size-5 [&_.avatar]:basis-5 [&_.avatar]:text-[9px]">
                   <Avatar actor={actor} />
                 </span>
               ),
@@ -103,9 +98,9 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
           return milestone.id;
         }}
       />
-      <div className="mt-8 border-t border-t-[#252b34] pt-[22px]">
+      <div className="mt-5 border-t border-t-[#252b34] pt-[16px]">
         <h3>Labels</h3>
-        <div className="mb-3">
+        <div className="mb-2">
           <LabelChips labelIds={issue.label_ids} />
         </div>
         <ResourceSelector
@@ -142,7 +137,7 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
       />
       {pullRequestUrl && (
         <a
-          className="mt-2 inline-flex items-center gap-2 text-sm text-[#719bff]"
+          className="mt-1.5 inline-flex items-center gap-1.5 text-[12px] text-[#719bff]"
           href={pullRequestUrl}
           target="_blank"
           rel="noreferrer"
@@ -150,21 +145,8 @@ export function IssueProperties({ issue, rounds, findings }: IssuePropertiesProp
           <Icon name="github" /> {pullNumber ? `#${pullNumber}` : "Open pull request"}
         </a>
       )}
-      <div className="mt-8 border-t border-t-[#252b34] pt-[22px] [&_p]:mt-[15px]">
-        <div className="mb-[10px] flex justify-between">
-          <strong>Review rounds</strong>
-          {rounds.length > 0 && (
-            <Link
-              className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
-              to="/$projectSlug/issues/$issue"
-              params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
-              search={{ tab: "rounds" }}
-            >
-              View all →
-            </Link>
-          )}
-        </div>
-        <ReviewRoundList issue={issue} rounds={rounds} findings={findings} />
+      <div className="mt-5 border-t border-t-[#252b34] pt-[16px] [&_p]:mt-[10px]">
+        <SubissueList issue={issue} compact />
       </div>
     </aside>
   );
