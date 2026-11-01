@@ -15,11 +15,12 @@ type ModalProps = {
   overlayClassName?: string;
   label?: string;
   labelledBy?: string;
+  variant?: "dialog" | "drawer";
 };
 
 const exitDuration = 210;
 
-/** Presents a dialog with animated transitions and restores focus when it closes. */
+/** Presents an animated dialog or side drawer and restores focus when it closes. */
 export function Modal({
   open,
   onClose,
@@ -28,6 +29,7 @@ export function Modal({
   overlayClassName = "",
   label,
   labelledBy,
+  variant = "dialog",
 }: ModalProps) {
   const [present, setPresent] = useState(open);
   const dialog = useRef<HTMLDivElement>(null);
@@ -93,14 +95,22 @@ export function Modal({
   if (!present) return null;
   return (
     <div
-      className={`fixed inset-0 z-10 flex items-start justify-center bg-[#0009] px-[20px] pt-[12vh] pb-[20px] [transition:background-color_180ms_cubic-bezier(0.4,0,0.6,1)] motion-reduce:[transition:none] motion-reduce:[&_.modal-surface]:[transition:none] starting:[&.is-entering]:bg-transparent starting:[&.is-entering_.modal-surface]:transform-[scale(0.9)] starting:[&.is-entering_.modal-surface]:opacity-0 [&.is-exiting]:pointer-events-none [&.is-exiting]:bg-transparent [&.is-exiting_.modal-surface]:transform-[scale(0.9)] [&.is-exiting_.modal-surface]:opacity-0 ${open ? "is-entering" : "is-exiting"} ${overlayClassName}`}
+      className={`${
+        variant === "drawer"
+          ? "fixed inset-0 z-10 flex justify-end bg-[#0006] [transition:background-color_180ms_ease] motion-reduce:[transition:none] motion-reduce:[&_.modal-surface]:[transition:none] starting:[&.is-entering]:bg-transparent starting:[&.is-entering_.modal-surface]:translate-x-full [&.is-exiting]:pointer-events-none [&.is-exiting]:bg-transparent [&.is-exiting_.modal-surface]:translate-x-full"
+          : "fixed inset-0 z-10 flex items-start justify-center bg-[#0009] px-[20px] pt-[12vh] pb-[20px] [transition:background-color_180ms_cubic-bezier(0.4,0,0.6,1)] motion-reduce:[transition:none] motion-reduce:[&_.modal-surface]:[transition:none] starting:[&.is-entering]:bg-transparent starting:[&.is-entering_.modal-surface]:transform-[scale(0.9)] starting:[&.is-entering_.modal-surface]:opacity-0 [&.is-exiting]:pointer-events-none [&.is-exiting]:bg-transparent [&.is-exiting_.modal-surface]:transform-[scale(0.9)] [&.is-exiting_.modal-surface]:opacity-0"
+      } ${open ? "is-entering" : "is-exiting"} ${overlayClassName}`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && open) onClose();
       }}
     >
       <div
         ref={dialog}
-        className={`modal-surface transform-[scale(1)] opacity-100 outline-none [transition:opacity_210ms_cubic-bezier(0.4,0,0.6,1),transform_210ms_cubic-bezier(0.4,0,0.6,1)] ${className}`}
+        className={`modal-surface ${
+          variant === "drawer"
+            ? "translate-x-0 outline-none [transition:translate_210ms_cubic-bezier(0.2,0.8,0.2,1)]"
+            : "transform-[scale(1)] opacity-100 outline-none [transition:opacity_210ms_cubic-bezier(0.4,0,0.6,1),transform_210ms_cubic-bezier(0.4,0,0.6,1)]"
+        } ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={label}

@@ -2,32 +2,13 @@ import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiWrite } from "../lib/api";
-import { PlanAutosave, type PlanVersion } from "../lib/plan-autosave";
+import { PlanAutosave } from "../lib/plan-autosave";
+import { readPlanDraft, storePlanDraft } from "../lib/plan-draft";
 import type { Issue } from "../lib/types";
 import { issueQuery, issuesQuery } from "../queries/issues";
 import { markdownExtensions } from "./markdown-editor";
 import { useToast } from "./toast";
 import "./issue-plan.css";
-
-/** Reads only valid local editor drafts; unavailable browser storage never prevents editing. */
-function readDraft(key: string): PlanVersion | undefined {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(key) ?? "null");
-    if (value && typeof value.plan === "string" && Number.isInteger(value.revision)) return value;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Keeps unsaved Markdown across reloads without treating browser storage as server state. */
-function storeDraft(key: string, draft: PlanVersion | null): void {
-  try {
-    if (draft) sessionStorage.setItem(key, JSON.stringify(draft));
-    else sessionStorage.removeItem(key);
-  } catch {
-    // Private browsing or a full storage quota must not interrupt editing or saving.
-  }
-}
 
 /** An inline Markdown editor that saves serially using the server's plan revision. */
 export function IssuePlan({ issue }: { issue: Issue }) {
@@ -37,8 +18,8 @@ export function IssuePlan({ issue }: { issue: Issue }) {
     const draftKey = `sparrow:plan-draft:${issue.id}`;
     return new PlanAutosave({
       initial: { plan: issue.plan ?? "", revision: issue.plan_revision },
-      draft: readDraft(draftKey),
-      persist: (draft) => storeDraft(draftKey, draft),
+      draft: readPlanDraft(draftKey),
+      persist: (draft) => storePlanDraft(draftKey, draft),
       save: async ({ plan, revision }) => {
         const { issue: saved } = await apiWrite<{ issue: Issue }>(
           `/api/issues/${encodeURIComponent(issue.key)}`,

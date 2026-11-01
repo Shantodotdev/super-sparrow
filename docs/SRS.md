@@ -67,7 +67,7 @@ Issue, round, and finding numbers come from counters on their parent, so a numbe
 - FR-2: Store the plan as markdown in the issue description, with checklists that can be ticked. The inline editor formats Markdown as it is typed and automatically saves with revision checks; unsaved drafts are kept in the browser tab for recovery.
 - FR-3: Link an issue to a branch name and a pull request URL.
 - FR-4: Find an issue from a branch name that contains its key, such as `feat/wp-142-meta-comments`.
-- FR-26: Create, list, and edit lightweight subissues under an issue. Each exposes only a title, Markdown description, ID, and progress status. Reviews, findings, and discussions stay attached to full issues (including existing finding threads); subissues cannot receive them. Display subissues below the main issue description and in the right sidebar in place of review rounds. Review rounds remain available in their issue tab. Members and agents can manage subissues through the authenticated HTTP API.
+- FR-26: Create, list, and edit lightweight subissues under an issue. Each exposes only a title, Markdown description, ID, and progress status. Reviews, findings, and discussions stay attached to full issues (including existing finding threads); subissues cannot receive them. Display subissues below the main issue description and in the right sidebar in place of review rounds. Clicking a subissue opens a right-side drawer with inline editing: title saves on blur, status saves immediately, and the Markdown description autosaves with revision checks and recoverable drafts. Creation uses the existing form. Review rounds remain available in their issue tab. Members and agents can manage subissues through the authenticated HTTP API.
 
 ### Reviews and findings
 

@@ -471,7 +471,14 @@ try {
   await evaluate(
     `[...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'Done').click()`,
   );
-  await click("Save subissue");
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/issues/WP-2/subissues').then(r=>r.json()).then(b=>b.subissues.some(child=>child.key === 'WP-2.1' && child.status === 'done'))`,
+      ),
+    "save subissue status inline",
+  );
+  await evaluate(`document.querySelector('[role="dialog"] button[aria-label="Close"]').click()`);
   await until(
     () =>
       evaluate(

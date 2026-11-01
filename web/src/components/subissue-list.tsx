@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { issueStatusLabel, statusIcon, statusIconColor } from "../lib/issue-status";
-import type { Issue, IssueStatus, Subissue } from "../lib/types";
-import { subissuesQuery, useSaveSubissue, type SubissueChanges } from "../queries/subissues";
+import type { Issue, IssueStatus } from "../lib/types";
+import { subissuesQuery, useSaveSubissue } from "../queries/subissues";
 import { Icon } from "./icon";
+import { SubissueDrawer } from "./subissue-drawer";
 import { SubissueFormDialog } from "./subissue-form-dialog";
 
-/** Shows an issue's lightweight children with the same edit dialog in the body and sidebar. */
+/** Shows lightweight children with inline editing in a side drawer from either list. */
 export function SubissueList({ issue, compact = false }: { issue: Issue; compact?: boolean }) {
   const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
-  const [editing, setEditing] = useState<Subissue | "new" | null>(null);
-  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const selected = subissues.find((item) => item.id === selectedId);
   const completed = subissues.filter((item) => item.status === "done").length;
 
   return (
@@ -29,10 +32,7 @@ export function SubissueList({ issue, compact = false }: { issue: Issue; compact
           type="button"
           aria-label="Add subissue"
           title="Add subissue"
-          onClick={() => {
-            setEditing("new");
-            setOpen(true);
-          }}
+          onClick={() => setCreating(true)}
           className="grid size-7 place-items-center rounded-[6px] border-0 bg-transparent p-0 text-[#9a9da6] transition-colors hover:bg-[#303238] hover:text-white"
         >
           <Icon name="plus" className="size-4" />
@@ -53,8 +53,8 @@ export function SubissueList({ issue, compact = false }: { issue: Issue; compact
                   : "grid min-h-[45px] w-full grid-cols-[20px_max-content_minmax(0,1fr)] items-center gap-[10px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left transition-colors hover:bg-[#18191a]"
               }
               onClick={() => {
-                setEditing(subissue);
-                setOpen(true);
+                setSelectedId(subissue.id);
+                setDrawerOpen(true);
               }}
             >
               <Icon
@@ -80,69 +80,48 @@ export function SubissueList({ issue, compact = false }: { issue: Issue; compact
           </li>
         ))}
       </ul>
-      <SubissueEditor
+      <SubissueCreator issue={issue} open={creating} onClose={() => setCreating(false)} />
+      <SubissueDrawer
         issue={issue}
-        subissue={editing === "new" || editing === null ? undefined : editing}
-        open={open}
-        onClose={() => setOpen(false)}
+        subissue={selected}
+        open={drawerOpen && !!selected}
+        onClose={() => setDrawerOpen(false)}
       />
     </section>
   );
 }
 
-/** Edits a draft explicitly, preserving it on errors including concurrent description changes. */
-function SubissueEditor({
+/** Creates a subissue without losing its draft when a request fails. */
+function SubissueCreator({
   issue,
-  subissue,
   open,
   onClose,
 }: {
   issue: Issue;
-  subissue?: Subissue;
   open: boolean;
   onClose: () => void;
 }) {
   const titleInput = useRef<HTMLInputElement>(null);
   const [createMore, setCreateMore] = useState(false);
-  const [title, setTitle] = useState(subissue?.title ?? "");
-  const [description, setDescription] = useState(subissue?.description ?? "");
-  const [status, setStatus] = useState<IssueStatus>(subissue?.status ?? "backlog");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState<IssueStatus>("backlog");
   const save = useSaveSubissue(issue.key);
   useEffect(() => {
     if (!open) return;
-    setTitle(subissue?.title ?? "");
-    setDescription(subissue?.description ?? "");
-    setStatus(subissue?.status ?? "backlog");
+    setTitle("");
+    setDescription("");
+    setStatus("backlog");
     setCreateMore(false);
     save.reset();
-  }, [open, subissue, save.reset]);
+  }, [open, save.reset]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (save.isPending) return;
-    const changes: SubissueChanges = subissue
-      ? { id: subissue.id }
-      : { title, description, status };
-    if (subissue) {
-      if (title !== subissue.title) changes.title = title;
-      if (status !== subissue.status) changes.status = status;
-      if (description !== subissue.description) {
-        changes.description = description;
-        changes.description_revision = subissue.description_revision;
-      }
-      if (
-        changes.title === undefined &&
-        changes.status === undefined &&
-        changes.description === undefined
-      ) {
-        onClose();
-        return;
-      }
-    }
-
     try {
-      await save.mutateAsync(changes);
-      if (!subissue && createMore) {
+      await save.mutateAsync({ title, description, status });
+      if (createMore) {
         setTitle("");
         setDescription("");
         setStatus("backlog");
@@ -160,7 +139,7 @@ function SubissueEditor({
       open={open}
       onClose={onClose}
       onSubmit={submit}
-      heading={subissue ? subissue.key : "New subissue"}
+      heading="New subissue"
       context={
         <>
           <Icon name={statusIcon[issue.status]} className={statusIconColor[issue.status]} />{" "}
@@ -181,8 +160,8 @@ function SubissueEditor({
       error={save.error?.message}
       pending={save.isPending}
       submitDisabled={!title.trim()}
-      submitLabel={save.isPending ? "Saving…" : subissue ? "Save subissue" : "Create subissue"}
-      createMore={subissue ? undefined : { checked: createMore, onChange: setCreateMore }}
+      submitLabel={save.isPending ? "Saving…" : "Create subissue"}
+      createMore={{ checked: createMore, onChange: setCreateMore }}
     />
   );
 }
