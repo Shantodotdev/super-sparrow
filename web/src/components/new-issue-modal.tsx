@@ -222,9 +222,9 @@ export function NewIssueModal({
           placeholder="Add a description or plan…"
           value={plan}
           onChange={setPlan}
-          className="mt-4 [&_.tiptap]:!max-h-[38dvh] [&_.tiptap]:!min-h-[120px] [&_.tiptap]:!overflow-y-auto [&_.tiptap]:!text-[#f1f2f4]"
+          className="mt-4 [&_.tiptap]:max-h-[38dvh]! [&_.tiptap]:min-h-[120px]! [&_.tiptap]:overflow-y-auto! [&_.tiptap]:text-[#f1f2f4]!"
         />
-        <div className="flex flex-wrap gap-[6px] [&_button]:min-h-[35px] [&_button]:px-[11px] [&_button]:py-[6px] [&_button]:text-[13px]">
+        <div className="flex flex-wrap gap-[6px] [&_button]:min-h-10 [&_button]:px-[11px] [&_button]:py-[6px] [&_button]:text-[13px]">
           <Select
             variant="chip"
             label="Status"
@@ -436,7 +436,7 @@ export function NewIssueModal({
               className={`relative inline-flex h-[18px] w-[32px] shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-[#4f73f0]/60 ${createMore ? "bg-[#2455eb]" : "bg-[#3a404b]"}`}
             >
               <span
-                className={`absolute top-[2px] left-[2px] size-[14px] rounded-full bg-white shadow transition-transform ${createMore ? "translate-x-[14px]" : ""}`}
+                className={`absolute top-[2px] left-[2px] size-4 rounded-full bg-white shadow transition-transform ${createMore ? "translate-x-4" : ""}`}
               />
             </span>
             <span>Create more</span>
