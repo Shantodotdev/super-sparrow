@@ -80,7 +80,7 @@ export function CodeInput({ digits, onChange, disabled = false }: CodeInputProps
           onKeyDown={(event) => handleKeyDown(index, event)}
           onPaste={handlePaste}
           onFocus={(event) => event.target.select()}
-          className="h-[56px] w-[48px] p-0 text-center text-[22px] font-[600] rounded-[12px]"
+          className="h-16 w-[48px] rounded-[12px] p-0 text-center text-[22px] font-semibold"
         />
       ))}
     </div>

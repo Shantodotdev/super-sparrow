@@ -76,7 +76,7 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
                     {formatRelative(comment.created_at)}
                   </small>
                 </div>
-                <p className="mt-[4px] inline-block max-w-[560px] rounded-[14px] rounded-tl-[4px] bg-[#1c2029] px-[14px] py-[9px] leading-normal break-words whitespace-pre-wrap text-[#d5dce8]">
+                <p className="mt-[4px] inline-block max-w-160 rounded-2xl rounded-tl-[4px] bg-[#1c2029] px-4 py-[9px] leading-normal wrap-break-word whitespace-pre-wrap text-[#d5dce8]">
                   {comment.body}
                 </p>
               </div>

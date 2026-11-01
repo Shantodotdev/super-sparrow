@@ -1,4 +1,9 @@
-import { differenceInDays, differenceInHours, differenceInMinutes, differenceInSeconds } from "date-fns";
+import {
+  differenceInDays,
+  differenceInHours,
+  differenceInMinutes,
+  differenceInSeconds,
+} from "date-fns";
 
 /** Turns a value such as "in_review" or "Should fix" into a CSS class suffix such as "in-review". */
 export function slugify(value: string): string {

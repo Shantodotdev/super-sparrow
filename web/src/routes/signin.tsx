@@ -72,7 +72,7 @@ function SignInPage() {
       <form className="w-[min(100%-40px,360px)]" onSubmit={submit}>
         <img src="/logo.png" className="mb-[24px] h-[80px] w-[80px]" alt="" />
         <h1 className="text-[26px] font-[650]">{sent ? "Enter your code" : "Sign in"}</h1>
-        <div className="mt-[28px]">
+        <div className="mt-8">
           {sent ? (
             <CodeInput digits={digits} onChange={changeDigits} disabled={pending} />
           ) : (
