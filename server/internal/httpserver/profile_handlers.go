@@ -36,7 +36,7 @@ func (s *server) listProfileAvatars(w http.ResponseWriter, r *http.Request) erro
 	}
 	avatars := []avatarView{}
 	for _, id := range store.ProfileAvatarIDs() {
-		avatars = append(avatars, avatarView{ID: id, Name: strings.ReplaceAll(id, "-", " "), URL: "/avatars/" + id + ".png"})
+		avatars = append(avatars, avatarView{ID: id, Name: strings.ReplaceAll(id, "-", " "), URL: "/avatars/v1/" + id + "-96.webp"})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"avatars": avatars})
 	return nil

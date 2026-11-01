@@ -26,7 +26,8 @@ var (
 
 // frontend serves the built single-page app from a folder. A path that names a file gets the
 // file; any other path without a file extension gets the shell page, so the app's router can show
-// it. Files under /assets/ have content hashes in their names and are cached for a year; the
+// it. Files under /assets/ have content hashes and /avatars/v1/ has explicitly versioned images. Both
+// are cached for a year; the
 // shell page is checked on every load so a new build reaches people at once. The shell page is
 // served with a Content-Security-Policy that allows only the app's own files and the inline
 // scripts the build wrote into it, so markdown that slips past sanitizing cannot run scripts.
@@ -58,7 +59,7 @@ func (f *frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	info, err := fs.Stat(f.files, name)
 	switch {
 	case err == nil && !info.IsDir():
-		if strings.HasPrefix(name, "assets/") {
+		if strings.HasPrefix(name, "assets/") || strings.HasPrefix(name, "avatars/v1/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")

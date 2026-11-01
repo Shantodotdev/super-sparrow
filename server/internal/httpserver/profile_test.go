@@ -14,7 +14,7 @@ func TestProfileAPI(t *testing.T) {
 		} `json:"avatars"`
 	}
 	a.call(http.MethodGet, "/api/avatars", a.member, nil, http.StatusOK, &catalog)
-	if len(catalog.Avatars) == 0 || catalog.Avatars[0].URL != "/avatars/"+catalog.Avatars[0].ID+".png" {
+	if len(catalog.Avatars) == 0 || catalog.Avatars[0].URL != "/avatars/v1/"+catalog.Avatars[0].ID+"-96.webp" {
 		t.Fatalf("catalog %+v", catalog)
 	}
 	var profile struct {

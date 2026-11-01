@@ -34,6 +34,7 @@ func TestFrontendServesFilesAndFallsBackToIndex(t *testing.T) {
 	dir := t.TempDir()
 	for name, content := range map[string]string{
 		ShellFile: "<!doctype html><title>app</title>", "assets/app-1a2b.js": "console.log(1)", ".env": "SECRET=1",
+		"avatars/v1/cat-96.webp": "avatar", "avatars/cat.png": "legacy",
 	} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755); err != nil {
 			t.Fatal(err)
@@ -51,6 +52,8 @@ func TestFrontendServesFilesAndFallsBackToIndex(t *testing.T) {
 		{"/", "<title>app</title>", "no-cache", http.StatusOK},
 		{"/WP-142/reviews/2", "<title>app</title>", "no-cache", http.StatusOK},
 		{"/assets/app-1a2b.js", "console.log(1)", "immutable", http.StatusOK},
+		{"/avatars/v1/cat-96.webp", "avatar", "immutable", http.StatusOK},
+		{"/avatars/cat.png", "legacy", "no-cache", http.StatusOK},
 		{"/.env", "<title>app</title>", "no-cache", http.StatusOK},
 		{"/missing.js", "", "", http.StatusNotFound},
 	} {

@@ -59,7 +59,7 @@ export function ProfileModal({ actor, open, onClose }: ProfileModalProps) {
         <h2>Edit profile</h2>
         <div className="mt-5 flex items-center gap-4">
           <div className="[&_.avatar]:size-16 [&_.avatar]:basis-16 [&_.avatar]:text-lg">
-            <Avatar actor={{ ...actor, display_name: name, avatar_id: avatarID }} />
+            <Avatar actor={{ ...actor, display_name: name, avatar_id: avatarID }} size={64} />
           </div>
           <label className="m-0 min-w-0 flex-1 gap-2">
             Name
@@ -115,7 +115,16 @@ export function ProfileModal({ actor, open, onClose }: ProfileModalProps) {
                   save.reset();
                 }}
               >
-                <img src={avatar.url} alt="" className="size-full rounded-lg object-cover" />
+                <img
+                  src={avatar.url}
+                  srcSet={`${avatar.url} 1x, ${avatar.url.replace(/-96\.webp$/, "-192.webp")} 2x`}
+                  alt=""
+                  width={96}
+                  height={96}
+                  loading="lazy"
+                  decoding="async"
+                  className="size-full rounded-lg object-cover"
+                />
                 {avatarID === avatar.id && (
                   <span className="absolute right-0.5 bottom-0.5 grid size-5 place-items-center rounded-full bg-[#2455eb] text-white">
                     <Icon name="check" className="size-3" />

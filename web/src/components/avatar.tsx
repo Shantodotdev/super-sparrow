@@ -10,7 +10,7 @@ const agentIcons: Record<string, string> = {
  * Shows an agent's tool logo, a person's selected avatar or initials, or an empty figure when nobody is given. The
  * logo comes from the agent's agent_name, so a person named after a tool never gets its logo.
  */
-export function Avatar({ actor }: { actor: Actor | undefined }) {
+export function Avatar({ actor, size = 36 }: { actor: Actor | undefined; size?: 36 | 64 }) {
   if (!actor) return <Icon name="circle-user-round" />;
 
   const agentIcon = actor.kind === "agent" ? agentIcons[actor.agent_name ?? ""] : undefined;
@@ -20,7 +20,17 @@ export function Avatar({ actor }: { actor: Actor | undefined }) {
     return (
       <img
         className="avatar h-[36px] w-[36px] flex-[0_0_36px] rounded-full object-cover"
-        src={`/avatars/${encodeURIComponent(actor.avatar_id)}.png`}
+        src={`/avatars/v1/${encodeURIComponent(actor.avatar_id)}-48.webp`}
+        srcSet={[48, 96, 192]
+          .map(
+            (width) =>
+              `/avatars/v1/${encodeURIComponent(actor.avatar_id!)}-${width}.webp ${width}w`,
+          )
+          .join(", ")}
+        sizes={`${size}px`}
+        width={size}
+        height={size}
+        decoding="async"
         alt=""
       />
     );
