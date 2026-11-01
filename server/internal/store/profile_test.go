@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -65,5 +66,21 @@ func TestProfileAvatarCatalogMatchesAssets(t *testing.T) {
 	}
 	if len(assets) != 0 {
 		t.Fatalf("unlisted avatars: %v", assets)
+	}
+}
+
+// TestProfileAvatarVariants checks the versioned catalog for complete, bounded WebP assets.
+func TestProfileAvatarVariants(t *testing.T) {
+	for _, id := range ProfileAvatarIDs() {
+		for _, size := range []int{48, 96, 192} {
+			name := fmt.Sprintf("../../../web/public/avatars/v1/%s-%d.webp", id, size)
+			data, err := os.ReadFile(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) < 12 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WEBP" || len(data) > 20000 {
+				t.Errorf("invalid or oversized avatar variant %s: %d bytes", name, len(data))
+			}
+		}
 	}
 }
