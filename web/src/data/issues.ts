@@ -76,7 +76,7 @@ const rows: Row[] = [
   [165, "Review backup failure messaging", "todo", "high", ["security"], agents.shantoCodex, milestones.later, "2024-11-07"],
   [166, "Add responsive layout for review cards", "in_progress", "medium", ["ui"], people.priya, milestones.launch, "2024-11-07"],
   [167, "Add session device management", "done", "medium", ["security"], people.shanto, milestones.launch, "2024-11-08"],
-  [168, "Add review round commit ranges", "done", "medium", ["backend"], agents.shantoClaude, milestones.launch, "2024-11-08"],
+  [168, "Add review round summaries", "done", "medium", ["backend"], agents.shantoClaude, milestones.launch, "2024-11-08"],
   [169, "Explore alternative review layouts", "canceled", "low", ["research"], people.priya, milestones.later, "2024-11-08"],
   [170, "Investigate external notification support", "canceled", "low", ["research"], agents.shantoCodex, milestones.later, "2024-11-08"],
   [171, "Add finding search across review rounds", "backlog", "medium", ["feature"], people.shanto, milestones.later, "2024-11-08"],

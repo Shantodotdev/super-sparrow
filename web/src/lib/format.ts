@@ -46,11 +46,6 @@ export function formatTime(timestamp: string): string {
   return timeFormat.format(new Date(timestamp));
 }
 
-/** Shortens a commit SHA to the seven characters git shows. */
-export function shortSha(sha: string): string {
-  return sha.slice(0, 7);
-}
-
 /** Returns url when it is an http or https URL, which is safe to link to, and "" otherwise. */
 export function webUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : "";

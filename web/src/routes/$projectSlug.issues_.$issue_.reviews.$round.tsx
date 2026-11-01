@@ -6,7 +6,7 @@ import { FindingDetail } from "../components/finding-detail";
 import { Icon } from "../components/icon";
 import { NotFoundState } from "../components/not-found-state";
 import { Select } from "../components/select";
-import { formatDate, shortSha } from "../lib/format";
+import { formatDate } from "../lib/format";
 import { validateReviewSearch } from "../lib/search";
 import type { Finding, Issue, ReviewRound } from "../lib/types";
 import { findingsQuery } from "../queries/findings";
@@ -110,11 +110,7 @@ function ReviewRoundView({ issue, round, rounds, roundFindings }: ReviewRoundVie
           <div>
             <h1>Review round {round.number}</h1>
             <p className="mt-4 text-[#a9b8ca]">
-              <Icon name="git-branch" /> &nbsp; {shortSha(round.from_commit) || "branch start"}{" "}
-              &nbsp; <Icon name="arrow-right" /> &nbsp;
-              {shortSha(round.to_commit)}
-              {round.includes_uncommitted && " and uncommitted changes"}　 ·　 <Icon name="clock" />{" "}
-              &nbsp; {formatDate(round.finished_at ?? round.created_at)} ·{" "}
+              <Icon name="clock" /> &nbsp; {formatDate(round.finished_at ?? round.created_at)} ·{" "}
               {actor(round.author_actor_id)?.display_name ?? "Unknown"}
               {!round.finished_at && " · in progress"}
             </p>

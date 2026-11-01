@@ -99,7 +99,7 @@ export function restoreQueryCache(client: QueryClient): void {
       profile.kind !== "human" ||
       typeof profile.id !== "string" ||
       !profile.id ||
-      saved.buster !== `v2:${profile.id}`
+      saved.buster !== `v3:${profile.id}`
     )
       throw new Error("Invalid display cache identity");
 
@@ -145,7 +145,7 @@ export function persistQueryCache(client: QueryClient, actorID: string): boolean
     throttleTime: 500,
     retry: evictOldestResource,
   });
-  const buster = `v2:${actorID}`;
+  const buster = `v3:${actorID}`;
   const unsubscribe = persistQueryClientSubscribe({
     queryClient: client,
     persister,

@@ -79,9 +79,6 @@ export type ReviewRound = {
   id: string;
   issue_id: string;
   number: number;
-  from_commit: string;
-  to_commit: string;
-  includes_uncommitted: boolean;
   plan_coverage: string;
   summary: string;
   author_actor_id: string;
@@ -110,14 +107,12 @@ export type Finding = {
   evidence: string;
   file_path: string;
   line: number;
-  commit_sha: string;
   status: FindingStatus;
   decision_reason: string;
   decided_by_actor_id: string;
   decided_at: string | null;
   found_by_actor_id: string;
   fixed_by_actor_id: string;
-  fixed_in_commit: string;
   fixed_at: string | null;
   verified_by_actor_id: string;
   verified_at: string | null;
