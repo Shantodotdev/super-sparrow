@@ -15,20 +15,27 @@ import { filterIssues } from "../lib/issue-filter";
 import { issueStatusLabel, issueStatuses } from "../lib/issue-status";
 import type { IssueStatus } from "../lib/types";
 import { validateIssuesSearch, type IssuesSearch } from "../lib/search";
-import { issuesQuery, useCreateIssue } from "../queries/issues";
-import { actorsQuery, labelsQuery, milestonesQuery, projectsQuery } from "../queries/project";
+import { useCreateIssue } from "../queries/issues";
+import { actorsQuery, projectsQuery } from "../queries/project";
+import {
+  projectIssuesQuery,
+  projectLabelsQuery,
+  projectMilestonesQuery,
+} from "../queries/project-resources";
 import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/$projectSlug/issues")({
   staticData: { section: "issues" },
   validateSearch: validateIssuesSearch,
-  loader: async ({ context }) => {
+  loader: async ({ context, params }) => {
+    const projects = await context.queryClient.fetchQuery(projectsQuery);
+    const project = projects.find((p) => p.slug === params.projectSlug);
+    if (!project) return;
     await Promise.all([
-      loadQuery(context.queryClient, projectsQuery),
-      loadQuery(context.queryClient, issuesQuery),
+      context.queryClient.fetchQuery(projectIssuesQuery(project.key)),
       loadQuery(context.queryClient, actorsQuery),
-      loadQuery(context.queryClient, labelsQuery),
-      loadQuery(context.queryClient, milestonesQuery),
+      context.queryClient.fetchQuery(projectLabelsQuery(project.key)),
+      context.queryClient.fetchQuery(projectMilestonesQuery(project.key)),
     ]);
   },
   component: IssuesPage,
@@ -43,10 +50,10 @@ function IssuesPage() {
   const { view } = search;
   const navigate = Route.useNavigate();
   const project = useProject();
-  const { data: issues } = useSuspenseQuery(issuesQuery);
+  const { data: issues } = useSuspenseQuery(projectIssuesQuery(project.key));
   const { data: actors } = useSuspenseQuery(actorsQuery);
-  const { data: labels } = useSuspenseQuery(labelsQuery);
-  const { data: milestones } = useSuspenseQuery(milestonesQuery);
+  const { data: labels } = useSuspenseQuery(projectLabelsQuery(project.key));
+  const { data: milestones } = useSuspenseQuery(projectMilestonesQuery(project.key));
   const createIssue = useCreateIssue();
 
   const [collapsed, setCollapsed] = useState<IssueStatus[]>([]);

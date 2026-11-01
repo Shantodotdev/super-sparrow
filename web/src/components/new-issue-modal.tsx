@@ -2,7 +2,7 @@ import { labelColors } from "../lib/label-colors";
 import { LabelDot } from "./label-dot";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
-import { labelsQuery } from "../queries/project";
+import { projectLabelsQuery } from "../queries/project-resources";
 import { statusIcon, statusIconColor } from "../lib/issue-status";
 import { Input } from "./input";
 import { MarkdownEditor } from "./markdown-editor";
@@ -69,7 +69,7 @@ export function NewIssueModal({
         { name, color },
       ),
     onSuccess: async ({ label }) => {
-      client.setQueryData(labelsQuery.queryKey, (current) => [
+      client.setQueryData(projectLabelsQuery(project.key).queryKey, (current) => [
         ...(current ?? []).filter((item) => item.id !== label.id),
         label,
       ]);
@@ -80,7 +80,7 @@ export function NewIssueModal({
       setLabelDraftName(null);
       setLabelsOpen(false);
       labelTrigger.current?.focus();
-      await client.invalidateQueries({ queryKey: labelsQuery.queryKey });
+      void client.invalidateQueries({ queryKey: ["labels"], exact: true });
     },
   });
 

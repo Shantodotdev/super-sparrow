@@ -3,10 +3,9 @@ import type { NewIssueValues } from "../components/new-issue-modal";
 import { useToast } from "../components/toast";
 import { apiGet, apiWrite } from "../lib/api";
 import type { ChecklistItem, Issue } from "../lib/types";
-import { getIssues } from "./resources";
-import { resourceQuery } from "./options";
+import { allIssuesQuery } from "./project-resources";
 
-export const issuesQuery = resourceQuery("issues", getIssues);
+export const issuesQuery = allIssuesQuery;
 export const issueQuery = (key: string) =>
   queryOptions({
     queryKey: ["issue", key],

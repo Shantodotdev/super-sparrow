@@ -8,8 +8,8 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 /** Reads every issue page without losing records beyond the API page size. */
-export async function getIssues(): Promise<Issue[]> {
-  const projects = await getProjects();
+export async function getIssues(projects?: Pick<Project, "key">[]): Promise<Issue[]> {
+  projects ??= await getProjects();
   return (
     await Promise.all(
       projects.map(async (project) => {
@@ -28,8 +28,8 @@ export async function getIssues(): Promise<Issue[]> {
   ).flat();
 }
 
-export async function getFindings(): Promise<Finding[]> {
-  const projects = await getProjects();
+export async function getFindings(projects?: Pick<Project, "key">[]): Promise<Finding[]> {
+  projects ??= await getProjects();
   return (
     await Promise.all(
       projects.map(

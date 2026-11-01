@@ -80,7 +80,7 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
                       {issue.key}
                     </span>
                     <span className="text-[15px] text-[#eef0f5]">{issue.title}</span>
-                    <LabelChips labelIds={issue.label_ids} />
+                    <LabelChips labelIds={issue.label_ids} projectKey={issue.project_key} />
                     <span
                       className="[&_.agent-icon]:h-[32px] [&_.agent-icon]:w-[32px] [&_.avatar]:h-[32px] [&_.avatar]:w-[32px] [&_.avatar]:text-[11px]"
                       role="img"

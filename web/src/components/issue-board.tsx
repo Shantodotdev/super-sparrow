@@ -59,7 +59,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                   <strong className="text-[13px] leading-[1.4] text-[#edf0f6]">
                     {issue.title}
                   </strong>
-                  <LabelChips labelIds={issue.label_ids} />
+                  <LabelChips labelIds={issue.label_ids} projectKey={issue.project_key} />
                   <span className="flex w-full items-center justify-between gap-[12px] text-[12px]">
                     <Person actorId={issue.assignee_actor_id} />
                     <span className="muted flex gap-[10px] text-[#a2aec2]">

@@ -1,10 +1,16 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { apiGet } from "../lib/api";
 import type { Actor, Comment, Label, Milestone, ReviewRound } from "../lib/types";
-import { findingPath, getEvents, getFindings, getIssues, getProjects } from "./resources";
+import { findingPath, getEvents } from "./resources";
+import { findingsQuery } from "./findings";
 import { resourceQuery } from "./options";
-
-export const projectsQuery = resourceQuery("projects", getProjects);
+import {
+  allIssuesQuery,
+  projectsQuery,
+  projectLabelsQuery,
+  projectMilestonesQuery,
+} from "./project-resources";
+export { projectsQuery } from "./project-resources";
 export const meQuery = resourceQuery(
   "me",
   async () => (await apiGet<{ actor: Actor }>("/api/me")).actor,
@@ -13,47 +19,53 @@ export const actorsQuery = resourceQuery(
   "actors",
   async () => (await apiGet<{ actors: Actor[] }>("/api/people")).actors,
 );
-export const labelsQuery = resourceQuery("labels", async () =>
-  (
-    await Promise.all(
-      (await getProjects()).map(
-        async (p) => (await apiGet<{ labels: Label[] }>(`/api/projects/${p.key}/labels`)).labels,
-      ),
-    )
-  ).flat(),
-);
-export const milestonesQuery = resourceQuery("milestones", async () =>
-  (
-    await Promise.all(
-      (await getProjects()).map(
-        async (p) =>
-          (await apiGet<{ milestones: Milestone[] }>(`/api/projects/${p.key}/milestones`))
-            .milestones,
-      ),
-    )
-  ).flat(),
-);
-export const reviewRoundsQuery = resourceQuery("review-rounds", async () =>
-  (
-    await Promise.all(
-      (await getIssues()).map(
-        async (i) =>
-          (await apiGet<{ rounds: ReviewRound[] }>(`/api/issues/${i.key}/reviews`)).rounds,
-      ),
-    )
-  ).flat(),
-);
-export const commentsQuery = resourceQuery("comments", async () => {
-  const [issues, findings] = await Promise.all([getIssues(), getFindings()]);
-  const paths = [
-    ...issues.map((i) => `/api/issues/${i.key}/comments`),
-    ...findings.map((f) => `${findingPath(f)}/comments`),
-  ];
-  return (
-    await Promise.all(
-      paths.map(async (path) => (await apiGet<{ comments: Comment[] }>(path)).comments),
-    )
-  ).flat();
+export const labelsQuery = queryOptions({
+  queryKey: ["labels"],
+  queryFn: async ({ client }): Promise<Label[]> => {
+    const projects = await client.fetchQuery(projectsQuery);
+    return (
+      await Promise.all(projects.map((p) => client.fetchQuery(projectLabelsQuery(p.key))))
+    ).flat();
+  },
+});
+export const milestonesQuery = queryOptions({
+  queryKey: ["milestones"],
+  queryFn: async ({ client }): Promise<Milestone[]> => {
+    const projects = await client.fetchQuery(projectsQuery);
+    return (
+      await Promise.all(projects.map((p) => client.fetchQuery(projectMilestonesQuery(p.key))))
+    ).flat();
+  },
+});
+export const reviewRoundsQuery = queryOptions({
+  queryKey: ["review-rounds"],
+  queryFn: async ({ client }) =>
+    (
+      await Promise.all(
+        (await client.fetchQuery(allIssuesQuery)).map(
+          async (i) =>
+            (await apiGet<{ rounds: ReviewRound[] }>(`/api/issues/${i.key}/reviews`)).rounds,
+        ),
+      )
+    ).flat(),
+});
+export const commentsQuery = queryOptions({
+  queryKey: ["comments"],
+  queryFn: async ({ client }) => {
+    const [issues, findings] = await Promise.all([
+      client.fetchQuery(allIssuesQuery),
+      client.fetchQuery(findingsQuery),
+    ]);
+    const paths = [
+      ...issues.map((i) => `/api/issues/${i.key}/comments`),
+      ...findings.map((f) => `${findingPath(f)}/comments`),
+    ];
+    return (
+      await Promise.all(
+        paths.map(async (path) => (await apiGet<{ comments: Comment[] }>(path)).comments),
+      )
+    ).flat();
+  },
 });
 export const activityQuery = resourceQuery("activity", getEvents);
 

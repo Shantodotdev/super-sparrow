@@ -1,9 +1,12 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { projectLabelsQuery } from "../queries/project-resources";
 import { labelsQuery } from "../queries/project";
 
 /** Shows an issue's labels using their persisted colors. */
-export function LabelChips({ labelIds }: { labelIds: string[] }) {
-  const { data: labels } = useSuspenseQuery(labelsQuery);
+export function LabelChips({ labelIds, projectKey }: { labelIds: string[]; projectKey?: string }) {
+  const { data: labels } = useSuspenseQuery(
+    projectKey ? projectLabelsQuery(projectKey) : labelsQuery,
+  );
   const byId = new Map(labels.map((label) => [label.id, label]));
 
   return (

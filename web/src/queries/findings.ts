@@ -1,12 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../components/toast";
 import { apiWrite } from "../lib/api";
 import type { Finding, FindingStatus } from "../lib/types";
 import { issuesQuery } from "./issues";
 import { findingPath, getFindings } from "./resources";
-import { resourceQuery } from "./options";
+import { projectsQuery } from "./project-resources";
 
-export const findingsQuery = resourceQuery("findings", getFindings);
+export const findingsQuery = queryOptions({
+  queryKey: ["findings"],
+  queryFn: async ({ client }) => getFindings(await client.fetchQuery(projectsQuery)),
+});
 export type Decision = Extract<FindingStatus, "fix" | "wontfix" | "later">;
 
 export function useDecideFinding() {
