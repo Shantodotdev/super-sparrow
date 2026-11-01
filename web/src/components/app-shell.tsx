@@ -1,3 +1,5 @@
+import { refreshLiveEvents } from "../queries/live-events";
+import type { ActivityEvent } from "../lib/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
 import { ProjectOnboarding } from "./project-onboarding";
@@ -25,16 +27,33 @@ export function AppShell() {
   useEffect(() => {
     if (bare) return;
     let stream: EventSource;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const changes: ActivityEvent[] = [];
     const connect = () => {
       stream = new EventSource("/api/events/stream");
-      stream.addEventListener("change", () => {
-        void client.invalidateQueries();
+      stream.addEventListener("change", (message: MessageEvent<string>) => {
+        try {
+          const event = JSON.parse(message.data) as ActivityEvent;
+          if (!event || typeof event.target_type !== "string" || !event.payload) return;
+          changes.push(event);
+          timer ??= setTimeout(() => {
+            timer = undefined;
+            refreshLiveEvents(client, changes.splice(0));
+          }, 100);
+        } catch {
+          // Ignore malformed events; reconnecting refreshes the cached state.
+        }
       });
       stream.onopen = () => {
-        void client.invalidateQueries();
+        void client.invalidateQueries({}, { cancelRefetch: false });
       };
     };
-    const close = () => stream.close();
+    const close = () => {
+      stream.close();
+      clearTimeout(timer);
+      timer = undefined;
+      changes.length = 0;
+    };
     const resume = (event: PageTransitionEvent) => {
       if (event.persisted) connect();
     };
