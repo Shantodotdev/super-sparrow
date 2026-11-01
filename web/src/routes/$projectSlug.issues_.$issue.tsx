@@ -135,12 +135,6 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
       <div
         className={`px-[32px] pt-[27px] pb-0 max-[700px]:px-[20px] max-[700px]:py-[24px] ${tab === "comments" ? "flex min-h-0 flex-col" : ""}`}
       >
-        <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
-          <Link to="/$projectSlug/issues" params={{ projectSlug: project.slug }}>
-            Issues
-          </Link>{" "}
-          / {issue.key}
-        </div>
         <h1>
           <IssueTextField
             key={issue.id}

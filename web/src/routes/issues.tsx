@@ -29,7 +29,7 @@ function MyIssuesPage() {
 
   return (
     <>
-      <PageHeader crumb="My issues" title="My issues" description="Assigned to you" />
+      <PageHeader title="My issues" description="Assigned to you" />
       {!assigned.length && (
         <p className="px-[26px] py-8 text-[#a2aec2]">No issues assigned to you.</p>
       )}

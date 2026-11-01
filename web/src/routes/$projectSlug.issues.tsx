@@ -145,11 +145,6 @@ function IssuesPage() {
     <>
       <div className="sticky top-0 z-2 bg-[#08090b] max-[700px]:overflow-visible" ref={toolbarRef}>
         <div className="px-[26px] pt-[24px] pb-0 max-[700px]:px-[16px] max-[700px]:pt-[16px] max-[700px]:pb-0">
-          <div className="mb-[16px] flex items-center justify-between gap-[16px] [&_.breadcrumb]:mb-0">
-            <div className="breadcrumb mb-[22px] text-[#a9b8cb] [&_a]:border-0 [&_a]:bg-none [&_a]:p-0 [&_a]:text-inherit [&_a:hover]:text-[#d2e0ff] [&_button]:border-0 [&_button]:bg-none [&_button]:p-0 [&_button]:text-inherit [&_button:hover]:text-[#d2e0ff]">
-              {project.name} / Issues
-            </div>
-          </div>
           <div className="mb-0 flex flex-nowrap items-center gap-[12px] pb-[20px] max-[700px]:flex-wrap">
             <Input
               className="w-[295px] max-w-[295px] min-w-[100px] flex-[1_1_180px] rounded-full"

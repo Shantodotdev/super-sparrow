@@ -917,7 +917,7 @@ try {
     "open second project",
   );
   await waitText("New issue");
-  await waitText("Second browser project / Issues");
+  await waitText("Second browser project");
   await until(
     () => evaluate(`!document.querySelector('[role=dialog]')`),
     "close project modal after creation",
