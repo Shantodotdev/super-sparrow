@@ -19,27 +19,47 @@ function SignInPage() {
   const [email, setEmail] = useState("");
   const [digits, setDigits] = useState(emptyCode);
   const [sent, setSent] = useState(false);
-  const complete = digits.every(Boolean);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const run = async (action: () => Promise<void>) => {
     if (pending) return;
     setPending(true);
     setError("");
     try {
-      if (sent) {
-        await apiWrite("/api/auth/verify", "POST", { email, code: digits.join("") });
-        client.clear();
-        await navigate({ to: "/" });
-      } else {
-        await apiWrite("/api/auth/code", "POST", { email });
-        setSent(true);
-      }
+      await action();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Sign-in failed");
     } finally {
       setPending(false);
     }
+  };
+
+  const requestCode = () =>
+    run(async () => {
+      await apiWrite("/api/auth/code", "POST", { email });
+      setSent(true);
+    });
+
+  const verify = (code: string) =>
+    run(async () => {
+      try {
+        await apiWrite("/api/auth/verify", "POST", { email, code });
+      } catch (error) {
+        setDigits(emptyCode());
+        throw error;
+      }
+      client.clear();
+      await navigate({ to: "/" });
+    });
+
+  // The code is verified as soon as its last digit is entered, so no button is needed.
+  const changeDigits = (next: string[]) => {
+    setDigits(next);
+    if (next.every(Boolean)) void verify(next.join(""));
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!sent) void requestCode();
   };
 
   const resetEmail = () => {
@@ -52,9 +72,9 @@ function SignInPage() {
       <form className="w-[min(100%-40px,360px)]" onSubmit={submit}>
         <img src="/logo.png" className="mb-[24px] h-[80px] w-[80px]" alt="" />
         <h1 className="text-[26px] font-[650]">{sent ? "Enter your code" : "Sign in"}</h1>
-        <div className="mt-[28px] flex flex-col gap-[16px]">
+        <div className="mt-[28px]">
           {sent ? (
-            <CodeInput digits={digits} onChange={setDigits} disabled={pending} />
+            <CodeInput digits={digits} onChange={changeDigits} disabled={pending} />
           ) : (
             <label>
               Email
@@ -69,12 +89,6 @@ function SignInPage() {
               />
             </label>
           )}
-          <button
-            disabled={pending || (sent && !complete)}
-            className="h-[46px] w-full rounded-xl bg-[#2455eb] font-[550] text-white transition-colors hover:bg-[#3566f6] disabled:opacity-50"
-          >
-            {sent ? "Sign in" : "Continue"}
-          </button>
         </div>
         {sent && (
           <button
