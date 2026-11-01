@@ -27,7 +27,7 @@ export function Sidebar() {
         <nav className="mt-[32px] min-h-0 overflow-y-auto" aria-label="Main navigation">
           <NavItem
             to="/issues"
-            icon="circle-user-round"
+            icon="inbox"
             label="My issues"
             active={section === "issues" && !projectSlug}
           />
