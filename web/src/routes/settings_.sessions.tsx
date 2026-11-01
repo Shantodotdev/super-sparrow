@@ -4,6 +4,7 @@ import { apiGet, apiWrite } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { SettingsHeader } from "../components/settings-header";
 import { useToast } from "../components/toast";
+import { clearQueryCache } from "../queries/persistence";
 
 type Session = {
   id: string;
@@ -30,7 +31,7 @@ function SessionsPage() {
     mutationFn: (id: string) => apiWrite(id ? `/api/sessions/${id}` : "/api/sessions", "DELETE"),
     onSuccess: (_, id) => {
       if (!id || sessions.data?.find((s) => s.id === id)?.current) {
-        client.clear();
+        clearQueryCache(client);
         window.location.assign("/signin");
       } else void client.invalidateQueries({ queryKey: ["sessions"] });
     },

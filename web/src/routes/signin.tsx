@@ -4,9 +4,11 @@ import { apiWrite } from "../lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
+import { clearQueryCache } from "../queries/persistence";
 
 export const Route = createFileRoute("/signin")({
   staticData: { bare: true },
+  pendingComponent: () => null,
   component: SignInPage,
 });
 
@@ -47,7 +49,7 @@ function SignInPage() {
         setDigits(emptyCode());
         throw error;
       }
-      client.clear();
+      clearQueryCache(client);
       await navigate({ to: "/" });
     });
 

@@ -6,15 +6,32 @@ import { redirect, HeadContent, Scripts, createRootRouteWithContext } from "@tan
 import appCss from "../styles.css?url";
 import { AppShell } from "../components/app-shell";
 import { ToastProvider } from "../components/toast";
+import { clearQueryCache } from "../queries/persistence";
 
 /** The HTML shell around every page, with the shared query client from the router context. */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  pendingComponent: () => null,
+  pendingMs: 0,
+  pendingMinMs: 0,
   beforeLoad: async ({ context, location }) => {
-    if (typeof window === "undefined" || location.pathname === "/signin") return;
+    if (typeof window === "undefined") return;
+    if (location.pathname.replace(/\/+$/, "") === "/signin") {
+      clearQueryCache(context.queryClient);
+      return;
+    }
+
+    if (context.queryClient.getQueryData(meQuery.queryKey)) {
+      void context.queryClient.prefetchQuery(meQuery);
+      return;
+    }
+
     try {
-      await context.queryClient.fetchQuery(meQuery);
+      await context.queryClient.fetchQuery({ ...meQuery, staleTime: 0 });
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) throw redirect({ to: "/signin" });
+      if (error instanceof ApiError && error.status === 401) {
+        clearQueryCache(context.queryClient);
+        throw redirect({ to: "/signin" });
+      }
       throw error;
     }
   },

@@ -4,6 +4,7 @@ import { apiWrite } from "../lib/api";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "./icon";
+import { clearQueryCache } from "../queries/persistence";
 
 /** Tab navigation shared by the settings pages, with a sign-out button on the right. */
 export function SettingsHeader() {
@@ -12,7 +13,7 @@ export function SettingsHeader() {
   const signOut = useMutation({
     mutationFn: () => apiWrite("/api/auth/sign-out", "POST"),
     onSuccess: () => {
-      client.clear();
+      clearQueryCache(client);
       window.location.assign("/signin");
     },
     onError: (error) => notify(error.message),

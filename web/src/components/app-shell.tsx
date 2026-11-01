@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
 import { Sidebar } from "./sidebar";
+import { clearQueryCache } from "../queries/persistence";
 
 /**
  * The frame around every signed-in page: the sidebar, the page itself, and the command palette.
@@ -20,7 +21,7 @@ export function AppShell() {
   const identity = useQuery({ ...meQuery, enabled: !bare, refetchInterval: 30_000 });
   useEffect(() => {
     if (identity.error instanceof ApiError && identity.error.status === 401) {
-      client.clear();
+      clearQueryCache(client);
       window.location.assign("/signin");
     }
   }, [identity.error, client]);
