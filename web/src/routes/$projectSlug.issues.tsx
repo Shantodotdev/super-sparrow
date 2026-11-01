@@ -3,7 +3,7 @@ import { Input } from "../components/input";
 import { useProject } from "../hooks/use-project";
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Columns3 } from "lucide-react";
 import { Filter, all } from "../components/filter";
 import { Icon } from "../components/icon";
@@ -28,15 +28,13 @@ export const Route = createFileRoute("/$projectSlug/issues")({
   staticData: { section: "issues" },
   validateSearch: validateIssuesSearch,
   loader: async ({ context, params }) => {
-    const projects = await context.queryClient.fetchQuery(projectsQuery);
+    const projects = await loadQuery(context.queryClient, projectsQuery);
     const project = projects.find((p) => p.slug === params.projectSlug);
     if (!project) return;
-    await Promise.all([
-      context.queryClient.fetchQuery(projectIssuesQuery(project.key)),
-      loadQuery(context.queryClient, actorsQuery),
-      context.queryClient.fetchQuery(projectLabelsQuery(project.key)),
-      context.queryClient.fetchQuery(projectMilestonesQuery(project.key)),
-    ]);
+    void context.queryClient.prefetchQuery(projectIssuesQuery(project.key));
+    void context.queryClient.prefetchQuery(actorsQuery);
+    void context.queryClient.prefetchQuery(projectLabelsQuery(project.key));
+    void context.queryClient.prefetchQuery(projectMilestonesQuery(project.key));
   },
   component: IssuesPage,
 });
@@ -50,10 +48,14 @@ function IssuesPage() {
   const { view } = search;
   const navigate = Route.useNavigate();
   const project = useProject();
-  const { data: issues } = useSuspenseQuery(projectIssuesQuery(project.key));
-  const { data: actors } = useSuspenseQuery(actorsQuery);
-  const { data: labels } = useSuspenseQuery(projectLabelsQuery(project.key));
-  const { data: milestones } = useSuspenseQuery(projectMilestonesQuery(project.key));
+  const issueList = useQuery(projectIssuesQuery(project.key));
+  const people = useQuery(actorsQuery);
+  const projectLabels = useQuery(projectLabelsQuery(project.key));
+  const projectMilestones = useQuery(projectMilestonesQuery(project.key));
+  const issues = issueList.data ?? [];
+  const actors = people.data ?? [];
+  const labels = projectLabels.data ?? [];
+  const milestones = projectMilestones.data ?? [];
   const createIssue = useCreateIssue();
 
   const [collapsed, setCollapsed] = useState<IssueStatus[]>([]);
@@ -204,6 +206,7 @@ function IssuesPage() {
               </button>
             </div>
             <button
+              disabled={!people.data || !projectLabels.data || !projectMilestones.data}
               className="rounded-full border border-[#5f7fff] bg-[#2455eb] px-[15px] py-[6px] font-[550] whitespace-nowrap text-white shadow-[0_4px_14px_#2455eb38,inset_0_1px_#ffffff24] transition-[background-color,border-color,box-shadow,transform] duration-160 ease-[ease] hover:-translate-y-px hover:border-[#89a0ff] hover:bg-[#3566f6] hover:shadow-[0_6px_18px_#2455eb55,inset_0_1px_#ffffff33] motion-reduce:transition-none"
               onClick={() => setCreating(true)}
             >
@@ -212,7 +215,22 @@ function IssuesPage() {
           </div>
         </div>
       </div>
-      {view === "board" ? (
+      {[issueList, people, projectLabels, projectMilestones].some((query) => query.error) && (
+        <div role="alert" className="px-[26px] py-4 text-[#f38b8b]">
+          <p>Could not refresh all issue data.</p>
+          <button
+            onClick={() => {
+              void issueList.refetch();
+              void people.refetch();
+              void projectLabels.refetch();
+              void projectMilestones.refetch();
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {!issueList.data || !people.data || !projectLabels.data ? null : view === "board" ? (
         <IssueBoard issues={filtered} statusFilter={search.status} />
       ) : (
         <IssueList

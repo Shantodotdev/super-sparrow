@@ -36,8 +36,8 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   validateSearch: validateIssueSearch,
   loader: async ({ context, params }) => {
     await Promise.all([
-      context.queryClient.fetchQuery(issueQuery(params.issue)),
-      context.queryClient.fetchQuery(subissuesQuery(params.issue)),
+      loadQuery(context.queryClient, issueQuery(params.issue)),
+      loadQuery(context.queryClient, subissuesQuery(params.issue)),
       loadQuery(context.queryClient, issuesQuery),
       loadQuery(context.queryClient, findingsQuery),
       loadQuery(context.queryClient, reviewRoundsQuery),

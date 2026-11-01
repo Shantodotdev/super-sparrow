@@ -7,7 +7,7 @@ import { meQuery, projectsQuery } from "../queries/project";
 import { useEffect, useState } from "react";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
-import { Sidebar } from "./sidebar";
+import { AppFrame } from "./app-frame";
 import { clearQueryCache } from "../queries/persistence";
 
 /**
@@ -83,23 +83,21 @@ export function AppShell() {
   }, []);
 
   if (bare) return <Outlet />;
-  if (projects.isPending) return null;
-  if (projects.error)
-    return (
-      <div role="alert" className="p-8">
-        <p>{projects.error.message}</p>
-        <button onClick={() => void projects.refetch()}>Try again</button>
-      </div>
-    );
-  if (!projects.data.length) return <ProjectOnboarding />;
+  if (!identity.data) return null;
+  if (projects.data?.length === 0) return <ProjectOnboarding />;
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="min-w-0 flex-1 [&:has(>_.issue-board)]:flex [&:has(>_.issue-board)]:h-dvh [&:has(>_.issue-board)]:min-h-0 [&:has(>_.issue-board)]:flex-col [&:has(>_.issue-board)]:overflow-hidden">
-        <Outlet />
-      </main>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-    </div>
+    <AppFrame>
+      {projects.error && (
+        <div role="alert" className="px-8 py-4 text-[#f38b8b]">
+          <p>{projects.error.message}</p>
+          <button onClick={() => void projects.refetch()}>Try again</button>
+        </div>
+      )}
+      {!!projects.data?.length && <Outlet />}
+      {!!projects.data?.length && (
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      )}
+    </AppFrame>
   );
 }
