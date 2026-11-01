@@ -1,3 +1,4 @@
+import { CodeInput, emptyCode } from "../components/code-input";
 import { Input } from "../components/input";
 import { apiWrite } from "../lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,8 +17,9 @@ function SignInPage() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
+  const [digits, setDigits] = useState(emptyCode);
   const [sent, setSent] = useState(false);
+  const complete = digits.every(Boolean);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -26,7 +28,7 @@ function SignInPage() {
     setError("");
     try {
       if (sent) {
-        await apiWrite("/api/auth/verify", "POST", { email, code });
+        await apiWrite("/api/auth/verify", "POST", { email, code: digits.join("") });
         client.clear();
         await navigate({ to: "/" });
       } else {
@@ -42,66 +44,52 @@ function SignInPage() {
 
   const resetEmail = () => {
     setSent(false);
-    setCode("");
+    setDigits(emptyCode());
   };
 
   return (
     <div className="grid min-h-screen place-items-center">
-      <div className="absolute top-[27px] left-[32px] flex items-center gap-[12px] text-[17px] font-[650]">
-        <img src="/logo.png" className="h-[40px] w-[40px] flex-none" alt="" /> Super Sparrow
-      </div>
-      <form className="w-[min(100%-40px,390px)]" onSubmit={submit}>
-        <img src="/logo.png" className="mb-[22px] h-[48px] w-[48px]" alt="" />
-        <h1 className="text-[27px]">{sent ? "Check your email" : "Welcome to Super Sparrow"}</h1>
-        <p className="muted mt-[10px] mb-[25px] leading-normal text-[#a2aec2]">
-          {sent
-            ? "If this email belongs to a teammate, a sign-in code is on its way."
-            : "Sign in with your team email to continue."}
-        </p>
-        <label>
-          Email
-          <Input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={sent}
-            placeholder="you@example.com"
-          />
-        </label>
-        {sent && (
-          <label>
-            Sign-in code
-            <Input
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]{6}"
-              required
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder="000000"
-            />
-          </label>
-        )}
-        <button
-          disabled={pending}
-          className="w-full rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"
-        >
-          {sent ? "Sign in" : "Continue with email"}
-        </button>
+      <form className="w-[min(100%-40px,360px)]" onSubmit={submit}>
+        <img src="/logo.png" className="mb-[24px] h-[80px] w-[80px]" alt="" />
+        <h1 className="text-[26px] font-[650]">{sent ? "Enter your code" : "Sign in"}</h1>
+        <div className="mt-[28px] flex flex-col gap-[16px]">
+          {sent ? (
+            <CodeInput digits={digits} onChange={setDigits} disabled={pending} />
+          ) : (
+            <label>
+              Email
+              <Input
+                type="email"
+                required
+                autoComplete="email"
+                autoFocus
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+            </label>
+          )}
+          <button
+            disabled={pending || (sent && !complete)}
+            className="h-[46px] w-full rounded-xl bg-[#2455eb] font-[550] text-white transition-colors hover:bg-[#3566f6] disabled:opacity-50"
+          >
+            {sent ? "Sign in" : "Continue"}
+          </button>
+        </div>
         {sent && (
           <button
             type="button"
-            className="text-button mx-auto my-[16px] block border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
+            className="text-button mt-[18px] block border-0 bg-none p-[4px] text-[13px] text-[#aebbd0] underline underline-offset-4 hover:text-white"
             onClick={resetEmail}
           >
             Use another email
           </button>
         )}
-        <p className="muted mt-[10px] mb-[25px] text-[12px] leading-normal text-[#a2aec2]">
-          {error && <span role="alert">{error}</span>}
-        </p>
+        {error && (
+          <p role="alert" className="mt-[16px] text-[13px] text-[#f38b8b]">
+            {error}
+          </p>
+        )}
       </form>
     </div>
   );
