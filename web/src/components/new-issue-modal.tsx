@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { Icon } from "./icon";
 import { Select } from "./select";
 import { Modal } from "./modal";
+import { FloatingMenu } from "./floating-menu";
 import type { Project } from "../queries/resources";
 import type { IssueStatus, Label } from "../lib/types";
 
@@ -284,8 +285,14 @@ export function NewIssueModal({
               {selectedLabels.length ? `Labels · ${selectedLabels.length}` : "Labels"}
             </button>
             {labelsOpen && (
-              <div
-                className="absolute top-[calc(100%+6px)] left-0 z-30 w-104 max-w-[calc(100vw-40px)] animate-[select-in_120ms_ease-out] overflow-hidden rounded-[12px] border border-[#303744] bg-[#171b21] shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
+              <FloatingMenu
+                anchor={labelTrigger}
+                onDismiss={() => {
+                  setLabelsOpen(false);
+                  setLabelDraftName(null);
+                }}
+                minWidth={230}
+                className="w-104 animate-[select-in_120ms_ease-out] rounded-[12px] border border-[#303744] bg-[#171b21] text-[#d7dfeb] shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
                 aria-label="Choose labels"
               >
                 {labelDraftName ? (
@@ -396,7 +403,7 @@ export function NewIssueModal({
                     </div>
                   </>
                 )}
-              </div>
+              </FloatingMenu>
             )}
           </div>
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Input } from "./input";
+import { FloatingMenu } from "./floating-menu";
 import { Icon } from "./icon";
 import { LabelDot } from "./label-dot";
 import { labelColors } from "../lib/label-colors";
@@ -108,9 +109,12 @@ export function ResourceSelector({
         <Icon name="chevron-down" className="size-4 shrink-0 text-[#8999ad]" />
       </button>
       {open && (
-        <div
+        <FloatingMenu
+          anchor={trigger}
+          onDismiss={() => setOpen(false)}
+          minWidth={230}
           aria-label={`Choose ${label.toLowerCase()}`}
-          className="absolute top-[calc(100%+6px)] right-0 z-30 w-full min-w-[230px] animate-[select-in_120ms_ease-out] rounded-[12px] border border-[#303744] bg-[#171b21] p-1.5 shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
+          className="animate-[select-in_120ms_ease-out] rounded-[12px] border border-[#303744] bg-[#171b21] p-1.5 text-[#d7dfeb] shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
         >
           {draft ? (
             <div className="p-2">
@@ -223,7 +227,7 @@ export function ResourceSelector({
               {change.error.message}
             </p>
           )}
-        </div>
+        </FloatingMenu>
       )}
     </div>
   );

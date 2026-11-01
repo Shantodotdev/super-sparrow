@@ -1,4 +1,5 @@
 import { Icon, type IconName } from "./icon";
+import { FloatingMenu } from "./floating-menu";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 type SelectOption = {
@@ -52,8 +53,13 @@ export function Select({
   }, [open]);
 
   useEffect(() => {
-    if (open)
-      document.getElementById(`${id}-option-${active}`)?.scrollIntoView({ block: "nearest" });
+    if (!open) return;
+    const menu = document.getElementById(`${id}-listbox`);
+    const option = document.getElementById(`${id}-option-${active}`);
+    if (!menu || !option) return;
+    if (option.offsetTop < menu.scrollTop) menu.scrollTop = option.offsetTop;
+    else if (option.offsetTop + option.offsetHeight > menu.scrollTop + menu.clientHeight)
+      menu.scrollTop = option.offsetTop + option.offsetHeight - menu.clientHeight;
   }, [active, id, open]);
 
   const choose = (index: number) => {
@@ -157,8 +163,11 @@ export function Select({
         )}
       </button>
       {open && (
-        <div
-          className="absolute top-[calc(100%+6px)] left-0 z-30 max-h-[260px] min-w-[max(100%,165px)] animate-[select-in_120ms_ease-out] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-[5px] shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
+        <FloatingMenu
+          anchor={trigger}
+          onDismiss={() => setOpen(false)}
+          minWidth={165}
+          className="animate-[select-in_120ms_ease-out] rounded-[12px] border border-[#303744] bg-[#171b21] p-[5px] text-[#d7dfeb] shadow-[0_12px_28px_#0009,0_2px_8px_#0006] motion-reduce:animate-none"
           id={`${id}-listbox`}
           role="listbox"
           aria-label={label}
@@ -186,7 +195,7 @@ export function Select({
               )}
             </div>
           ))}
-        </div>
+        </FloatingMenu>
       )}
     </div>
   );
