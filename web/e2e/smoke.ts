@@ -102,6 +102,23 @@ try {
       );
     return result.result.value;
   };
+  const screenshot = async (name: string) => {
+    const directory = process.env.SPARROW_E2E_SCREENSHOT_DIR;
+    if (!directory) return;
+    await evaluate(
+      `Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))`,
+    );
+    const { data } = await call("Page.captureScreenshot", { format: "png" });
+    await Bun.write(join(directory, `${name}.png`), Buffer.from(data, "base64"));
+  };
+  if (process.env.SPARROW_E2E_SCREENSHOT_DIR) {
+    await call("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1000,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+  }
   await call("Page.bringToFront", {});
   await call("Runtime.enable", {});
   await call("Network.enable", {});
@@ -131,6 +148,55 @@ try {
     await evaluate(
       `(() => {const button = [...(document.querySelector('[role=dialog]') ?? document).querySelectorAll('button,a')].find(e => e.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw new Error('Missing control'); button.click();})()`,
     );
+  };
+  const checkStatusMenu = async (label: string, name: string) => {
+    const selector = `[role="dialog"] [role="combobox"][aria-label="${label}"]`;
+    await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+    await until(
+      () => evaluate(`!!document.querySelector('[role="listbox"] [role="option"]')`),
+      "open status menu",
+    );
+    await evaluate(
+      `Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))`,
+    );
+    await screenshot(name);
+    if (
+      !(await evaluate(`(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      const menu = document.querySelector('[role="listbox"]');
+      const rect = menu.getBoundingClientRect();
+      const visible = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const trigger = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+      const expectedLeft = Math.max(12, Math.min(trigger.left, innerWidth - 12 - rect.width));
+      return Math.abs(rect.left - expectedLeft) < 1 && menu.matches(":popover-open") && rect.top >= 0 && rect.bottom <= innerHeight && menu.contains(visible);
+    })()`))
+    )
+      throw new Error("Status menu must be visible and clickable without scrolling the form");
+    checks++;
+    const formScroll = await evaluate(`document.querySelector('[role="dialog"]').scrollTop`);
+    await evaluate(
+      `document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new KeyboardEvent('keydown', {key:'End', bubbles:true}))`,
+    );
+    await until(
+      () =>
+        evaluate(
+          `document.querySelector(${JSON.stringify(selector)}).getAttribute('aria-activedescendant') === document.querySelector('[role="listbox"] [role="option"]:last-child').id`,
+        ),
+      "navigate to the last selector option",
+    );
+    if ((await evaluate(`document.querySelector('[role="dialog"]').scrollTop`)) !== formScroll)
+      throw new Error("Keyboard selector navigation scrolled the form");
+    checks++;
+    await evaluate(
+      `document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))`,
+    );
+    if (
+      !(await evaluate(
+        `!!document.querySelector('[role="dialog"]') && !document.querySelector('[role="listbox"]')`,
+      ))
+    )
+      throw new Error("Escape should close the status menu and leave the form open");
+    checks++;
   };
   const input = async (selector: string, value: string) => {
     await until(
@@ -188,6 +254,10 @@ try {
   if (!(await evaluate(`!document.querySelector('[role=dialog] select')`)))
     throw new Error("Issue form must not offer a project selector");
   checks++;
+  await screenshot("new-issue-reference");
+  await checkStatusMenu("Status", "new-issue-status-menu");
+  await checkStatusMenu("Assignee", "new-issue-assignee-menu");
+  await checkStatusMenu("Milestone", "new-issue-milestone-menu");
   await input('input[aria-label="Issue title"]', "Browser persisted issue");
   await evaluate(`document.querySelector('input[aria-label="Issue title"]').focus()`);
   await until(
@@ -221,6 +291,14 @@ try {
     editor.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
   })()`);
   await click("Labels");
+  if (
+    !(await evaluate(
+      `document.querySelector('[aria-label="Choose labels"]')?.matches(':popover-open')`,
+    ))
+  )
+    throw new Error("Label selector must escape modal clipping in the top layer");
+  checks++;
+  await screenshot("new-issue-label-menu");
   await input('input[aria-label="Search or create labels"]', "Browser label");
   await click('Create new label:"Browser label"');
   await waitText("Choose a color");
@@ -342,6 +420,165 @@ try {
     "persist label in the project and attach it to the issue",
   );
   checks++;
+
+  if (
+    !(await evaluate(
+      `!!document.querySelector('section[aria-label="Subissues"]') && !!document.querySelector('aside section[aria-label="Subissues sidebar"]') && !document.querySelector('main aside').innerText.includes('Review rounds')`,
+    ))
+  )
+    throw new Error("Subissues must appear below the plan and replace sidebar review rounds");
+  checks++;
+  await evaluate(
+    `(() => { const trigger = document.querySelector('section[aria-label="Subissues"] button'); trigger.focus(); trigger.click(); })()`,
+  );
+  await checkStatusMenu("Subissue status", "new-subissue-status-menu");
+  await input('input[aria-label="Subissue title"]', "Browser child");
+  await until(
+    () =>
+      evaluate(
+        `!!document.querySelector('[contenteditable="true"][aria-label="Subissue description"]')`,
+      ),
+    "open subissue Markdown editor",
+  );
+  await evaluate(`(() => {
+    const editor = document.querySelector('[contenteditable="true"][aria-label="Subissue description"]');
+    editor.focus();
+    const data = new DataTransfer();
+    data.setData('text/plain', '## Child task\\n\\n**Child description**');
+    editor.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+  })()`);
+  await screenshot("new-subissue-desktop");
+  await click("Create subissue");
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[role=dialog]') && [...document.querySelectorAll('section[aria-label^="Subissues"]')].every(s=>s.innerText.includes('Browser child') && s.innerText.includes('WP-2.1'))`,
+      ),
+    "show the created subissue in both lists",
+  );
+  checks++;
+  await evaluate(
+    `document.querySelector('aside section[aria-label="Subissues sidebar"] li button').click()`,
+  );
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Subissue description"] strong')`),
+    "render saved subissue Markdown",
+  );
+  checks++;
+  await evaluate(
+    `document.querySelector('[role="combobox"][aria-label="Subissue status"]').click()`,
+  );
+  await evaluate(
+    `[...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'Done').click()`,
+  );
+  await click("Save subissue");
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[role=dialog]') && [...document.querySelectorAll('section[aria-label^="Subissues"]')].every(s=>!!s.querySelector('button[aria-label="WP-2.1: Browser child, Done"]') && s.innerText.includes('1/1'))`,
+      ),
+    "edit subissue status from the sidebar",
+  );
+  checks++;
+  await navigate(`/${projectSlug}/issues/WP-2`);
+  await waitText("Browser child");
+  if (
+    !(await evaluate(
+      `fetch('/api/issues/WP-2/subissues').then(r=>r.json()).then(b=>b.subissues.length === 1 && b.subissues[0].description.includes('**Child description**') && b.subissues[0].status === 'done')`,
+    ))
+  )
+    throw new Error("Subissue content did not persist");
+  checks++;
+  await evaluate(
+    `fetch('/api/issues/WP-2/subissues', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:'Live child', status:'todo'})})`,
+  );
+  await until(
+    () =>
+      evaluate(
+        `[...document.querySelectorAll('section[aria-label^="Subissues"]')].every(s=>s.innerText.includes('Live child'))`,
+      ),
+    "receive live subissue creation in both lists",
+  );
+  checks++;
+  await screenshot("subissues-desktop");
+  if (process.env.SPARROW_E2E_SCREENSHOT_DIR) {
+    await call("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    await screenshot("subissues-mobile");
+    await evaluate(
+      `(() => { const trigger = document.querySelector('section[aria-label="Subissues"] button'); trigger.focus(); trigger.click(); })()`,
+    );
+    await until(
+      () => evaluate(`!!document.querySelector('[aria-label="Subissue title"]')`),
+      "open mobile subissue dialog",
+    );
+    await screenshot("new-subissue-mobile");
+    await checkStatusMenu("Subissue status", "new-subissue-mobile-status-menu");
+    await evaluate(`document.querySelector('[role="dialog"] button[aria-label="Close"]').click()`);
+    await until(
+      () => evaluate(`!document.querySelector('[role=dialog]')`),
+      "close mobile subissue dialog",
+    );
+    await call("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1000,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+  }
+
+  await call("Emulation.setDeviceMetricsOverride", {
+    width: 990,
+    height: 542,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await evaluate(
+    `(() => { const trigger = document.querySelector('section[aria-label="Subissues"] button'); trigger.focus(); trigger.click(); })()`,
+  );
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Subissue title"]')`),
+    "open subissue form at the reported viewport",
+  );
+  await checkStatusMenu("Subissue status", "subissue-status-reported-viewport");
+  await input('input[aria-label="Subissue title"]', "Create more child");
+  await evaluate(`document.querySelector('[role="dialog"] input[role="switch"]').click()`);
+  await click("Create subissue");
+  await until(
+    () =>
+      evaluate(
+        `document.querySelector('[aria-label="Subissue title"]')?.value === '' && document.querySelector('[role="dialog"] button[type="submit"]')?.disabled === true`,
+      ),
+    "keep the form open and reset its draft after create more",
+  );
+  if (
+    !(await evaluate(
+      `fetch('/api/issues/WP-2/subissues').then(r=>r.json()).then(b=>b.subissues.some(child=>child.title === 'Create more child' && child.status === 'backlog'))`,
+    ))
+  )
+    throw new Error("Create more did not persist the subissue with the selected status");
+  checks++;
+  if (
+    !(await evaluate(`(() => {
+    document.querySelector('[role="dialog"] button[aria-label="Close"]').click();
+    return !!document.querySelector('[role="dialog"]');
+  })()`))
+  )
+    throw new Error("Subissue dialog unmounted before its exit animation");
+  await until(
+    () => evaluate(`!!document.querySelector('.is-exiting [role="dialog"]')`),
+    "animate the subissue dialog out",
+  );
+  checks++;
+  await until(() => evaluate(`!document.querySelector('[role="dialog"]')`), "close subissue form");
+  if (!(await evaluate(`document.activeElement?.getAttribute('aria-label') === 'Add subissue'`)))
+    throw new Error("Closing the subissue dialog should restore focus to its trigger");
+  checks++;
+  await call("Emulation.clearDeviceMetricsOverride", {});
 
   await evaluate(`document.querySelector('input[type="checkbox"]').click()`);
   await until(
