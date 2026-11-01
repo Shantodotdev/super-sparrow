@@ -4,6 +4,7 @@ import { useToast } from "../components/toast";
 import { apiGet, apiWrite } from "../lib/api";
 import type { ChecklistItem, Issue } from "../lib/types";
 import { allIssuesQuery } from "./project-resources";
+import { cacheCreatedIssue } from "./issue-cache";
 
 export const issuesQuery = allIssuesQuery;
 export const issueQuery = (key: string) =>
@@ -77,7 +78,7 @@ export function useCreateIssue() {
           label_ids: v.labelIds,
         },
       ),
-    onSuccess: () => client.invalidateQueries(),
+    onSuccess: ({ issue }) => cacheCreatedIssue(client, issue),
   });
   return mutation.mutateAsync;
 }
