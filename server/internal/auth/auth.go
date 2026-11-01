@@ -110,7 +110,7 @@ func (s *Service) RequestCode(ctx context.Context, address, clientIP string) err
 		return err
 	}
 
-	message, err := email.SignInCode(normalized, code, int(store.SignInCodeLifetime/time.Minute))
+	message, err := email.SignInCode(normalized, code, int(store.SignInCodeLifetime/time.Minute), s.publicURL.JoinPath("logo.png").String())
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func (s *Service) Invite(ctx context.Context, by store.Caller, input store.NewHu
 		return actor, fmt.Errorf("%w: load inviter: %w", ErrInvitationNotSent, err)
 	}
 
-	message, err := email.Invitation(actor.Email, inviter.DisplayName, s.publicURL.String())
+	message, err := email.Invitation(actor.Email, inviter.DisplayName, s.publicURL.String(), s.publicURL.JoinPath("logo.png").String())
 	if err != nil {
 		return actor, fmt.Errorf("%w: %w", ErrInvitationNotSent, err)
 	}

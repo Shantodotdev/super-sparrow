@@ -6,7 +6,7 @@ import (
 )
 
 func TestSignInCodeEmail(t *testing.T) {
-	message, err := SignInCode("max@example.com", "042917", 10)
+	message, err := SignInCode("max@example.com", "042917", 10, "https://sparrow.example.com/logo.png")
 	if err != nil {
 		t.Fatalf("SignInCode: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestSignInCodeEmail(t *testing.T) {
 }
 
 func TestInvitationEmailEscapesNames(t *testing.T) {
-	message, err := Invitation("max@example.com", `Olive <script>alert(1)</script>`, "https://sparrow.example.com")
+	message, err := Invitation("max@example.com", `Olive <script>alert(1)</script>`, "https://sparrow.example.com", "https://sparrow.example.com/logo.png")
 	if err != nil {
 		t.Fatalf("Invitation: %v", err)
 	}
