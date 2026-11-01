@@ -4,7 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
 import { labelsQuery } from "../queries/project";
 import { statusIcon, statusIconColor } from "../lib/issue-status";
-import { Input, Textarea } from "./input";
+import { Input } from "./input";
+import { MarkdownEditor } from "./markdown-editor";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "./icon";
 import { Select } from "./select";
@@ -185,7 +186,7 @@ export function NewIssueModal({
     <Modal
       open={open}
       onClose={onClose}
-      className="w-[min(100%,780px)] rounded-[16px] border border-[#343740] bg-[#191a1e] shadow-[0_24px_80px_#000b] [&_form]:px-[18px] [&_form]:py-4 max-[600px]:[&_form]:p-4"
+      className="max-h-[calc(100dvh-48px)] w-[min(100%,780px)] overflow-y-auto rounded-[16px] border border-[#343740] bg-[#191a1e] shadow-[0_24px_80px_#000b] [&_form]:px-[18px] [&_form]:py-4 max-[600px]:[&_form]:p-4"
       overlayClassName="items-start pt-[min(15vh,_130px)] max-[600px]:py-[20px] max-[600px]:px-[12px]"
       labelledBy="new-issue-heading"
     >
@@ -211,17 +212,17 @@ export function NewIssueModal({
           autoFocus
           required
           aria-label="Issue title"
-          className="mt-[26px] block h-auto w-full rounded-none border-0 border-b border-transparent bg-transparent p-0 text-[19px] font-semibold text-[#f1f2f4] placeholder:text-[#777a84]"
+          className="mt-[26px] block h-auto w-full rounded-none border-0 border-b border-[#3a3d46] bg-transparent p-0 text-[19px] font-semibold text-[#f1f2f4] placeholder:text-[#777a84]"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="Issue title"
         />
-        <Textarea
-          aria-label="Description or plan"
-          className="mt-4 block h-auto min-h-[100px] w-full resize-y rounded-none border-0 border-b border-transparent bg-transparent p-0 text-[14px] leading-[1.6] text-[#f1f2f4] placeholder:text-[#777a84]"
+        <MarkdownEditor
+          label="Description or plan"
+          placeholder="Add a description or plan…"
           value={plan}
-          onChange={(event) => setPlan(event.target.value)}
-          placeholder="Add a description or plan..."
+          onChange={setPlan}
+          className="mt-4 [&_.tiptap]:!max-h-[38dvh] [&_.tiptap]:!min-h-[120px] [&_.tiptap]:!overflow-y-auto [&_.tiptap]:!text-[#f1f2f4]"
         />
         <div className="flex flex-wrap gap-[6px] [&_button]:min-h-[35px] [&_button]:px-[11px] [&_button]:py-[6px] [&_button]:text-[13px]">
           <Select

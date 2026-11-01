@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { Markdown } from "@tiptap/markdown";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
-import { TableKit } from "@tiptap/extension-table";
-import Image from "@tiptap/extension-image";
-import Placeholder from "@tiptap/extension-placeholder";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiWrite } from "../lib/api";
 import { PlanAutosave, type PlanVersion } from "../lib/plan-autosave";
 import type { Issue } from "../lib/types";
 import { issueQuery, issuesQuery } from "../queries/issues";
+import { markdownExtensions } from "./markdown-editor";
 import { useToast } from "./toast";
 import "./issue-plan.css";
 
@@ -62,18 +56,7 @@ export function IssuePlan({ issue }: { issue: Issue }) {
   });
   const [state, setState] = useState(autosave.state);
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        underline: false,
-        link: { openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer nofollow" } },
-      }),
-      Markdown,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      TableKit,
-      Image,
-      Placeholder.configure({ placeholder: "Add a description…" }),
-    ],
+    extensions: markdownExtensions("Add a description…"),
     content: autosave.state.plan,
     contentType: "markdown",
     editorProps: {
