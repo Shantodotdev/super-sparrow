@@ -57,9 +57,7 @@ function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        {mounted ? <AppShell /> : <p role="status">Loading Super Sparrow…</p>}
-      </ToastProvider>
+      <ToastProvider>{mounted ? <AppShell /> : null}</ToastProvider>
     </QueryClientProvider>
   );
 }

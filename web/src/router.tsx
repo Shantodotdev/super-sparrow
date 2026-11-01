@@ -32,6 +32,8 @@ export function getRouter() {
     routeTree,
     context: { queryClient },
     defaultPreload: "intent",
+    defaultPendingComponent: () => null,
+    defaultPendingMinMs: 0,
     // Loaders always run on preload; TanStack Query decides whether cached data is fresh enough.
     defaultPreloadStaleTime: 0,
   });

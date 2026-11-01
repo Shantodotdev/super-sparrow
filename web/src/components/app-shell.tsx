@@ -82,12 +82,7 @@ export function AppShell() {
   }, []);
 
   if (bare) return <Outlet />;
-  if (projects.isPending)
-    return (
-      <p role="status" className="p-8">
-        Loading projects…
-      </p>
-    );
+  if (projects.isPending) return null;
   if (projects.error)
     return (
       <div role="alert" className="p-8">
