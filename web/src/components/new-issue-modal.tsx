@@ -422,12 +422,22 @@ export function NewIssueModal({
           </div>
         )}
         <div className="mt-[22px] flex items-center justify-end gap-4">
-          <label className="m-0 flex cursor-pointer items-center gap-2 text-[12px] font-normal text-[#a4a6ae] [&_input]:h-[15px] [&_input]:w-[15px] [&_input]:accent-[#4f73f0]">
+          <label className="m-0 flex cursor-pointer items-center gap-[8px] text-[12px] font-normal text-[#a4a6ae] focus-within:text-[#d2d9e6]">
             <input
               type="checkbox"
+              role="switch"
+              className="peer sr-only"
               checked={createMore}
               onChange={(event) => setCreateMore(event.target.checked)}
-            />{" "}
+            />
+            <span
+              aria-hidden="true"
+              className={`relative inline-flex h-[18px] w-[32px] shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-[#4f73f0]/60 ${createMore ? "bg-[#2455eb]" : "bg-[#3a404b]"}`}
+            >
+              <span
+                className={`absolute top-[2px] left-[2px] size-[14px] rounded-full bg-white shadow transition-transform ${createMore ? "translate-x-[14px]" : ""}`}
+              />
+            </span>
             <span>Create more</span>
           </label>
           <button
