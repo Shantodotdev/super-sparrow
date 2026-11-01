@@ -90,6 +90,14 @@ function SignInPage() {
             </label>
           )}
         </div>
+        {!sent && (
+          <button
+            disabled={pending}
+            className="mt-[16px] h-[46px] w-full rounded-xl bg-[#2455eb] font-[550] text-white transition-colors hover:bg-[#3566f6] disabled:opacity-50"
+          >
+            Continue
+          </button>
+        )}
         {sent && (
           <button
             type="button"
