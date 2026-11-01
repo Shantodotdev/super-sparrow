@@ -84,18 +84,20 @@ People and agents use the same authenticated endpoints. Actor fields are rejecte
 | Method and path                                            | What it does                                                                                                                                  |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/issues/{key}/reviews`                            | `{rounds}` in order                                                                                                                           |
-| `POST /api/issues/{key}/reviews`                           | `{to_commit, from_commit?, includes_uncommitted?, plan_coverage?}`; without `from_commit`, starts where the previous round ended              |
+| `POST /api/issues/{key}/reviews`                           | `{plan_coverage?}`; starts the next numbered review round, with at most one in progress                                                       |
 | `GET /api/issues/{key}/reviews/{round}`                    | `{round, findings}`, most severe first                                                                                                        |
 | `POST /api/issues/{key}/reviews/{round}/finish`            | `{summary}`                                                                                                                                   |
-| `POST /api/issues/{key}/reviews/{round}/findings`          | `{severity, title, problem, fix, evidence?, file_path?, line?, commit_sha?}`; severity is `blocking`, `should_fix`, or `nit`                  |
+| `POST /api/issues/{key}/reviews/{round}/findings`          | `{severity, title, problem, fix, evidence?, file_path?, line?}`; severity is `blocking`, `should_fix`, or `nit`                               |
 | `GET /api/issues/{key}/findings`                           | Every round's findings. `?status=open,fix` narrows them; duplicates are left out unless `?include_duplicates=true`                            |
 | `GET /api/projects/{key}/findings`                         | `{findings, issues}`: every issue's findings, newest issue first, filtered like the issue's list, with a summary of each issue they belong to |
 | `GET /api/issues/{key}/reviews/{round}/findings/{finding}` | `{finding}`                                                                                                                                   |
-| `POST …/findings/{finding}/status`                         | `{status, reason?, fixed_in_commit?}`; returns `{finding, follow_up_issue}`                                                                   |
+| `POST …/findings/{finding}/status`                         | `{status, reason?}`; returns `{finding, follow_up_issue}`                                                                                     |
 | `PUT …/findings/{finding}/duplicate`                       | `{duplicate_of_finding_id}`, a finding on the same issue, or `""` to clear                                                                    |
-| `POST /api/issues/{key}/fix-summary`                       | `{summary, commit, findings: [{round, finding}]}`; marks at least one finding fixed and comments, all at once                                 |
+| `POST /api/issues/{key}/fix-summary`                       | `{summary, findings: [{round, finding}]}`; marks at least one finding fixed and comments, all at once                                         |
 
 Every finding carries `issue_key` and `comment_count`, and every issue carries `unresolved_findings`, which counts its findings that are `open`, `fix`, or `fixed`, duplicates left out, and `comment_count`, which counts the comments on the issue itself.
+
+Reviews, findings, and fix summaries have no commit fields. An empty object is enough to start a review round. Retired commit fields are rejected as unknown fields; agents do not need to create a Git commit to report findings or fixes. The CLI uses `review start KEY [--coverage TEXT]` and `fix-summary KEY --summary TEXT --findings 1/R1`.
 
 A finding moves `open` → `fix`, `wontfix` (needs a `reason`), or `later`, and only a person makes those decisions or withdraws one back to `open`. Then `fix` → `fixed` → `verified`, and `fixed` → `fix` when a fix did not hold; agents can make these moves. Deciding `later` creates a follow-up issue in the backlog and returns it as `follow_up_issue`.
 

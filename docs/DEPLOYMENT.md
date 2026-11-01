@@ -152,12 +152,11 @@ On the server, with the server's settings and a Linear personal API key in `LINE
 
 It imports the project, its milestones, its issues with their Linear numbers, labels, parents, and assignees matched by email, and every comment, with the original author and time written at its top. A comment in the review round format below also becomes a finished review round with its findings. The import is written as the system actor, and running it again imports only what is new. Pass `--team KEY` when the project belongs to several Linear teams. The command prints a warning for everything it skipped.
 
-The review round format the importer reads is below. Labels can be bold or plain, findings can be headings or bold lines, and fields can come in any order. A round without a commit is imported as a comment only.
+The review round format the importer reads is below. Labels can be bold or plain, findings can be headings or bold lines, and fields can come in any order. Review rounds do not require source-control metadata.
 
 ```md
 ## Review round 2
 
-Reviewed: a1b2c3d..e4f5a6b (includes uncommitted changes)
 Plan coverage: Steps 1 to 3.
 
 ### R1 [Blocking] Text can arrive before its file

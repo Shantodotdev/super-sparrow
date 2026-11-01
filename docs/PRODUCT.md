@@ -22,8 +22,8 @@ Our code is now written at agent speed, but our tracking tools still work at hum
 ## What it does
 
 1. **Plans live on issues.** Each feature has an issue whose description is its plan: goal, decisions, features, edge cases, and checks.
-2. **Each review has its own page.** A review round records which commits it covered, and lists its findings as separate cards.
-3. **Each finding stands alone.** A finding has a number, severity, problem, fix, evidence (file, line, commit), a status, and its own discussion thread. The developer decides fix, wontfix, or later per finding, with one keystroke.
+2. **Each review has its own page.** A review round records its reviewer, plan coverage, and summary, and lists its findings as separate cards.
+3. **Each finding stands alone.** A finding has a number, severity, problem, fix, evidence (file and line), a status, and its own discussion thread. The developer decides fix, wontfix, or later per finding, with one keystroke.
 4. **Every action has an author.** Humans and agents each have their own identity. The history reads "Found by Codex, fixed by Claude, approved by Shanto."
 5. **Agents connect directly.** A built-in MCP server and a CLI give agents tools shaped around the workflow: find the issue for this branch, start a review, add a finding, mark it fixed.
 6. **It is fast everywhere.** A native desktop app for Linux, macOS, and Windows, plus the same interface in a browser, with live updates and keyboard shortcuts.
