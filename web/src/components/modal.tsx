@@ -95,6 +95,7 @@ export function Modal({
   if (!present) return null;
   return (
     <div
+      data-page-cache-exclude
       className={`${
         variant === "drawer"
           ? "fixed inset-0 z-10 flex justify-end bg-[#0006] [transition:background-color_180ms_ease] motion-reduce:[transition:none] motion-reduce:[&_.modal-surface]:[transition:none] starting:[&.is-entering]:bg-transparent starting:[&.is-entering_.modal-surface]:translate-x-full [&.is-exiting]:pointer-events-none [&.is-exiting]:bg-transparent [&.is-exiting_.modal-surface]:translate-x-full"

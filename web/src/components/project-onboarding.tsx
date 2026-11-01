@@ -3,7 +3,10 @@ import { ProjectForm } from "./project-form";
 /** Gives an empty team one focused starting point without application navigation. */
 export function ProjectOnboarding() {
   return (
-    <main className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-[#08090b] px-6 py-12">
+    <main
+      data-page-cache
+      className="relative isolate grid min-h-dvh place-items-center overflow-hidden bg-[#08090b] px-6 py-12"
+    >
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-64 left-1/2 -z-10 h-[650px] w-[850px] -translate-x-1/2 rounded-full bg-[#2455eb]/10 blur-[120px]"
