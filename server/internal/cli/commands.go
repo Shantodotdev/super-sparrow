@@ -25,15 +25,15 @@ const Usage = `Client commands (need SPARROW_URL and SPARROW_TOKEN; SPARROW_MODE
   issue status KEY STATUS               Move an issue to backlog, todo, in_progress, in_review, done, or canceled
   plan get KEY                          Show an issue's plan and checklist
   plan check KEY INDEX... [--uncheck]   Tick checklist items by index
-  review start KEY --to SHA [--from SHA] [--uncommitted] [--coverage TEXT]
+  review start KEY [--coverage TEXT]
   review get KEY ROUND                  Show a round and its findings
   review finish KEY ROUND (--summary TEXT | --summary-file FILE)
   finding add KEY ROUND --severity blocking|should_fix|nit --title TEXT --problem TEXT --fix TEXT
-              [--evidence TEXT] [--file PATH [--line N]] [--commit SHA]
+              [--evidence TEXT] [--file PATH [--line N]]
   finding list KEY [--status open,fix,fixed]
-  finding status KEY ROUND FINDING STATUS [--commit SHA] [--reason TEXT]
+  finding status KEY ROUND FINDING STATUS [--reason TEXT]
   comment add KEY (--body TEXT | --body-file FILE) [--finding ROUND/R3] [--reply-to COMMENT_ID]
-  fix-summary KEY --commit SHA (--summary TEXT | --summary-file FILE) --findings 1/R2,1/R3
+  fix-summary KEY (--summary TEXT | --summary-file FILE) --findings 1/R2,1/R3
 
 A FILE of - reads standard input. Every command prints the API's JSON response.`
 
@@ -285,20 +285,14 @@ func (r *runner) planCheck(ctx context.Context, args []string) (json.RawMessage,
 
 func (r *runner) reviewStart(ctx context.Context, args []string) (json.RawMessage, error) {
 	flags := flag.NewFlagSet("review start", flag.ContinueOnError)
-	to := flags.String("to", "", "")
-	from := flags.String("from", "", "")
-	uncommitted := flags.Bool("uncommitted", false, "")
 	coverage := flags.String("coverage", "", "")
 	positional, err := parse(flags, args, 1)
 	if err != nil {
 		return nil, err
 	}
-	if *to == "" {
-		return nil, usageError("review start needs --to, the last reviewed commit")
-	}
 
 	return r.client.do(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(positional[0])+"/reviews", nil, map[string]any{
-		"to_commit": *to, "from_commit": *from, "includes_uncommitted": *uncommitted, "plan_coverage": *coverage,
+		"plan_coverage": *coverage,
 	})
 }
 
@@ -327,7 +321,6 @@ func (r *runner) findingAdd(ctx context.Context, args []string) (json.RawMessage
 	evidence := flags.String("evidence", "", "")
 	file := flags.String("file", "", "")
 	line := flags.Int("line", 0, "")
-	commit := flags.String("commit", "", "")
 	positional, err := parse(flags, args, 2)
 	if err != nil {
 		return nil, err
@@ -335,7 +328,7 @@ func (r *runner) findingAdd(ctx context.Context, args []string) (json.RawMessage
 
 	return r.client.do(ctx, http.MethodPost, roundPath(positional[0], positional[1])+"/findings", nil, map[string]any{
 		"severity": *severity, "title": *title, "problem": *problem, "fix": *fix, "evidence": *evidence,
-		"file_path": *file, "line": *line, "commit_sha": *commit,
+		"file_path": *file, "line": *line,
 	})
 }
 
@@ -351,7 +344,6 @@ func (r *runner) findingList(ctx context.Context, args []string) (json.RawMessag
 
 func (r *runner) findingStatus(ctx context.Context, args []string) (json.RawMessage, error) {
 	flags := flag.NewFlagSet("finding status", flag.ContinueOnError)
-	commit := flags.String("commit", "", "")
 	reason := flags.String("reason", "", "")
 	positional, err := parse(flags, args, 4)
 	if err != nil {
@@ -359,7 +351,7 @@ func (r *runner) findingStatus(ctx context.Context, args []string) (json.RawMess
 	}
 
 	path := roundPath(positional[0], positional[1]) + "/findings/" + url.PathEscape(positional[2]) + "/status"
-	return r.client.do(ctx, http.MethodPost, path, nil, map[string]string{"status": positional[3], "fixed_in_commit": *commit, "reason": *reason})
+	return r.client.do(ctx, http.MethodPost, path, nil, map[string]string{"status": positional[3], "reason": *reason})
 }
 
 func (r *runner) commentAdd(ctx context.Context, args []string) (json.RawMessage, error) {
@@ -390,7 +382,6 @@ func (r *runner) commentAdd(ctx context.Context, args []string) (json.RawMessage
 
 func (r *runner) fixSummary(ctx context.Context, args []string) (json.RawMessage, error) {
 	flags := flag.NewFlagSet("fix-summary", flag.ContinueOnError)
-	commit := flags.String("commit", "", "")
 	summary := flags.String("summary", "", "")
 	summaryFile := flags.String("summary-file", "", "")
 	findings := flags.String("findings", "", "")
@@ -419,7 +410,7 @@ func (r *runner) fixSummary(ctx context.Context, args []string) (json.RawMessage
 	}
 
 	return r.client.do(ctx, http.MethodPost, "/api/issues/"+url.PathEscape(positional[0])+"/fix-summary", nil,
-		map[string]any{"summary": text, "commit": *commit, "findings": refs})
+		map[string]any{"summary": text, "findings": refs})
 }
 
 // splitFindingRef reads a finding reference such as 2/R3: round 2, finding R3.

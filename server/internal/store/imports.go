@@ -315,15 +315,12 @@ func (s *Store) ImportComment(ctx context.Context, by Caller, source ImportSourc
 // ImportedReviewRound is a finished review round to import with its findings, numbered as they
 // were at the source.
 type ImportedReviewRound struct {
-	ExternalID          string
-	IssueID             string
-	Number              int
-	FromCommit          string
-	ToCommit            string
-	IncludesUncommitted bool
-	PlanCoverage        string
-	Summary             string
-	Findings            []ImportedFinding
+	ExternalID   string
+	IssueID      string
+	Number       int
+	PlanCoverage string
+	Summary      string
+	Findings     []ImportedFinding
 }
 
 // ImportedFinding is one finding of an imported round.
@@ -336,7 +333,6 @@ type ImportedFinding struct {
 	Evidence       string
 	FilePath       string
 	Line           int
-	CommitSHA      string
 	Status         FindingStatus
 	DecisionReason string
 }
@@ -350,14 +346,6 @@ const importedWontfixReason = "Imported without a reason."
 func (s *Store) ImportReviewRound(ctx context.Context, by Caller, source ImportSource, input ImportedReviewRound) (ReviewRound, error) {
 	if input.Number < 1 {
 		return ReviewRound{}, invalid("number", "must be at least 1")
-	}
-	fromCommit, err := optionalCommit("from_commit", input.FromCommit)
-	if err != nil {
-		return ReviewRound{}, err
-	}
-	toCommit, err := requiredCommit("to_commit", input.ToCommit)
-	if err != nil {
-		return ReviewRound{}, err
 	}
 	coverage, err := optionalText("plan_coverage", input.PlanCoverage, maxPlanCoverage)
 	if err != nil {
@@ -389,8 +377,8 @@ func (s *Store) ImportReviewRound(ctx context.Context, by Caller, source ImportS
 		}
 
 		round = ReviewRound{
-			ID: newID(), IssueID: issue.ID, Number: input.Number, FromCommit: fromCommit, ToCommit: toCommit,
-			IncludesUncommitted: input.IncludesUncommitted, PlanCoverage: coverage, Summary: summary,
+			ID: newID(), IssueID: issue.ID, Number: input.Number,
+			PlanCoverage: coverage, Summary: summary,
 			AuthorActorID: w.caller.ID, FinishedAt: &w.now, CreatedAt: w.now, UpdatedAt: w.now,
 		}
 		nextFinding := 1
@@ -399,10 +387,9 @@ func (s *Store) ImportReviewRound(ctx context.Context, by Caller, source ImportS
 		}
 
 		_, err = w.exec(`
-			INSERT INTO review_rounds (id, issue_id, number, from_commit, to_commit, includes_uncommitted,
-				plan_coverage, summary, next_finding_number, author_actor_id, finished_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			round.ID, issue.ID, round.Number, nullString(fromCommit), toCommit, input.IncludesUncommitted,
+			INSERT INTO review_rounds (id, issue_id, number, plan_coverage, summary, next_finding_number, author_actor_id, finished_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			round.ID, issue.ID, round.Number,
 			coverage, summary, nextFinding, w.caller.ID, w.timestamp(), w.timestamp(), w.timestamp())
 		if err != nil {
 			return mapUniqueViolation(err, fmt.Sprintf("%s already has review round %d, so it was not imported", issue.Key(), round.Number), "import review round")
@@ -440,7 +427,7 @@ func validateImportedFindings(inputs []ImportedFinding) ([]ImportedFinding, erro
 	for _, input := range inputs {
 		checked, err := validateNewFinding(NewFinding{
 			Severity: input.Severity, Title: input.Title, Problem: input.Problem, Fix: input.Fix,
-			Evidence: input.Evidence, FilePath: input.FilePath, Line: input.Line, CommitSHA: input.CommitSHA,
+			Evidence: input.Evidence, FilePath: input.FilePath, Line: input.Line,
 		})
 		if err != nil {
 			return nil, err
@@ -464,7 +451,7 @@ func validateImportedFindings(inputs []ImportedFinding) ([]ImportedFinding, erro
 		findings = append(findings, ImportedFinding{
 			Number: input.Number, Severity: checked.Severity, Title: checked.Title, Problem: checked.Problem,
 			Fix: checked.Fix, Evidence: checked.Evidence, FilePath: checked.FilePath, Line: checked.Line,
-			CommitSHA: checked.CommitSHA, Status: input.Status, DecisionReason: reason,
+			Status: input.Status, DecisionReason: reason,
 		})
 	}
 	return findings, nil
@@ -489,11 +476,11 @@ func insertImportedFinding(w *writeTx, roundID string, finding ImportedFinding) 
 
 	_, err := w.exec(`
 		INSERT INTO findings (id, review_round_id, number, severity, title, problem, fix, evidence, file_path, line,
-			commit_sha, status, decision_reason, decided_by_actor_id, decided_at, found_by_actor_id,
+			status, decision_reason, decided_by_actor_id, decided_at, found_by_actor_id,
 			fixed_by_actor_id, fixed_at, verified_by_actor_id, verified_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		newID(), roundID, finding.Number, finding.Severity, finding.Title, finding.Problem, finding.Fix,
-		finding.Evidence, nullString(finding.FilePath), nullInt(finding.Line), nullString(finding.CommitSHA),
+		finding.Evidence, nullString(finding.FilePath), nullInt(finding.Line),
 		finding.Status, nullString(finding.DecisionReason), decidedBy, decidedAt, w.caller.ID,
 		fixedBy, fixedAt, verifiedBy, verifiedAt, w.timestamp(), w.timestamp())
 	if err != nil {

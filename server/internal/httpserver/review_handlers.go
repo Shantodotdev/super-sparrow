@@ -28,10 +28,7 @@ func (s *server) listRounds(w http.ResponseWriter, r *http.Request) error {
 
 func (s *server) startRound(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		FromCommit          string `json:"from_commit"`
-		ToCommit            string `json:"to_commit"`
-		IncludesUncommitted bool   `json:"includes_uncommitted"`
-		PlanCoverage        string `json:"plan_coverage"`
+		PlanCoverage string `json:"plan_coverage"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		return err
@@ -42,8 +39,7 @@ func (s *server) startRound(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	round, err := s.store.StartReviewRound(r.Context(), identityFrom(r.Context()).caller(), store.NewReviewRound{
-		IssueID: issue.ID, FromCommit: body.FromCommit, ToCommit: body.ToCommit,
-		IncludesUncommitted: body.IncludesUncommitted, PlanCoverage: body.PlanCoverage,
+		IssueID: issue.ID, PlanCoverage: body.PlanCoverage,
 	})
 	if err != nil {
 		return err
@@ -91,14 +87,13 @@ func (s *server) finishRound(w http.ResponseWriter, r *http.Request) error {
 
 func (s *server) addFinding(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		Severity  string `json:"severity"`
-		Title     string `json:"title"`
-		Problem   string `json:"problem"`
-		Fix       string `json:"fix"`
-		Evidence  string `json:"evidence"`
-		FilePath  string `json:"file_path"`
-		Line      int    `json:"line"`
-		CommitSHA string `json:"commit_sha"`
+		Severity string `json:"severity"`
+		Title    string `json:"title"`
+		Problem  string `json:"problem"`
+		Fix      string `json:"fix"`
+		Evidence string `json:"evidence"`
+		FilePath string `json:"file_path"`
+		Line     int    `json:"line"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		return err
@@ -110,7 +105,7 @@ func (s *server) addFinding(w http.ResponseWriter, r *http.Request) error {
 	}
 	finding, err := s.store.AddFinding(r.Context(), identityFrom(r.Context()).caller(), store.NewFinding{
 		ReviewRoundID: round.ID, Severity: store.Severity(body.Severity), Title: body.Title, Problem: body.Problem,
-		Fix: body.Fix, Evidence: body.Evidence, FilePath: body.FilePath, Line: body.Line, CommitSHA: body.CommitSHA,
+		Fix: body.Fix, Evidence: body.Evidence, FilePath: body.FilePath, Line: body.Line,
 	})
 	if err != nil {
 		return err
@@ -205,9 +200,8 @@ func (s *server) getFinding(w http.ResponseWriter, r *http.Request) error {
 // issue, the response includes it.
 func (s *server) changeFindingStatus(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		Status        string `json:"status"`
-		Reason        string `json:"reason"`
-		FixedInCommit string `json:"fixed_in_commit"`
+		Status string `json:"status"`
+		Reason string `json:"reason"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		return err
@@ -218,7 +212,7 @@ func (s *server) changeFindingStatus(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	finding, err = s.store.ChangeFindingStatus(r.Context(), identityFrom(r.Context()).caller(), finding.ID,
-		store.FindingChange{Status: store.FindingStatus(body.Status), Reason: body.Reason, FixedInCommit: body.FixedInCommit})
+		store.FindingChange{Status: store.FindingStatus(body.Status), Reason: body.Reason})
 	if err != nil {
 		return err
 	}
@@ -292,12 +286,11 @@ func (s *server) resolveFindings(r *http.Request, issue store.Issue, field strin
 	return ids, nil
 }
 
-// postFixSummary reports a fix: it marks the named findings fixed in commit and adds summary as a
+// postFixSummary reports a fix: it marks the named findings fixed and adds summary as a
 // comment on the issue.
 func (s *server) postFixSummary(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Summary  string       `json:"summary"`
-		Commit   string       `json:"commit"`
 		Findings []findingRef `json:"findings"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -314,7 +307,7 @@ func (s *server) postFixSummary(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	comment, fixed, err := s.store.PostFixSummary(r.Context(), identityFrom(r.Context()).caller(), store.FixSummary{
-		IssueID: issue.ID, Summary: body.Summary, Commit: body.Commit, FindingIDs: findingIDs,
+		IssueID: issue.ID, Summary: body.Summary, FindingIDs: findingIDs,
 	})
 	if err != nil {
 		return err

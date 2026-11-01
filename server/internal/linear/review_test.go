@@ -8,7 +8,6 @@ import (
 
 const reviewComment = `## Review round 2
 
-Reviewed: A1B2C3D..e4f5a6b (includes uncommitted changes)
 **Plan coverage:** Steps 1 to 3.
 
 ### R1 [Blocking] Text can arrive before its file
@@ -36,7 +35,7 @@ func TestParseReviewRound(t *testing.T) {
 		t.Fatal("no round found")
 	}
 
-	if round.Number != 2 || round.FromCommit != "a1b2c3d" || round.ToCommit != "e4f5a6b" || !round.IncludesUncommitted {
+	if round.Number != 2 {
 		t.Errorf("round %+v", round)
 	}
 	if round.PlanCoverage != "Steps 1 to 3." || round.Summary != "Three findings; one blocks the merge." {
@@ -73,12 +72,23 @@ func TestParseReviewRoundIgnoresOtherComments(t *testing.T) {
 	}
 }
 
-func TestParseReviewRoundWithASingleCommit(t *testing.T) {
-	round, ok := ParseReviewRound("# Review round 1\nCommit: 0123abcd, without uncommitted changes\n\n## R1: blocking: Leak\nProblem: x")
-	if !ok || round.ToCommit != "0123abcd" || round.FromCommit != "" || round.IncludesUncommitted {
+func TestParseReviewRoundWithoutRevisionMetadata(t *testing.T) {
+	round, ok := ParseReviewRound("# Review round 1\n\n## R1: blocking: Leak\nProblem: x")
+	if !ok || round.Number != 1 {
 		t.Fatalf("round %+v", round)
 	}
 	if len(round.Findings) != 1 || round.Findings[0].Severity != store.SeverityBlocking || round.Findings[0].Title != "Leak" {
 		t.Fatalf("findings %+v", round.Findings)
+	}
+}
+
+func TestParseReviewRoundDiscardsLegacyCommitFields(t *testing.T) {
+	round, ok := ParseReviewRound("## Review round 1\nReviewed: abc1234..def5678\n\n### R1 [Nit] Name\nProblem: Unclear name\nCommit: abc1234\nFix: Rename it")
+	if !ok || len(round.Findings) != 1 {
+		t.Fatalf("round %+v", round)
+	}
+	finding := round.Findings[0]
+	if finding.Problem != "Unclear name" || finding.Fix != "Rename it" {
+		t.Fatalf("legacy metadata leaked into finding content: %+v", finding)
 	}
 }

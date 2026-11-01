@@ -11,12 +11,12 @@ import (
 	"time"
 )
 
-const roundColumns = `id, issue_id, number, from_commit, to_commit, includes_uncommitted, plan_coverage, summary,
+const roundColumns = `id, issue_id, number, plan_coverage, summary,
 	author_actor_id, finished_at, created_at, updated_at`
 
 const findingColumns = `f.id, f.review_round_id, r.issue_id, r.number, f.number, f.severity, f.title, f.problem, f.fix,
-	f.evidence, f.file_path, f.line, f.commit_sha, f.status, f.decision_reason, f.decided_by_actor_id, f.decided_at,
-	f.found_by_actor_id, f.fixed_by_actor_id, f.fixed_in_commit, f.fixed_at, f.verified_by_actor_id, f.verified_at,
+	f.evidence, f.file_path, f.line, f.status, f.decision_reason, f.decided_by_actor_id, f.decided_at,
+	f.found_by_actor_id, f.fixed_by_actor_id, f.fixed_at, f.verified_by_actor_id, f.verified_at,
 	f.duplicate_of_finding_id, f.follow_up_issue_id, f.created_at, f.updated_at, p.key || '-' || i.number,
 	(SELECT count(*) FROM comments c WHERE c.finding_id = f.id)`
 
@@ -33,13 +33,8 @@ const findingOrder = ` r.number, CASE f.severity WHEN 'blocking' THEN 0 WHEN 'sh
 
 // NewReviewRound describes a review round to start on an issue.
 type NewReviewRound struct {
-	IssueID string
-	// FromCommit is where the reviewed range starts. When empty, a later round starts from the
-	// previous round's ToCommit, and a first round reviews the whole branch.
-	FromCommit          string
-	ToCommit            string
-	IncludesUncommitted bool
-	PlanCoverage        string
+	IssueID      string
+	PlanCoverage string
 }
 
 // NewFinding describes a finding to add to a round in progress.
@@ -52,7 +47,6 @@ type NewFinding struct {
 	Evidence      string
 	FilePath      string
 	Line          int
-	CommitSHA     string
 }
 
 // FindingChange moves a finding to a new status.
@@ -60,21 +54,11 @@ type FindingChange struct {
 	Status FindingStatus
 	// Reason explains a decision. It is required for wontfix.
 	Reason string
-	// FixedInCommit is the commit that fixed the finding, when moving it to fixed.
-	FixedInCommit string
 }
 
 // StartReviewRound starts the issue's next review round. An issue has at most one round in
 // progress. People and agents can start rounds.
 func (s *Store) StartReviewRound(ctx context.Context, by Caller, input NewReviewRound) (ReviewRound, error) {
-	fromCommit, err := optionalCommit("from_commit", input.FromCommit)
-	if err != nil {
-		return ReviewRound{}, err
-	}
-	toCommit, err := requiredCommit("to_commit", input.ToCommit)
-	if err != nil {
-		return ReviewRound{}, err
-	}
 	coverage, err := optionalText("plan_coverage", input.PlanCoverage, maxPlanCoverage)
 	if err != nil {
 		return ReviewRound{}, err
@@ -97,14 +81,6 @@ func (s *Store) StartReviewRound(ctx context.Context, by Caller, input NewReview
 			return conflict(issue.Key() + " already has a review round in progress")
 		}
 
-		if fromCommit == "" {
-			err := w.tx.QueryRowContext(w.ctx,
-				`SELECT to_commit FROM review_rounds WHERE issue_id = ? ORDER BY number DESC LIMIT 1`, issue.ID).Scan(&fromCommit)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("find previous round: %w", err)
-			}
-		}
-
 		var number int
 		err = w.tx.QueryRowContext(w.ctx, `
 			UPDATE issues SET next_review_round_number = next_review_round_number + 1
@@ -114,23 +90,21 @@ func (s *Store) StartReviewRound(ctx context.Context, by Caller, input NewReview
 		}
 
 		round = ReviewRound{
-			ID: newID(), IssueID: issue.ID, Number: number, FromCommit: fromCommit, ToCommit: toCommit,
-			IncludesUncommitted: input.IncludesUncommitted, PlanCoverage: coverage,
+			ID: newID(), IssueID: issue.ID, Number: number,
+			PlanCoverage:  coverage,
 			AuthorActorID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now,
 		}
 		_, err = w.exec(`
-			INSERT INTO review_rounds (id, issue_id, number, from_commit, to_commit, includes_uncommitted,
-				plan_coverage, summary, author_actor_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)`,
-			round.ID, issue.ID, number, nullString(fromCommit), toCommit, input.IncludesUncommitted,
+			INSERT INTO review_rounds (id, issue_id, number, plan_coverage, summary, author_actor_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, '', ?, ?, ?)`,
+			round.ID, issue.ID, number,
 			coverage, w.caller.ID, w.timestamp(), w.timestamp())
 		if err != nil {
 			return mapUniqueViolation(err, issue.Key()+" already has a review round in progress", "start review round")
 		}
 
 		return w.event(issue.ProjectID, TargetReviewRound, round.ID, "review_round.started", map[string]any{
-			"issue_id": issue.ID, "number": number, "from_commit": fromCommit, "to_commit": toCommit,
-			"includes_uncommitted": input.IncludesUncommitted,
+			"issue_id": issue.ID, "number": number,
 		})
 	})
 
@@ -222,10 +196,10 @@ func getRound(ctx context.Context, q querier, where string, args ...any) (Review
 
 func scanRound(row scanner) (ReviewRound, error) {
 	var round ReviewRound
-	var fromCommit, finished sql.NullString
+	var finished sql.NullString
 	var created, updated string
 
-	err := row.Scan(&round.ID, &round.IssueID, &round.Number, &fromCommit, &round.ToCommit, &round.IncludesUncommitted,
+	err := row.Scan(&round.ID, &round.IssueID, &round.Number,
 		&round.PlanCoverage, &round.Summary, &round.AuthorActorID, &finished, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ReviewRound{}, notFound("review round")
@@ -234,7 +208,6 @@ func scanRound(row scanner) (ReviewRound, error) {
 		return ReviewRound{}, fmt.Errorf("read review round: %w", err)
 	}
 
-	round.FromCommit = fromCommit.String
 	if round.FinishedAt, err = parseOptionalTime(finished); err != nil {
 		return ReviewRound{}, err
 	}
@@ -281,10 +254,10 @@ func (s *Store) AddFinding(ctx context.Context, by Caller, input NewFinding) (Fi
 		finding.CreatedAt, finding.UpdatedAt = w.now, w.now
 		_, err = w.exec(`
 			INSERT INTO findings (id, review_round_id, number, severity, title, problem, fix, evidence, file_path, line,
-				commit_sha, status, found_by_actor_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+				status, found_by_actor_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
 			finding.ID, round.ID, finding.Number, finding.Severity, finding.Title, finding.Problem, finding.Fix,
-			finding.Evidence, nullString(finding.FilePath), nullInt(finding.Line), nullString(finding.CommitSHA),
+			finding.Evidence, nullString(finding.FilePath), nullInt(finding.Line),
 			w.caller.ID, w.timestamp(), w.timestamp())
 		if err != nil {
 			return fmt.Errorf("add finding: %w", err)
@@ -330,9 +303,6 @@ func validateNewFinding(input NewFinding) (Finding, error) {
 	}
 	if input.Line > 0 && finding.FilePath == "" {
 		return finding, invalid("line", "needs a file_path")
-	}
-	if finding.CommitSHA, err = optionalCommit("commit_sha", input.CommitSHA); err != nil {
-		return finding, err
 	}
 
 	finding.ReviewRoundID, finding.Severity, finding.Line = input.ReviewRoundID, input.Severity, input.Line
@@ -404,9 +374,6 @@ func validateFindingChange(change FindingChange) (FindingChange, error) {
 	if change.Status == FindingWontfix && change.Reason == "" {
 		return change, invalid("reason", "is required for wontfix")
 	}
-	if change.FixedInCommit, err = optionalCommit("fixed_in_commit", change.FixedInCommit); err != nil {
-		return change, err
-	}
 	return change, nil
 }
 
@@ -428,7 +395,7 @@ func changeFindingStatus(w *writeTx, current Finding, change FindingChange) (Fin
 		}
 	}
 
-	finding, err := applyFindingChange(w, current, change.Status, change.Reason, change.FixedInCommit)
+	finding, err := applyFindingChange(w, current, change.Status, change.Reason)
 	if err != nil {
 		return Finding{}, err
 	}
@@ -439,18 +406,17 @@ func changeFindingStatus(w *writeTx, current Finding, change FindingChange) (Fin
 	}
 	err = w.event(projectID, TargetFinding, current.ID, "finding.status_changed", map[string]any{
 		"issue_id": current.IssueID, "round": current.RoundNumber, "number": current.Number,
-		"from": current.Status, "to": change.Status, "reason": change.Reason, "fixed_in_commit": change.FixedInCommit,
+		"from": current.Status, "to": change.Status, "reason": change.Reason,
 		"follow_up_issue_id": finding.FollowUpIssueID,
 	})
 	return finding, err
 }
 
 // FixSummary reports the fix an agent or person made on an issue: a comment describing it, and
-// the findings it fixed, which move from fix to fixed in the given commit.
+// the findings it fixed, which move from fix to fixed.
 type FixSummary struct {
 	IssueID    string
 	Summary    string
-	Commit     string
 	FindingIDs []string
 }
 
@@ -459,10 +425,6 @@ type FixSummary struct {
 // agents can post fix summaries.
 func (s *Store) PostFixSummary(ctx context.Context, by Caller, input FixSummary) (Comment, []Finding, error) {
 	body, err := requiredText("summary", input.Summary, maxCommentLength)
-	if err != nil {
-		return Comment{}, nil, err
-	}
-	commit, err := requiredCommit("commit", input.Commit)
 	if err != nil {
 		return Comment{}, nil, err
 	}
@@ -488,7 +450,7 @@ func (s *Store) PostFixSummary(ctx context.Context, by Caller, input FixSummary)
 				return err
 			}
 
-			finding, err := changeFindingStatus(w, current, FindingChange{Status: FindingFixed, FixedInCommit: commit})
+			finding, err := changeFindingStatus(w, current, FindingChange{Status: FindingFixed})
 			if err != nil {
 				return err
 			}
@@ -503,7 +465,7 @@ func (s *Store) PostFixSummary(ctx context.Context, by Caller, input FixSummary)
 }
 
 // applyFindingChange writes the new status and the fields that go with it.
-func applyFindingChange(w *writeTx, current Finding, to FindingStatus, reason, fixedIn string) (Finding, error) {
+func applyFindingChange(w *writeTx, current Finding, to FindingStatus, reason string) (Finding, error) {
 	next := current
 	next.Status, next.UpdatedAt = to, w.now
 
@@ -515,9 +477,9 @@ func applyFindingChange(w *writeTx, current Finding, to FindingStatus, reason, f
 			next.DecisionReason, next.DecidedByActorID, next.DecidedAt = reason, w.caller.ID, &w.now
 		}
 		// A fix that did not hold goes back to fix, so its fix details no longer apply.
-		next.FixedByActorID, next.FixedInCommit, next.FixedAt = "", "", nil
+		next.FixedByActorID, next.FixedAt = "", nil
 	case FindingFixed:
-		next.FixedByActorID, next.FixedInCommit, next.FixedAt = w.caller.ID, fixedIn, &w.now
+		next.FixedByActorID, next.FixedAt = w.caller.ID, &w.now
 	case FindingVerified:
 		next.VerifiedByActorID, next.VerifiedAt = w.caller.ID, &w.now
 	}
@@ -532,11 +494,11 @@ func applyFindingChange(w *writeTx, current Finding, to FindingStatus, reason, f
 
 	_, err := w.exec(`
 		UPDATE findings SET status = ?, decision_reason = ?, decided_by_actor_id = ?, decided_at = ?,
-			fixed_by_actor_id = ?, fixed_in_commit = ?, fixed_at = ?, verified_by_actor_id = ?, verified_at = ?,
+			fixed_by_actor_id = ?, fixed_at = ?, verified_by_actor_id = ?, verified_at = ?,
 			follow_up_issue_id = ?, updated_at = ?
 		WHERE id = ?`,
 		next.Status, nullString(next.DecisionReason), nullString(next.DecidedByActorID), formatOptionalTime(next.DecidedAt),
-		nullString(next.FixedByActorID), nullString(next.FixedInCommit), formatOptionalTime(next.FixedAt),
+		nullString(next.FixedByActorID), formatOptionalTime(next.FixedAt),
 		nullString(next.VerifiedByActorID), formatOptionalTime(next.VerifiedAt), nullString(next.FollowUpIssueID),
 		w.timestamp(), current.ID)
 	if err != nil {
@@ -740,14 +702,14 @@ func getFinding(ctx context.Context, q querier, where string, args ...any) (Find
 
 func scanFinding(row scanner) (Finding, error) {
 	var f Finding
-	var filePath, commit, reason, decidedBy, decidedAt, fixedBy, fixedIn, fixedAt sql.NullString
+	var filePath, reason, decidedBy, decidedAt, fixedBy, fixedAt sql.NullString
 	var verifiedBy, verifiedAt, duplicateOf, followUp sql.NullString
 	var line sql.NullInt64
 	var created, updated string
 
 	err := row.Scan(&f.ID, &f.ReviewRoundID, &f.IssueID, &f.RoundNumber, &f.Number, &f.Severity, &f.Title, &f.Problem,
-		&f.Fix, &f.Evidence, &filePath, &line, &commit, &f.Status, &reason, &decidedBy, &decidedAt,
-		&f.FoundByActorID, &fixedBy, &fixedIn, &fixedAt, &verifiedBy, &verifiedAt, &duplicateOf, &followUp,
+		&f.Fix, &f.Evidence, &filePath, &line, &f.Status, &reason, &decidedBy, &decidedAt,
+		&f.FoundByActorID, &fixedBy, &fixedAt, &verifiedBy, &verifiedAt, &duplicateOf, &followUp,
 		&created, &updated, &f.IssueKey, &f.CommentCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Finding{}, notFound("finding")
@@ -756,9 +718,9 @@ func scanFinding(row scanner) (Finding, error) {
 		return Finding{}, fmt.Errorf("read finding: %w", err)
 	}
 
-	f.FilePath, f.Line, f.CommitSHA = filePath.String, int(line.Int64), commit.String
+	f.FilePath, f.Line = filePath.String, int(line.Int64)
 	f.DecisionReason, f.DecidedByActorID = reason.String, decidedBy.String
-	f.FixedByActorID, f.FixedInCommit, f.VerifiedByActorID = fixedBy.String, fixedIn.String, verifiedBy.String
+	f.FixedByActorID, f.VerifiedByActorID = fixedBy.String, verifiedBy.String
 	f.DuplicateOfFindingID, f.FollowUpIssueID = duplicateOf.String, followUp.String
 
 	for _, field := range []struct {

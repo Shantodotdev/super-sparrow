@@ -170,24 +170,20 @@ func newIssueView(issue store.Issue) issueView {
 }
 
 type roundView struct {
-	ID                  string     `json:"id"`
-	IssueID             string     `json:"issue_id"`
-	Number              int        `json:"number"`
-	FromCommit          string     `json:"from_commit"`
-	ToCommit            string     `json:"to_commit"`
-	IncludesUncommitted bool       `json:"includes_uncommitted"`
-	PlanCoverage        string     `json:"plan_coverage"`
-	Summary             string     `json:"summary"`
-	AuthorActorID       string     `json:"author_actor_id"`
-	FinishedAt          *time.Time `json:"finished_at"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID            string     `json:"id"`
+	IssueID       string     `json:"issue_id"`
+	Number        int        `json:"number"`
+	PlanCoverage  string     `json:"plan_coverage"`
+	Summary       string     `json:"summary"`
+	AuthorActorID string     `json:"author_actor_id"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 func newRoundView(round store.ReviewRound) roundView {
 	return roundView{
-		ID: round.ID, IssueID: round.IssueID, Number: round.Number, FromCommit: round.FromCommit, ToCommit: round.ToCommit,
-		IncludesUncommitted: round.IncludesUncommitted, PlanCoverage: round.PlanCoverage, Summary: round.Summary,
+		ID: round.ID, IssueID: round.IssueID, Number: round.Number, PlanCoverage: round.PlanCoverage, Summary: round.Summary,
 		AuthorActorID: round.AuthorActorID, FinishedAt: round.FinishedAt, CreatedAt: round.CreatedAt, UpdatedAt: round.UpdatedAt,
 	}
 }
@@ -207,14 +203,12 @@ type findingView struct {
 	Evidence             string     `json:"evidence"`
 	FilePath             string     `json:"file_path"`
 	Line                 int        `json:"line"`
-	CommitSHA            string     `json:"commit_sha"`
 	Status               string     `json:"status"`
 	DecisionReason       string     `json:"decision_reason"`
 	DecidedByActorID     string     `json:"decided_by_actor_id"`
 	DecidedAt            *time.Time `json:"decided_at"`
 	FoundByActorID       string     `json:"found_by_actor_id"`
 	FixedByActorID       string     `json:"fixed_by_actor_id"`
-	FixedInCommit        string     `json:"fixed_in_commit"`
 	FixedAt              *time.Time `json:"fixed_at"`
 	VerifiedByActorID    string     `json:"verified_by_actor_id"`
 	VerifiedAt           *time.Time `json:"verified_at"`
@@ -229,10 +223,9 @@ func newFindingView(f store.Finding) findingView {
 	return findingView{
 		ID: f.ID, ReviewRoundID: f.ReviewRoundID, IssueID: f.IssueID, IssueKey: f.IssueKey, Round: f.RoundNumber, Number: f.Number,
 		Label: f.Label(), Severity: string(f.Severity), Title: f.Title, Problem: f.Problem, Fix: f.Fix,
-		Evidence: f.Evidence, FilePath: f.FilePath, Line: f.Line, CommitSHA: f.CommitSHA, Status: string(f.Status),
+		Evidence: f.Evidence, FilePath: f.FilePath, Line: f.Line, Status: string(f.Status),
 		DecisionReason: f.DecisionReason, DecidedByActorID: f.DecidedByActorID, DecidedAt: f.DecidedAt,
-		FoundByActorID: f.FoundByActorID, FixedByActorID: f.FixedByActorID, FixedInCommit: f.FixedInCommit,
-		FixedAt: f.FixedAt, VerifiedByActorID: f.VerifiedByActorID, VerifiedAt: f.VerifiedAt,
+		FoundByActorID: f.FoundByActorID, FixedByActorID: f.FixedByActorID, FixedAt: f.FixedAt, VerifiedByActorID: f.VerifiedByActorID, VerifiedAt: f.VerifiedAt,
 		DuplicateOfFindingID: f.DuplicateOfFindingID, FollowUpIssueID: f.FollowUpIssueID, CommentCount: f.CommentCount,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 	}

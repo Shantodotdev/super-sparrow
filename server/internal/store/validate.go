@@ -33,7 +33,6 @@ var (
 	labelColorPattern = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 	projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,9}$`)
 	agentNamePattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
-	commitPattern     = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 )
 
 // requiredText trims value and checks that it is present and at most max characters long.
@@ -90,25 +89,6 @@ func normalizeEmail(value string) (string, error) {
 	}
 
 	return email, nil
-}
-
-func optionalCommit(field, value string) (string, error) {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value != "" && !commitPattern.MatchString(value) {
-		return "", invalid(field, "must be a commit SHA of 7 to 64 hex characters")
-	}
-	return value, nil
-}
-
-func requiredCommit(field, value string) (string, error) {
-	commit, err := optionalCommit(field, value)
-	if err != nil {
-		return "", err
-	}
-	if commit == "" {
-		return "", invalid(field, "is required")
-	}
-	return commit, nil
 }
 
 func optionalBranch(value string) (string, error) {

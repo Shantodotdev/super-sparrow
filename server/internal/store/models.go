@@ -158,20 +158,17 @@ type Issue struct {
 // Key returns the issue's key, such as WP-142.
 func (i Issue) Key() string { return fmt.Sprintf("%s-%d", i.ProjectKey, i.Number) }
 
-// ReviewRound is one review of an issue's code, covering a range of commits.
+// ReviewRound is one review of an issue's code.
 type ReviewRound struct {
-	ID                  string
-	IssueID             string
-	Number              int
-	FromCommit          string
-	ToCommit            string
-	IncludesUncommitted bool
-	PlanCoverage        string
-	Summary             string
-	AuthorActorID       string
-	FinishedAt          *time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	ID            string
+	IssueID       string
+	Number        int
+	PlanCoverage  string
+	Summary       string
+	AuthorActorID string
+	FinishedAt    *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Severity is how much a finding matters.
@@ -222,14 +219,12 @@ type Finding struct {
 	Evidence             string
 	FilePath             string
 	Line                 int
-	CommitSHA            string
 	Status               FindingStatus
 	DecisionReason       string
 	DecidedByActorID     string
 	DecidedAt            *time.Time
 	FoundByActorID       string
 	FixedByActorID       string
-	FixedInCommit        string
 	FixedAt              *time.Time
 	VerifiedByActorID    string
 	VerifiedAt           *time.Time

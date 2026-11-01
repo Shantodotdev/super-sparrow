@@ -24,11 +24,11 @@ func (tm *team) reviewedIn(t *testing.T, projectKey string) reviewed {
 	t.Helper()
 	project := tm.project(t, projectKey)
 	issue := tm.issue(t, project.ID, "Meta comments")
-	round := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: issue.ID, ToCommit: "a1b2c3d"})).must(t)
+	round := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: issue.ID})).must(t)
 	finding := got(tm.store.AddFinding(tm.ctx, tm.agent, NewFinding{
 		ReviewRoundID: round.ID, Severity: SeverityBlocking, Title: "Text can arrive before its file",
 		Problem: "The worker sends whichever row it claims first.", Fix: "Send both from one job.",
-		Evidence: "Two replicas claim both rows.", FilePath: "apps/api/src/staff-reply.ts", Line: 189, CommitSHA: "A1B2C3D",
+		Evidence: "Two replicas claim both rows.", FilePath: "apps/api/src/staff-reply.ts", Line: 189,
 	})).must(t)
 	return reviewed{issue: issue, round: round, finding: finding}
 }
@@ -46,12 +46,12 @@ func TestReviewRoundsAndFindingsAreNumbered(t *testing.T) {
 	if r.round.Number != 1 || r.finding.Label() != "R1" || second.Label() != "R2" {
 		t.Errorf("round %d, findings %s and %s", r.round.Number, r.finding.Label(), second.Label())
 	}
-	if r.finding.CommitSHA != "a1b2c3d" || r.finding.FoundByActorID != tm.agent.ActorID {
+	if r.finding.FoundByActorID != tm.agent.ActorID {
 		t.Errorf("finding %+v", r.finding)
 	}
 
 	got(tm.store.FinishReviewRound(tm.ctx, tm.agent, r.round.ID, "Two findings.")).must(t)
-	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID, ToCommit: "e4f5a6b"})).must(t)
+	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID})).must(t)
 	restarted := tm.addFinding(t, next.ID, SeverityShouldFix)
 
 	if next.Number != 2 || restarted.Label() != "R1" {
@@ -59,30 +59,12 @@ func TestReviewRoundsAndFindingsAreNumbered(t *testing.T) {
 	}
 }
 
-func TestALaterRoundStartsFromThePreviousRange(t *testing.T) {
-	tm := newTeam(t)
-	r := tm.reviewed(t)
-	got(tm.store.FinishReviewRound(tm.ctx, tm.agent, r.round.ID, "")).must(t)
-
-	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID, ToCommit: "e4f5a6b", IncludesUncommitted: true})).must(t)
-	if next.FromCommit != "a1b2c3d" || !next.IncludesUncommitted {
-		t.Errorf("second round %+v, want it to start at a1b2c3d", next)
-	}
-
-	if r.round.FromCommit != "" {
-		t.Errorf("first round from = %q, want the whole branch", r.round.FromCommit)
-	}
-}
-
 func TestAnIssueHasOneRoundInProgress(t *testing.T) {
 	tm := newTeam(t)
 	r := tm.reviewed(t)
 
-	_, err := tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID, ToCommit: "e4f5a6b"})
+	_, err := tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID})
 	wantErr(t, err, ErrConflict)
-
-	_, err = tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID, ToCommit: "not-a-sha"})
-	wantInvalid(t, err, "to_commit")
 }
 
 func TestAFinishedRoundTakesNoFindings(t *testing.T) {
@@ -141,12 +123,11 @@ func TestFindingValidation(t *testing.T) {
 	r := tm.reviewed(t)
 
 	cases := map[string]NewFinding{
-		"severity":   {Severity: "major", Title: "T", Problem: "P", Fix: "F"},
-		"title":      {Severity: SeverityNit, Title: " ", Problem: "P", Fix: "F"},
-		"problem":    {Severity: SeverityNit, Title: "T", Fix: "F"},
-		"fix":        {Severity: SeverityNit, Title: "T", Problem: "P"},
-		"line":       {Severity: SeverityNit, Title: "T", Problem: "P", Fix: "F", Line: 4},
-		"commit_sha": {Severity: SeverityNit, Title: "T", Problem: "P", Fix: "F", CommitSHA: "main"},
+		"severity": {Severity: "major", Title: "T", Problem: "P", Fix: "F"},
+		"title":    {Severity: SeverityNit, Title: " ", Problem: "P", Fix: "F"},
+		"problem":  {Severity: SeverityNit, Title: "T", Fix: "F"},
+		"fix":      {Severity: SeverityNit, Title: "T", Problem: "P"},
+		"line":     {Severity: SeverityNit, Title: "T", Problem: "P", Fix: "F", Line: 4},
 	}
 	for field, input := range cases {
 		t.Run(field, func(t *testing.T) {
@@ -217,8 +198,8 @@ func TestAgentsFixAndVerifyFindings(t *testing.T) {
 	r := tm.reviewed(t)
 	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, r.finding.ID, FindingChange{Status: FindingFix})).must(t)
 
-	fixed := got(tm.store.ChangeFindingStatus(tm.ctx, tm.agent, r.finding.ID, FindingChange{Status: FindingFixed, FixedInCommit: "E4F5A6B"})).must(t)
-	if fixed.FixedByActorID != tm.agent.ActorID || fixed.FixedInCommit != "e4f5a6b" || fixed.FixedAt == nil {
+	fixed := got(tm.store.ChangeFindingStatus(tm.ctx, tm.agent, r.finding.ID, FindingChange{Status: FindingFixed})).must(t)
+	if fixed.FixedByActorID != tm.agent.ActorID || fixed.FixedAt == nil {
 		t.Errorf("fix not recorded: %+v", fixed)
 	}
 
@@ -318,7 +299,7 @@ func TestIssueFindingsAreOrderedBySeverityWithinRounds(t *testing.T) {
 	nit := tm.addFinding(t, r.round.ID, SeverityNit)
 	shouldFix := tm.addFinding(t, r.round.ID, SeverityShouldFix)
 	got(tm.store.FinishReviewRound(tm.ctx, tm.agent, r.round.ID, "")).must(t)
-	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID, ToCommit: "e4f5a6b"})).must(t)
+	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: r.issue.ID})).must(t)
 	blocking := tm.addFinding(t, next.ID, SeverityBlocking)
 
 	findings := got(tm.store.ListIssueFindings(tm.ctx, r.issue.ID, nil, false)).must(t)
@@ -338,7 +319,7 @@ func TestListProjectFindingsGroupsByIssueAndCounts(t *testing.T) {
 	tm.addFinding(t, r.round.ID, SeverityNit)
 
 	newer := tm.issue(t, r.issue.ProjectID, "Newer")
-	newerRound := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: newer.ID, ToCommit: "b2c3d4e"})).must(t)
+	newerRound := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: newer.ID})).must(t)
 	newerFinding := tm.addFinding(t, newerRound.ID, SeverityShouldFix)
 	got(tm.store.AddComment(tm.ctx, tm.member, NewComment{FindingID: newerFinding.ID, Body: "Why?"})).must(t)
 	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, newerFinding.ID, FindingChange{Status: FindingWontfix, Reason: "On purpose"})).must(t)

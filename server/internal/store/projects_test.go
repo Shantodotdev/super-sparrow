@@ -42,7 +42,7 @@ func TestDeleteProjectRemovesItsWorkAndKeepsHistory(t *testing.T) {
 	project := tm.project(t, "WP")
 	parent := tm.issue(t, project.ID, "Parent")
 	child := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: project.ID, Title: "Child", Status: IssueTodo, ParentIssueID: parent.ID})).must(t)
-	round := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: child.ID, ToCommit: "abcdef1"})).must(t)
+	round := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: child.ID})).must(t)
 	finding := got(tm.store.AddFinding(tm.ctx, tm.agent, NewFinding{ReviewRoundID: round.ID, Severity: SeverityNit, Title: "T", Problem: "P", Fix: "F"})).must(t)
 	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, finding.ID, FindingChange{Status: FindingLater})).must(t)
 	got(tm.store.AddComment(tm.ctx, tm.member, NewComment{FindingID: finding.ID, Body: "Later is fine"})).must(t)

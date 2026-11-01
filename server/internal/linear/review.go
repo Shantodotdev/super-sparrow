@@ -13,7 +13,6 @@ import (
 //
 //	## Review round 2
 //
-//	Reviewed: a1b2c3d..e4f5a6b (includes uncommitted changes)
 //	Plan coverage: Steps 1 to 3.
 //
 //	### R1 [Blocking] Text can arrive before its file
@@ -36,21 +35,16 @@ var (
 	findingHeading = regexp.MustCompile(`(?i)^(?:#{2,5}\s*\**|\*\*)\s*R(\d{1,4})\b\**[\s:.\-–—]*(.*?)\**\s*$`)
 	otherHeading   = regexp.MustCompile(`^#{1,5}\s+(.*)$`)
 	fieldLine      = regexp.MustCompile(`^(?:[-*]\s+)?\**([A-Za-z][A-Za-z '’]{1,30}?)\**\s*:\**\s*(.*)$`)
-	commitRange    = regexp.MustCompile(`(?i)\b([0-9a-f]{7,40})\b\s*(?:\.\.\.?|->|→|to)\s*\b([0-9a-f]{7,40})\b`)
-	singleCommit   = regexp.MustCompile(`(?i)\b([0-9a-f]{7,40})\b`)
 	fileAndLine    = regexp.MustCompile("`?([A-Za-z0-9_./@-]+\\.[A-Za-z0-9]+)(?::(\\d+))?(?:[-–]\\d+)?`?")
 	severityMarker = regexp.MustCompile(`(?i)^(?:\[([^\]]+)\]|\(([^)]+)\)|\*\*([^*]+)\*\*|([a-z][a-z _-]{1,12}):)\s*`)
 )
 
 // ParsedRound is a review round read from a comment.
 type ParsedRound struct {
-	Number              int
-	FromCommit          string
-	ToCommit            string
-	IncludesUncommitted bool
-	PlanCoverage        string
-	Summary             string
-	Findings            []store.ImportedFinding
+	Number       int
+	PlanCoverage string
+	Summary      string
+	Findings     []store.ImportedFinding
 }
 
 // ParseReviewRound reads a review round from a comment's markdown. It returns false when the
@@ -119,10 +113,6 @@ func (round *ParsedRound) readPreamble(line string) {
 		return
 	}
 
-	if lower := strings.ToLower(line); strings.Contains(lower, "uncommitted") {
-		round.IncludesUncommitted = !excludesUncommitted(lower)
-	}
-
 	match := fieldLine.FindStringSubmatch(line)
 	if match == nil {
 		return
@@ -134,24 +124,7 @@ func (round *ParsedRound) readPreamble(line string) {
 		round.PlanCoverage = value
 	case key == "summary" || key == "verdict":
 		round.Summary = value
-	case strings.Contains(key, "review") || strings.Contains(key, "range") || strings.Contains(key, "commit"):
-		if commits := commitRange.FindStringSubmatch(value); commits != nil {
-			round.FromCommit, round.ToCommit = strings.ToLower(commits[1]), strings.ToLower(commits[2])
-		} else if commit := singleCommit.FindStringSubmatch(value); commit != nil && round.ToCommit == "" {
-			round.ToCommit = strings.ToLower(commit[1])
-		}
 	}
-}
-
-// excludesUncommitted reports whether a line about uncommitted changes says they were left out,
-// as in "without uncommitted changes" or "Uncommitted changes: no".
-func excludesUncommitted(lower string) bool {
-	for _, phrase := range []string{"without", "excluding", "excluded", "not included"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return strings.HasSuffix(strings.TrimRight(lower, ".*) "), ": no")
 }
 
 // findingDraft collects one finding's fields as its lines are read.
@@ -194,6 +167,10 @@ func (d *findingDraft) read(line, raw string) {
 }
 
 func (d *findingDraft) append(field, text string) {
+	if field == "" {
+		return
+	}
+
 	builder, ok := d.fields[field]
 	if !ok {
 		builder = &strings.Builder{}
@@ -247,9 +224,6 @@ func (d *findingDraft) finish() store.ImportedFinding {
 		f.FilePath = match[1]
 		f.Line, _ = strconv.Atoi(match[2])
 	}
-	if commit := singleCommit.FindStringSubmatch(d.field("commit")); commit != nil {
-		f.CommitSHA = strings.ToLower(commit[1])
-	}
 	return f
 }
 
@@ -266,7 +240,7 @@ func fieldName(label string) (string, bool) {
 	case "file", "location", "where", "path":
 		return "file", true
 	case "commit":
-		return "commit", true
+		return "", true
 	case "severity", "priority":
 		return "severity", true
 	case "status", "decision", "state":

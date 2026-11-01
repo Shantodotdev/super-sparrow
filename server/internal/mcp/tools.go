@@ -73,16 +73,12 @@ func (s *Server) toolList() []tool {
 		{
 			name:  "start_review_round",
 			title: "Start a review round",
-			description: "Start the next review round of an issue before adding findings. Pass the commit you reviewed up to " +
-				"(`git rev-parse HEAD`). Leave from_commit out to start where the previous round ended, or at the start of the " +
-				"branch for the first round. An issue has one round in progress at a time; finish it with finish_review_round. " +
+			description: "Start the next review round of an issue before adding findings. " +
+				"An issue has one round in progress at a time; finish it with finish_review_round. " +
 				"Returns the round's number and its page.",
-			schema: object([]string{"issue_key", "to_commit"}, map[string]any{
-				"issue_key":            issueKey,
-				"to_commit":            text("The last commit the review covers, as a full or short SHA."),
-				"from_commit":          text("Where the reviewed range starts, if not where the previous round ended."),
-				"includes_uncommitted": boolean("true when the review also covered uncommitted changes."),
-				"plan_coverage":        text("Which parts of the plan this review checked, in a sentence or two."),
+			schema: object([]string{"issue_key"}, map[string]any{
+				"issue_key":     issueKey,
+				"plan_coverage": text("Which parts of the plan this review checked, in a sentence or two."),
 			}),
 			run: bind(s.startReviewRound),
 		},
@@ -94,16 +90,15 @@ func (s *Server) toolList() []tool {
 				"should_fix, or nit. Give the file and line when the problem is in one place. Returns the finding's label, such as R3. " +
 				"Leave round out to use the round in progress.",
 			schema: object([]string{"issue_key", "severity", "title", "problem", "fix"}, map[string]any{
-				"issue_key":  issueKey,
-				"round":      integer("The round number. Leave it out to use the round in progress.", 1),
-				"severity":   enum("How much the problem matters.", "blocking", "should_fix", "nit"),
-				"title":      text("A one-line summary of the problem."),
-				"problem":    text("What is wrong and why it matters, in markdown."),
-				"fix":        text("How to fix it, in markdown."),
-				"evidence":   text("What shows the problem: a failing case, a log, or a quote from the code."),
-				"file_path":  text("The file the problem is in, relative to the repository root."),
-				"line":       integer("The line in file_path.", 1),
-				"commit_sha": text("The commit the file and line refer to."),
+				"issue_key": issueKey,
+				"round":     integer("The round number. Leave it out to use the round in progress.", 1),
+				"severity":  enum("How much the problem matters.", "blocking", "should_fix", "nit"),
+				"title":     text("A one-line summary of the problem."),
+				"problem":   text("What is wrong and why it matters, in markdown."),
+				"fix":       text("How to fix it, in markdown."),
+				"evidence":  text("What shows the problem: a failing case, a log, or a quote from the code."),
+				"file_path": text("The file the problem is in, relative to the repository root."),
+				"line":      integer("The line in file_path.", 1),
 			}),
 			run: bind(s.addFinding),
 		},
@@ -137,17 +132,16 @@ func (s *Server) toolList() []tool {
 		{
 			name:  "set_finding_status",
 			title: "Set a finding's status",
-			description: "Move a finding to a new status. Agents can mark a finding fixed once a person decided to fix it (give " +
-				"fixed_in_commit), mark a fixed finding verified after checking the fix, or move a fixed finding back to fix when " +
+			description: "Move a finding to a new status. Agents can mark a finding fixed once a person decided to fix it, " +
+				"mark a fixed finding verified after checking the fix, or move a fixed finding back to fix when " +
 				"the fix did not hold. Only a person decides fix, wontfix, or later, so those are refused for agents. To report " +
 				"several fixes with an explanation, use post_fix_summary instead.",
 			schema: object([]string{"issue_key", "round", "finding", "status"}, map[string]any{
-				"issue_key":       issueKey,
-				"round":           integer("The finding's round number.", 1),
-				"finding":         findingLabel,
-				"status":          enum("The new status.", "open", "fix", "wontfix", "later", "fixed", "verified"),
-				"fixed_in_commit": text("The commit that fixed it, when the status is fixed."),
-				"reason":          text("Why, when a person decides wontfix or later."),
+				"issue_key": issueKey,
+				"round":     integer("The finding's round number.", 1),
+				"finding":   findingLabel,
+				"status":    enum("The new status.", "open", "fix", "wontfix", "later", "fixed", "verified"),
+				"reason":    text("Why, when a person decides wontfix or later."),
 			}),
 			run: bind(s.setFindingStatus),
 		},
@@ -199,14 +193,13 @@ func (s *Server) toolList() []tool {
 		{
 			name:  "post_fix_summary",
 			title: "Report a fix",
-			description: "Report the fixes you made for a review: it marks each listed finding fixed in the given commit and " +
+			description: "Report the fixes you made for a review: it marks each listed finding fixed and " +
 				"adds the summary as a comment on the issue, all at once. Each finding must have been decided fix by a person; " +
-				"if one is not, nothing is recorded and the error names it. Commit your changes first and pass that commit.",
-			schema: object([]string{"issue_key", "summary", "commit", "findings"}, map[string]any{
+				"if one is not, nothing is recorded and the error names it. Describe the changes and the findings they address.",
+			schema: object([]string{"issue_key", "summary", "findings"}, map[string]any{
 				"issue_key": issueKey,
 				"summary":   text("What you changed and how it fixes each finding, in markdown."),
-				"commit":    text("The commit with the fixes."),
-				"findings": array("The findings this commit fixes.", object([]string{"round", "finding"}, map[string]any{
+				"findings": array("The findings these changes fix.", object([]string{"round", "finding"}, map[string]any{
 					"round":   integer("The finding's round number.", 1),
 					"finding": findingLabel,
 				})),
@@ -315,14 +308,11 @@ type issueOutput struct {
 }
 
 type roundOutput struct {
-	Round               int            `json:"round"`
-	InProgress          bool           `json:"in_progress"`
-	FromCommit          string         `json:"from_commit,omitempty"`
-	ToCommit            string         `json:"to_commit"`
-	IncludesUncommitted bool           `json:"includes_uncommitted"`
-	Summary             string         `json:"summary,omitempty"`
-	URL                 string         `json:"url"`
-	Findings            map[string]int `json:"findings_by_severity,omitempty"`
+	Round      int            `json:"round"`
+	InProgress bool           `json:"in_progress"`
+	Summary    string         `json:"summary,omitempty"`
+	URL        string         `json:"url"`
+	Findings   map[string]int `json:"findings_by_severity,omitempty"`
 }
 
 type findingOutput struct {
@@ -336,9 +326,7 @@ type findingOutput struct {
 	Evidence       string          `json:"evidence,omitempty"`
 	FilePath       string          `json:"file_path,omitempty"`
 	Line           int             `json:"line,omitempty"`
-	CommitSHA      string          `json:"commit_sha,omitempty"`
 	DecisionReason string          `json:"decision_reason,omitempty"`
-	FixedInCommit  string          `json:"fixed_in_commit,omitempty"`
 	FoundBy        *actorOutput    `json:"found_by"`
 	DecidedBy      *actorOutput    `json:"decided_by,omitempty"`
 	FixedBy        *actorOutput    `json:"fixed_by,omitempty"`
@@ -395,8 +383,7 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 
 func (s *Server) newRoundOutput(issue store.Issue, round store.ReviewRound, findings []store.Finding) roundOutput {
 	output := roundOutput{
-		Round: round.Number, InProgress: round.FinishedAt == nil, FromCommit: round.FromCommit, ToCommit: round.ToCommit,
-		IncludesUncommitted: round.IncludesUncommitted, Summary: round.Summary, URL: s.roundURL(issue, round.Number),
+		Round: round.Number, InProgress: round.FinishedAt == nil, Summary: round.Summary, URL: s.roundURL(issue, round.Number),
 	}
 	if findings != nil {
 		output.Findings = map[string]int{}
@@ -459,8 +446,7 @@ func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findi
 		output := findingOutput{
 			Round: f.RoundNumber, Finding: f.Label(), Severity: string(f.Severity), Status: string(f.Status),
 			Title: f.Title, Problem: f.Problem, Fix: f.Fix, Evidence: f.Evidence, FilePath: f.FilePath, Line: f.Line,
-			CommitSHA: f.CommitSHA, DecisionReason: f.DecisionReason, FixedInCommit: f.FixedInCommit,
-			URL: s.roundURL(issue, f.RoundNumber) + "#" + f.Label(),
+			DecisionReason: f.DecisionReason, URL: s.roundURL(issue, f.RoundNumber) + "#" + f.Label(),
 		}
 
 		var err error
@@ -657,11 +643,8 @@ func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, a
 }
 
 func (s *Server) startReviewRound(ctx context.Context, caller store.Caller, args struct {
-	IssueKey            string `json:"issue_key"`
-	ToCommit            string `json:"to_commit"`
-	FromCommit          string `json:"from_commit"`
-	IncludesUncommitted bool   `json:"includes_uncommitted"`
-	PlanCoverage        string `json:"plan_coverage"`
+	IssueKey     string `json:"issue_key"`
+	PlanCoverage string `json:"plan_coverage"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
@@ -669,8 +652,7 @@ func (s *Server) startReviewRound(ctx context.Context, caller store.Caller, args
 	}
 
 	round, err := s.store.StartReviewRound(ctx, caller, store.NewReviewRound{
-		IssueID: issue.ID, FromCommit: args.FromCommit, ToCommit: args.ToCommit,
-		IncludesUncommitted: args.IncludesUncommitted, PlanCoverage: args.PlanCoverage,
+		IssueID: issue.ID, PlanCoverage: args.PlanCoverage,
 	})
 	if err != nil {
 		return nil, err
@@ -679,16 +661,15 @@ func (s *Server) startReviewRound(ctx context.Context, caller store.Caller, args
 }
 
 func (s *Server) addFinding(ctx context.Context, caller store.Caller, args struct {
-	IssueKey  string `json:"issue_key"`
-	Round     *int   `json:"round"`
-	Severity  string `json:"severity"`
-	Title     string `json:"title"`
-	Problem   string `json:"problem"`
-	Fix       string `json:"fix"`
-	Evidence  string `json:"evidence"`
-	FilePath  string `json:"file_path"`
-	Line      int    `json:"line"`
-	CommitSHA string `json:"commit_sha"`
+	IssueKey string `json:"issue_key"`
+	Round    *int   `json:"round"`
+	Severity string `json:"severity"`
+	Title    string `json:"title"`
+	Problem  string `json:"problem"`
+	Fix      string `json:"fix"`
+	Evidence string `json:"evidence"`
+	FilePath string `json:"file_path"`
+	Line     int    `json:"line"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
@@ -701,7 +682,7 @@ func (s *Server) addFinding(ctx context.Context, caller store.Caller, args struc
 
 	finding, err := s.store.AddFinding(ctx, caller, store.NewFinding{
 		ReviewRoundID: round.ID, Severity: store.Severity(args.Severity), Title: args.Title, Problem: args.Problem,
-		Fix: args.Fix, Evidence: args.Evidence, FilePath: args.FilePath, Line: args.Line, CommitSHA: args.CommitSHA,
+		Fix: args.Fix, Evidence: args.Evidence, FilePath: args.FilePath, Line: args.Line,
 	})
 	if err != nil {
 		return nil, err
@@ -771,12 +752,11 @@ func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args stru
 }
 
 func (s *Server) setFindingStatus(ctx context.Context, caller store.Caller, args struct {
-	IssueKey      string `json:"issue_key"`
-	Round         *int   `json:"round"`
-	Finding       string `json:"finding"`
-	Status        string `json:"status"`
-	FixedInCommit string `json:"fixed_in_commit"`
-	Reason        string `json:"reason"`
+	IssueKey string `json:"issue_key"`
+	Round    *int   `json:"round"`
+	Finding  string `json:"finding"`
+	Status   string `json:"status"`
+	Reason   string `json:"reason"`
 }) (any, error) {
 	if args.Round == nil {
 		return nil, &store.ValidationError{Field: "round", Message: "is required"}
@@ -791,7 +771,7 @@ func (s *Server) setFindingStatus(ctx context.Context, caller store.Caller, args
 	}
 
 	finding, err = s.store.ChangeFindingStatus(ctx, caller, finding.ID, store.FindingChange{
-		Status: store.FindingStatus(args.Status), Reason: args.Reason, FixedInCommit: args.FixedInCommit,
+		Status: store.FindingStatus(args.Status), Reason: args.Reason,
 	})
 	if err != nil {
 		return nil, err
@@ -916,7 +896,6 @@ func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
 func (s *Server) postFixSummary(ctx context.Context, caller store.Caller, args struct {
 	IssueKey string `json:"issue_key"`
 	Summary  string `json:"summary"`
-	Commit   string `json:"commit"`
 	Findings []struct {
 		Round   int    `json:"round"`
 		Finding string `json:"finding"`
@@ -937,7 +916,7 @@ func (s *Server) postFixSummary(ctx context.Context, caller store.Caller, args s
 	}
 
 	comment, fixed, err := s.store.PostFixSummary(ctx, caller, store.FixSummary{
-		IssueID: issue.ID, Summary: args.Summary, Commit: args.Commit, FindingIDs: findingIDs,
+		IssueID: issue.ID, Summary: args.Summary, FindingIDs: findingIDs,
 	})
 	if err != nil {
 		return nil, err

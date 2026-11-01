@@ -61,7 +61,7 @@ func fakeLinear(t *testing.T) *httptest.Server {
 			data = `{"issue":{"comments":{"nodes":[
 				{"id":"c2","body":` + string(review) + `,"createdAt":"2026-01-03T09:00:00Z","user":{"name":"Codex"}},
 				{"id":"c1","body":"Starting now.","createdAt":"2026-01-02T09:00:00Z","user":{"name":"Shanto"}},
-				{"id":"c3","body":"## Review round 3\nNo commit here.","createdAt":"2026-01-04T09:00:00Z","user":null}
+				{"id":"c3","body":"## Review round 3\nSummary: No findings.","createdAt":"2026-01-04T09:00:00Z","user":null}
 			],"pageInfo":{"hasNextPage":false}}}}`
 		default:
 			t.Errorf("unexpected query %s", request.Query)
@@ -95,7 +95,7 @@ func TestImportBringsInTheProjectOnce(t *testing.T) {
 		t.Fatalf("Import: %v", err)
 	}
 	if report.ProjectKey != "WP" || report.Milestones != 1 || report.Issues != 2 || report.Comments != 3 ||
-		report.ReviewRounds != 1 || report.Findings != 3 || len(report.Warnings) != 2 {
+		report.ReviewRounds != 2 || report.Findings != 3 || len(report.Warnings) != 1 {
 		t.Fatalf("report %+v", report)
 	}
 
@@ -117,7 +117,7 @@ func TestImportBringsInTheProjectOnce(t *testing.T) {
 		t.Fatalf("comments %+v (%v)", comments, err)
 	}
 	round, err := st.GetReviewRoundByNumber(ctx, issue.ID, 2)
-	if err != nil || round.ToCommit != "e4f5a6b" || round.AuthorActorID != store.SystemActorID {
+	if err != nil || round.AuthorActorID != store.SystemActorID {
 		t.Fatalf("round %+v (%v)", round, err)
 	}
 
@@ -133,7 +133,7 @@ func TestImportBringsInTheProjectOnce(t *testing.T) {
 	if after, _ := st.ListComments(ctx, issue.ID, ""); len(after) != 3 {
 		t.Fatalf("a second import added comments: %d", len(after))
 	}
-	if rounds, _ := st.ListReviewRounds(ctx, issue.ID); len(rounds) != 1 {
+	if rounds, _ := st.ListReviewRounds(ctx, issue.ID); len(rounds) != 2 {
 		t.Fatalf("a second import added rounds: %d", len(rounds))
 	}
 	if again.Issues != 2 {

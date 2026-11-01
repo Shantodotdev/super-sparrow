@@ -82,16 +82,16 @@ func TestPostFixSummaryMarksFindingsFixedAndComments(t *testing.T) {
 	r := tm.reviewed(t)
 	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, r.finding.ID, FindingChange{Status: FindingFix})).must(t)
 
-	_, _, err := tm.store.PostFixSummary(tm.ctx, tm.agent, FixSummary{IssueID: r.issue.ID, Summary: "Nothing.", Commit: "abc1234"})
+	_, _, err := tm.store.PostFixSummary(tm.ctx, tm.agent, FixSummary{IssueID: r.issue.ID, Summary: "Nothing."})
 	wantInvalid(t, err, "findings")
 
 	comment, fixed, err := tm.store.PostFixSummary(tm.ctx, tm.agent, FixSummary{
-		IssueID: r.issue.ID, Summary: "Sent both rows from one job.", Commit: "abc1234", FindingIDs: []string{r.finding.ID},
+		IssueID: r.issue.ID, Summary: "Sent both rows from one job.", FindingIDs: []string{r.finding.ID},
 	})
 	if err != nil {
 		t.Fatalf("PostFixSummary: %v", err)
 	}
-	if len(fixed) != 1 || fixed[0].Status != FindingFixed || fixed[0].FixedInCommit != "abc1234" || fixed[0].FixedByActorID != tm.agent.ActorID {
+	if len(fixed) != 1 || fixed[0].Status != FindingFixed || fixed[0].FixedByActorID != tm.agent.ActorID {
 		t.Fatalf("fixed %+v", fixed)
 	}
 	if comment.IssueID != r.issue.ID || comment.AuthorActorID != tm.agent.ActorID {
@@ -105,7 +105,7 @@ func TestPostFixSummaryRefusesAnUndecidedFindingAndWritesNothing(t *testing.T) {
 	before := tm.eventCount(t)
 
 	_, _, err := tm.store.PostFixSummary(tm.ctx, tm.agent, FixSummary{
-		IssueID: r.issue.ID, Summary: "Fixed.", Commit: "abc1234", FindingIDs: []string{r.finding.ID},
+		IssueID: r.issue.ID, Summary: "Fixed.", FindingIDs: []string{r.finding.ID},
 	})
 	wantErr(t, err, ErrInvalidTransition)
 	if tm.eventCount(t) != before {

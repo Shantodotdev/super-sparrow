@@ -249,14 +249,9 @@ func importComments(ctx context.Context, st *store.Store, client *Client, import
 		if !ok {
 			continue
 		}
-		if parsed.ToCommit == "" {
-			report.warn("review round %d on %s names no commit, so it was imported as a comment only", parsed.Number, issue.Key())
-			continue
-		}
 
 		_, err := st.ImportReviewRound(ctx, importer, store.ImportLinear, store.ImportedReviewRound{
 			ExternalID: comment.ID + "#review-round", IssueID: issue.ID, Number: parsed.Number,
-			FromCommit: parsed.FromCommit, ToCommit: parsed.ToCommit, IncludesUncommitted: parsed.IncludesUncommitted,
 			PlanCoverage: parsed.PlanCoverage, Summary: parsed.Summary, Findings: parsed.Findings,
 		})
 		var validation *store.ValidationError

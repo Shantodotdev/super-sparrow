@@ -43,7 +43,7 @@ func TestImportReviewRoundWithFindings(t *testing.T) {
 	issue := tm.issue(t, project.ID, "Meta comments")
 
 	input := ImportedReviewRound{
-		ExternalID: "c1", IssueID: issue.ID, Number: 2, ToCommit: "a1b2c3d", Summary: "Two findings.",
+		ExternalID: "c1", IssueID: issue.ID, Number: 2, Summary: "Two findings.",
 		Findings: []ImportedFinding{
 			{Number: 1, Severity: SeverityBlocking, Title: "Race", Problem: "P", Fix: "F", Status: FindingVerified},
 			{Number: 3, Severity: SeverityNit, Title: "Name", Problem: "P", Fix: "F", Status: FindingWontfix},
@@ -62,8 +62,8 @@ func TestImportReviewRoundWithFindings(t *testing.T) {
 		t.Fatal("a second import made a second round")
 	}
 
-	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: issue.ID, ToCommit: "e4f5a6b"})).must(t)
-	if next.Number != 3 || next.FromCommit != "a1b2c3d" {
-		t.Errorf("next round %d from %s, want 3 from a1b2c3d", next.Number, next.FromCommit)
+	next := got(tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: issue.ID})).must(t)
+	if next.Number != 3 {
+		t.Errorf("next round %d, want 3", next.Number)
 	}
 }

@@ -62,6 +62,55 @@ func (a *apiTeam) project() issueView {
 	return created.Issue
 }
 
+// assertNoReviewCommitFields checks nested API and MCP objects for retired review metadata.
+func assertNoReviewCommitFields(t *testing.T, value any) {
+	t.Helper()
+	switch value := value.(type) {
+	case map[string]any:
+		for key, item := range value {
+			switch key {
+			case "from_commit", "to_commit", "includes_uncommitted", "commit_sha", "fixed_in_commit", "commit":
+				t.Errorf("response still contains %s", key)
+			}
+			assertNoReviewCommitFields(t, item)
+		}
+	case []any:
+		for _, item := range value {
+			assertNoReviewCommitFields(t, item)
+		}
+	}
+}
+
+func TestReviewAPIRejectsRetiredCommitFields(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+	for _, field := range []string{"from_commit", "to_commit", "includes_uncommitted"} {
+		wantField(t, a.request(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{field: "abc1234"}), field)
+	}
+	response := a.request(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{})
+	wantStatus(t, response, http.StatusCreated)
+	var round map[string]any
+	decode(t, response, &round)
+	assertNoReviewCommitFields(t, round)
+
+	path := "/api/issues/WP-1/reviews/1/findings"
+	body := map[string]any{"severity": "blocking", "title": "Race", "problem": "Problem", "fix": "Fix", "commit_sha": "abc1234"}
+	wantField(t, a.request(http.MethodPost, path, a.agent, body), "commit_sha")
+	delete(body, "commit_sha")
+	response = a.request(http.MethodPost, path, a.agent, body)
+	wantStatus(t, response, http.StatusCreated)
+	var finding map[string]any
+	decode(t, response, &finding)
+	assertNoReviewCommitFields(t, finding)
+
+	wantField(t, a.request(http.MethodPost, path+"/R1/status", a.agent, map[string]any{
+		"status": "fixed", "fixed_in_commit": "abc1234",
+	}), "fixed_in_commit")
+	wantField(t, a.request(http.MethodPost, "/api/issues/WP-1/fix-summary", a.agent, map[string]any{
+		"summary": "Fixed", "commit": "abc1234", "findings": []map[string]any{{"round": 1, "finding": "R1"}},
+	}), "commit")
+}
+
 func TestProjectsMilestonesAndLabels(t *testing.T) {
 	a := newAPITeam(t)
 	a.project()
@@ -234,7 +283,7 @@ func TestReviewLoopThroughTheAPI(t *testing.T) {
 	var started struct {
 		Round roundView `json:"round"`
 	}
-	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{"to_commit": "a1b2c3d", "plan_coverage": "All of it"}, http.StatusCreated, &started)
+	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{"plan_coverage": "All of it"}, http.StatusCreated, &started)
 	if started.Round.Number != 1 || started.Round.AuthorActorID == "" {
 		t.Fatalf("round %+v", started.Round)
 	}
@@ -276,13 +325,13 @@ func TestReviewLoopThroughTheAPI(t *testing.T) {
 		Findings []findingView `json:"findings"`
 	}
 	a.call(http.MethodPost, "/api/issues/WP-1/fix-summary", a.agent, map[string]any{
-		"summary": "Fixed the race.", "commit": "e4f5a6b", "findings": []map[string]any{{"round": 1, "finding": "R2"}},
+		"summary": "Fixed the race.", "findings": []map[string]any{{"round": 1, "finding": "R2"}},
 	}, http.StatusCreated, &fix)
 	if len(fix.Findings) != 1 || fix.Findings[0].Status != "fixed" || fix.Comment.Body != "Fixed the race." {
 		t.Fatalf("fix summary %+v", fix)
 	}
 	wantField(t, a.request(http.MethodPost, "/api/issues/WP-1/fix-summary", a.agent, map[string]any{
-		"summary": "S", "commit": "e4f5a6b", "findings": []map[string]any{{"round": 1, "finding": "R9"}},
+		"summary": "S", "findings": []map[string]any{{"round": 1, "finding": "R9"}},
 	}), "findings")
 
 	var open struct {
@@ -323,7 +372,7 @@ func TestReviewLoopThroughTheAPI(t *testing.T) {
 	}
 
 	// A second round can mark its finding as a duplicate of one from the first.
-	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{"to_commit": "e4f5a6b"}, http.StatusCreated, nil)
+	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{}, http.StatusCreated, nil)
 	a.call(http.MethodPost, "/api/issues/WP-1/reviews/2/findings", a.agent, map[string]any{"severity": "nit", "title": "Again", "problem": "P", "fix": "F"}, http.StatusCreated, nil)
 	var duplicate struct {
 		Finding findingView `json:"finding"`
@@ -340,7 +389,7 @@ func TestReviewLoopThroughTheAPI(t *testing.T) {
 func TestCommentsAndHistory(t *testing.T) {
 	a := newAPITeam(t)
 	a.project()
-	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{"to_commit": "a1b2c3d"}, http.StatusCreated, nil)
+	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]any{}, http.StatusCreated, nil)
 	a.call(http.MethodPost, "/api/issues/WP-1/reviews/1/findings", a.agent, map[string]any{"severity": "nit", "title": "T", "problem": "P", "fix": "F"}, http.StatusCreated, nil)
 
 	var comment struct {

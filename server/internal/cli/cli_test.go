@@ -107,7 +107,7 @@ func TestCLIRunsTheReviewLoop(t *testing.T) {
 	mustRun(t, env, "", nil, "plan", "check", "WP-1", "0", "1")
 	mustRun(t, env, "", nil, "plan", "check", "WP-1", "1", "--uncheck")
 	mustRun(t, env, "", nil, "issue", "status", "WP-1", "in_review")
-	mustRun(t, env, "", nil, "review", "start", "WP-1", "--to", "a1b2c3d")
+	mustRun(t, env, "", nil, "review", "start", "WP-1")
 	mustRun(t, env, "", nil, "finding", "add", "WP-1", "1", "--severity", "should_fix", "--title", "Name", "--problem", "P", "--fix", "F",
 		"--file", "a.go", "--line", "2")
 	mustRun(t, env, "", nil, "comment", "add", "WP-1", "--finding", "1/R1", "--body", "Agreed.")
@@ -131,7 +131,7 @@ func TestCLIRunsTheReviewLoop(t *testing.T) {
 	if len(open.Findings) != 1 || open.Findings[0].Label != "R1" {
 		t.Fatalf("findings to fix %+v", open)
 	}
-	mustRun(t, env, "", nil, "fix-summary", "WP-1", "--commit", "e4f5a6b", "--summary", "Renamed.", "--findings", "1/R1")
+	mustRun(t, env, "", nil, "fix-summary", "WP-1", "--summary", "Renamed.", "--findings", "1/R1")
 	mustRun(t, env, "", nil, "finding", "status", "WP-1", "1", "R1", "verified")
 
 	var plan struct {
@@ -167,7 +167,7 @@ func TestCLIReportsErrorsWithTheirField(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 
-	if err := run(t, env, "", nil, "fix-summary", "WP-1", "--commit", "abc1234", "--summary", "S", "--findings", "R1"); err == nil || !strings.Contains(err.Error(), "must look like 2/R3") {
+	if err := run(t, env, "", nil, "fix-summary", "WP-1", "--summary", "S", "--findings", "R1"); err == nil || !strings.Contains(err.Error(), "must look like 2/R3") {
 		t.Errorf("bad finding reference: %v", err)
 	}
 	if err := run(t, env, "", nil, "issue", "frobnicate"); err == nil || !strings.Contains(err.Error(), "unknown command") {
@@ -179,5 +179,21 @@ func TestCLINeedsItsSettings(t *testing.T) {
 	err := Run(context.Background(), []string{"issue", "get", "WP-1"}, func(string) string { return "" }, nil, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "SPARROW_URL is required") || !strings.Contains(err.Error(), "SPARROW_TOKEN is required") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCLIRejectsRetiredCommitFlags(t *testing.T) {
+	env, _, _ := cliServer(t)
+	for _, args := range [][]string{
+		{"review", "start", "WP-1", "--to", "abc1234"},
+		{"review", "start", "WP-1", "--from", "abc1234"},
+		{"review", "start", "WP-1", "--uncommitted"},
+		{"finding", "add", "WP-1", "1", "--commit", "abc1234"},
+		{"finding", "status", "WP-1", "1", "R1", "fixed", "--commit", "abc1234"},
+		{"fix-summary", "WP-1", "--commit", "abc1234"},
+	} {
+		if err := run(t, env, "", nil, args...); err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+			t.Errorf("%v: %v", args, err)
+		}
 	}
 }

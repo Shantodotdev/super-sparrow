@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -14,15 +15,35 @@ import (
 // rpc posts one JSON-RPC request to /mcp with the agent token and returns the decoded response.
 func (a *apiTeam) rpc(method string, params any) map[string]any {
 	a.t.Helper()
-	response := a.request(http.MethodPost, "/mcp", a.agent, map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-	wantStatus(a.t, response, http.StatusOK)
-
-	var body map[string]any
-	decode(a.t, response, &body)
-	if body["error"] != nil {
-		a.t.Fatalf("%s: %v", method, body["error"])
+	server := httptest.NewServer(a.handler)
+	defer server.Close()
+	body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+	if err != nil {
+		a.t.Fatal(err)
 	}
-	return body["result"].(map[string]any)
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/mcp", bytes.NewReader(body))
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+a.agent)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		a.t.Fatalf("%s: status %d", method, response.StatusCode)
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		a.t.Fatal(err)
+	}
+	if result["error"] != nil {
+		a.t.Fatalf("%s: %v", method, result["error"])
+	}
+	return result["result"].(map[string]any)
 }
 
 // tool calls an MCP tool and returns its text output and whether it reported an error.
@@ -40,6 +61,11 @@ func (a *apiTeam) mustTool(name string, args map[string]any, dst any) {
 	if failed {
 		a.t.Fatalf("%s failed: %s", name, text)
 	}
+	var output any
+	if err := json.Unmarshal([]byte(text), &output); err != nil {
+		a.t.Fatal(err)
+	}
+	assertNoReviewCommitFields(a.t, output)
 	if dst != nil {
 		if err := json.Unmarshal([]byte(text), dst); err != nil {
 			a.t.Fatalf("%s output %q: %v", name, text, err)
@@ -67,6 +93,7 @@ func TestMCPHandshakeAndToolList(t *testing.T) {
 	var names []string
 	for _, entry := range tools {
 		tool := entry.(map[string]any)
+		assertNoReviewCommitFields(t, tool["inputSchema"].(map[string]any)["properties"])
 		if tool["description"] == "" || tool["inputSchema"].(map[string]any)["type"] != "object" {
 			t.Errorf("tool %v lacks a description or schema", tool["name"])
 		}
@@ -138,7 +165,7 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		Round int    `json:"round"`
 		URL   string `json:"url"`
 	}
-	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "a1b2c3d"}, &round)
+	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1"}, &round)
 	if round.Round != 1 || round.URL != origin+"/WP-1/reviews/1" {
 		t.Fatalf("round %+v", round)
 	}
@@ -192,8 +219,7 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		t.Fatalf("issue thread %+v", thread)
 	}
 	a.mustTool("post_fix_summary", map[string]any{
-		"issue_key": "WP-1", "summary": "Sent both from one job.", "commit": "e4f5a6b",
-		"findings": []map[string]any{{"round": 1, "finding": "R1"}},
+		"issue_key": "WP-1", "summary": "Sent both from one job.", "findings": []map[string]any{{"round": 1, "finding": "R1"}},
 	}, nil)
 	a.mustTool("set_finding_status", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1", "status": "verified"}, nil)
 
@@ -227,10 +253,10 @@ func TestMCPMarksAFindingAsADuplicate(t *testing.T) {
 	addFinding := func(title string) {
 		a.mustTool("add_finding", map[string]any{"issue_key": "WP-1", "severity": "should_fix", "title": title, "problem": "P", "fix": "F"}, nil)
 	}
-	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "a1b2c3d"}, nil)
+	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1"}, nil)
 	addFinding("Race between replicas")
 	a.mustTool("finish_review_round", map[string]any{"issue_key": "WP-1", "summary": "One finding."}, nil)
-	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "b2c3d4e"}, nil)
+	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1"}, nil)
 	addFinding("Two workers send the same reply")
 
 	var marked struct {
@@ -291,7 +317,12 @@ func TestMCPToolErrorsNameTheArgument(t *testing.T) {
 		{"get_issue", map[string]any{"issue_key": "WP-1", "extra": true}, "extra is not an argument"},
 		{"get_issue", map[string]any{"issue_key": 5}, "issue_key must be text"},
 		{"add_finding", map[string]any{"issue_key": "WP-1", "severity": "nit", "title": "T", "problem": "P", "fix": "F"}, "no review round in progress"},
-		{"start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "nope"}, "to_commit must be a commit SHA"},
+		{"start_review_round", map[string]any{"issue_key": "WP-1", "to_commit": "abc1234"}, "to_commit is not an argument"},
+		{"start_review_round", map[string]any{"issue_key": "WP-1", "from_commit": "abc1234"}, "from_commit is not an argument"},
+		{"start_review_round", map[string]any{"issue_key": "WP-1", "includes_uncommitted": true}, "includes_uncommitted is not an argument"},
+		{"add_finding", map[string]any{"issue_key": "WP-1", "severity": "nit", "title": "T", "problem": "P", "fix": "F", "commit_sha": "abc1234"}, "commit_sha is not an argument"},
+		{"set_finding_status", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1", "status": "fixed", "fixed_in_commit": "abc1234"}, "fixed_in_commit is not an argument"},
+		{"post_fix_summary", map[string]any{"issue_key": "WP-1", "summary": "S", "findings": []any{}, "commit": "abc1234"}, "commit is not an argument"},
 		{"set_finding_status", map[string]any{"issue_key": "WP-1", "finding": "R1", "status": "fixed"}, "round is required"},
 		{"create_issue", map[string]any{"project_key": "WP", "title": "T", "status": "someday"}, "status must be"},
 		{"get_issue", map[string]any{"issue_key": "WP-99"}, "there is no issue WP-99"},

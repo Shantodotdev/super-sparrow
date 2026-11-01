@@ -17,7 +17,7 @@ func TestEveryChangeRecordsOneEvent(t *testing.T) {
 			return err
 		},
 		"start round": func() error {
-			_, err := tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: issue.ID, ToCommit: "abcdef1"})
+			_, err := tm.store.StartReviewRound(tm.ctx, tm.agent, NewReviewRound{IssueID: issue.ID})
 			return err
 		},
 	}

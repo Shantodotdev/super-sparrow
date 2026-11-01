@@ -24,7 +24,7 @@ func TestBrowserSmoke(t *testing.T) {
 	}
 	a := newAPITeam(t)
 	a.project()
-	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]string{"to_commit": "abc1234"}, http.StatusCreated, nil)
+	a.call(http.MethodPost, "/api/issues/WP-1/reviews", a.agent, map[string]string{}, http.StatusCreated, nil)
 	a.call(http.MethodPost, "/api/issues/WP-1/reviews/1/findings", a.agent, map[string]string{"severity": "blocking", "title": "Browser finding", "problem": "Test problem", "fix": "Test fix"}, http.StatusCreated, nil)
 	server := httptest.NewUnstartedServer(nil)
 	publicURL, err := url.Parse("http://" + server.Listener.Addr().String())
