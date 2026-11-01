@@ -16,6 +16,7 @@ import { ToastProvider } from "../components/toast";
 import { clearQueryCache } from "../queries/persistence";
 import previewScript from "../lib/page-preview-runtime.js?url";
 import { dismissPagePreview, watchPagePreview } from "../lib/page-preview";
+import interFont from "../assets/inter-variable.ttf?url";
 
 /** The HTML shell around every page, with the shared query client from the router context. */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -52,6 +53,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Super Sparrow" },
     ],
     links: [
+      { rel: "preload", href: interFont, as: "font", type: "font/ttf", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: appCss },
       { rel: "preload", href: previewScript, as: "script" },
     ],

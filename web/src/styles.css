@@ -14,10 +14,10 @@
 
 @font-face {
   font-family: Inter;
-  src: url("/fonts/inter-variable.ttf") format("truetype");
+  src: url("./assets/inter-variable.ttf") format("truetype");
   font-style: normal;
   font-weight: 100 900;
-  font-display: swap;
+  font-display: block;
 }
 @keyframes select-in {
   from {
@@ -111,7 +111,8 @@
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @layer base {
-  :root {
+  :root,
+  :host {
     @apply bg-[#08090b] font-[Inter,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif] text-[14px] text-[#edf0f6] [font-synthesis:none];
   }
   * {
