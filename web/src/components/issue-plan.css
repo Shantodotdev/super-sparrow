@@ -102,28 +102,113 @@
   border: 1px solid #303744;
   padding: 8px 12px;
 }
-.issue-plan-editor ul[data-type="taskList"] {
+.issue-plan-editor ul:is([data-type="taskList"], :has(> li[data-checked])) {
   list-style: none;
   padding-left: 0;
 }
-.issue-plan-editor li[data-type="taskItem"] {
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
+  margin: 0.45em 0;
 }
-.issue-plan-editor li[data-type="taskItem"] > label {
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) > label {
   display: flex;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   margin: 0;
-  padding-top: 6px;
+  padding: 4px;
+  cursor: pointer;
 }
-.issue-plan-editor li[data-type="taskItem"] input {
-  width: 15px;
-  height: 15px;
-  accent-color: #4c75ff;
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  flex: 0 0 18px;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0;
+  border: 1.5px solid #475163;
+  border-radius: 50%;
+  background: #11151c;
+  padding: 0;
+  box-shadow: 0 1px 2px #0003;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
-.issue-plan-editor li[data-type="taskItem"] > div {
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) input[type="checkbox"]::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: translateY(-1px) rotate(45deg) scale(0.75);
+  transition:
+    opacity 100ms ease,
+    transform 140ms ease;
+}
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) > label:hover input {
+  border-color: #8b9fff;
+  background: #1b2338;
+}
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) input[type="checkbox"]:checked {
+  border-color: #6785fa;
+  background: #5878ed;
+}
+.issue-plan-editor
+  li:is([data-type="taskItem"], [data-checked])
+  input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: translateY(-1px) rotate(45deg) scale(1);
+}
+.issue-plan-editor
+  li:is([data-type="taskItem"], [data-checked])
+  input[type="checkbox"]:focus-visible {
+  outline: 2px solid #9aabff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px #6785fa1a;
+}
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.issue-plan-editor li:is([data-type="taskItem"], [data-checked]) > div {
   flex: 1;
   min-width: 0;
+}
+.issue-plan-editor li[data-checked="true"] > div > p {
+  color: #8b99ad;
+  text-decoration: line-through;
+  text-decoration-color: #556176;
+}
+@media (prefers-reduced-motion: reduce) {
+  .issue-plan-editor li[data-checked] input[type="checkbox"],
+  .issue-plan-editor li[data-checked] input[type="checkbox"]::after {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .issue-plan-editor li[data-checked] input[type="checkbox"] {
+    border-color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+  .issue-plan-editor li[data-checked] input[type="checkbox"]:checked {
+    border-color: Highlight;
+    background: Highlight;
+  }
+  .issue-plan-editor li[data-checked] input[type="checkbox"]::after {
+    border-color: HighlightText;
+  }
 }
 .issue-plan-editor .is-editor-empty:first-child::before {
   content: attr(data-placeholder);
