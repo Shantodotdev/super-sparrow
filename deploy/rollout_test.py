@@ -13,6 +13,54 @@ import rollout
 import deploy
 
 
+def resource_configuration(volume="sparrow-data"):
+    """Describe the effective production Compose resources returned by Docker."""
+    return {
+        "name": "super-sparrow",
+        "services": {
+            "sparrow": {
+                "volumes": [{"type": "volume", "source": "data", "target": "/data"}],
+                "networks": {"proxy": {}},
+            }
+        },
+        "volumes": {"data": {"name": volume}},
+        "networks": {"proxy": {"name": "sparrow-proxy"}},
+    }
+
+
+class ResourceRenameTests(unittest.TestCase):
+    def setUp(self):
+        self.container = {
+            "Config": {"Labels": {"com.docker.compose.project": "super-sparrow"}},
+            "NetworkSettings": {"Networks": {"sparrow-proxy": {}}},
+        }
+
+    def test_existing_production_resources_are_accepted(self):
+        rollout.validate_resources(
+            resource_configuration(), self.container, "sparrow-data"
+        )
+
+    def test_changing_project_requires_explicit_migration(self):
+        self.container["Config"]["Labels"]["com.docker.compose.project"] = "old-project"
+        with self.assertRaisesRegex(ValueError, "Compose project"):
+            rollout.validate_resources(
+                resource_configuration(), self.container, "sparrow-data"
+            )
+
+    def test_changing_volume_requires_explicit_migration(self):
+        with self.assertRaisesRegex(ValueError, "data volume"):
+            rollout.validate_resources(
+                resource_configuration(), self.container, "old-data"
+            )
+
+    def test_changing_proxy_requires_explicit_migration(self):
+        self.container["NetworkSettings"]["Networks"] = {"old-proxy": {}}
+        with self.assertRaisesRegex(ValueError, "proxy network"):
+            rollout.validate_resources(
+                resource_configuration(), self.container, "sparrow-data"
+            )
+
+
 class SecretBoundaryTests(unittest.TestCase):
     def test_recovery_and_connection_secrets_are_not_runtime_settings(self):
         settings = {
@@ -75,7 +123,13 @@ class RollbackTests(unittest.TestCase):
                                 "Mounts": [
                                     {"Name": "live-data", "Destination": "/data"}
                                 ],
-                                "Config": {"Image": "previous"},
+                                "Config": {
+                                    "Image": "previous",
+                                    "Labels": {
+                                        "com.docker.compose.project": "super-sparrow"
+                                    },
+                                },
+                                "NetworkSettings": {"Networks": {"sparrow-proxy": {}}},
                             }
                         ]
                     )
@@ -83,6 +137,8 @@ class RollbackTests(unittest.TestCase):
                     return json.dumps([{"Mountpoint": str(folder)}])
                 if arguments[-3:] == ["ps", "-q", "sparrow"]:
                     return "running-container"
+                if arguments[-3:] == ["config", "--format", "json"]:
+                    return json.dumps(resource_configuration("live-data"))
                 return ""
 
             def fail_smoke(url):

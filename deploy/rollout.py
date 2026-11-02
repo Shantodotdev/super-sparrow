@@ -77,6 +77,24 @@ def smoke(public_url):
         read(asset)
 
 
+def validate_resources(configuration, container, volume):
+    """Reject resource renames during a rollout so a new project cannot start with empty data."""
+    project = container["Config"]["Labels"]["com.docker.compose.project"]
+    if configuration["name"] != project:
+        raise ValueError("Migrate the Compose project before deploying its new name")
+    mounts = configuration["services"]["sparrow"]["volumes"]
+    data = next(mount for mount in mounts if mount["target"] == "/data")
+    if (
+        data["type"] != "volume"
+        or configuration["volumes"][data["source"]]["name"] != volume
+    ):
+        raise ValueError("Migrate the data volume before deploying its new name")
+    for network in configuration["services"]["sparrow"]["networks"]:
+        name = configuration["networks"][network]["name"]
+        if name not in container["NetworkSettings"]["Networks"]:
+            raise ValueError("Migrate the proxy network before deploying its new name")
+
+
 def main():
     """Validate staged files, snapshot SQLite, and activate or safely roll back the release."""
     request = json.load(sys.stdin)
@@ -122,18 +140,22 @@ def apply_rollout(request, directory):
         write_private(candidate / "sparrow.env", text)
         write_private(candidate / ".env", environment_text({"SPARROW_IMAGE": image}))
         write_private(candidate / "compose.production.yaml", request["compose"])
-        command(
-            [
-                "docker",
-                "compose",
-                "--project-directory",
-                str(candidate),
-                "-f",
-                str(candidate / "compose.production.yaml"),
-                "config",
-                "--quiet",
-            ]
+        configuration = json.loads(
+            command(
+                [
+                    "docker",
+                    "compose",
+                    "--project-directory",
+                    str(candidate),
+                    "-f",
+                    str(candidate / "compose.production.yaml"),
+                    "config",
+                    "--format",
+                    "json",
+                ]
+            )
         )
+        validate_resources(configuration, details, volume)
     if mode == "check":
         smoke(public_url)
         print(

@@ -70,25 +70,87 @@ path for manual recovery. It never automatically overwrites the live database.
 
 ### Existing host and recovery
 
-The deployment directory is `/opt/super-sparrow/staging`, using `compose.production.yaml`;
-`compose.staging.yaml` remains a compatibility symlink. The Compose project
-`super-sparrow-staging`, data volume `super-sparrow-staging_sparrow-data`, and external network
-`sparrow-staging-proxy` retain their original names to preserve existing data and proxy routing.
-Never remove these resources during an update. The proxy network must exist before deploying.
+The production deployment directory is `/opt/super-sparrow`, using `compose.production.yaml`.
+The Compose project is `super-sparrow`, the external data volume is `sparrow-data`, and the
+external network is `sparrow-proxy` (`172.30.90.0/29`). Caddy uses `172.30.90.2`; Sparrow uses
+`172.30.90.3`. Provision the network and volume before deploying. The rollout rejects changes
+to the running project's name, data volume, or proxy network; migrate them explicitly first.
+
+The existing host was migrated on 2026-11-02. Its image and application settings were retained,
+the copied database passed file and SQLite integrity checks, and encrypted R2 sync resumed.
+The former data volume remains an offline recovery copy. Private migration records and original
+configuration are in `/var/backups/super-sparrow/rename-20261102T151646Z` on the host; the database
+in `sparrow-data` is now the source of truth. Do not start the old volume after the new instance
+has accepted writes. The repository changes must be committed and merged before the next WP
+Agent deployment, which would otherwise overwrite the shared proxy configuration again.
+
+#### One-time migration of the existing resource names
+
+This migration briefly interrupts both applications' HTTPS service. Run it as root on the host,
+with both deployment pipelines paused. Keep the old volume and deployment files until the new
+service, sign-in, event stream, and encrypted backups have been verified. Never run two Sparrow
+containers against the database, and never copy a SQLite database while Sparrow is running.
+
+1. Acquire both deployment locks for the entire maintenance session: open descriptor 8 on
+   `/opt/wp-agent/staging/.deploy.lock` and descriptor 9 on
+   `/opt/super-sparrow/staging/.deploy.lock`, then acquire `flock -n 8` and `flock -n 9`.
+   Stop if either lock is held. Record the running Sparrow image digest and the Caddy container
+   ID, and save both applications' current Compose files, Caddy files, and Caddy checksum.
+2. Confirm that the existing Sparrow container mounts
+   `super-sparrow-staging_sparrow-data` at `/data` and is the only writer. Confirm the only
+   endpoints on `sparrow-staging-proxy` are Sparrow and WP Agent's Caddy. Stop if other services
+   use that network. Verify a recent encrypted backup is available before continuing.
+3. Stop Sparrow using its existing Compose file in `/opt/super-sparrow/staging`, without removing
+   volumes. Inspect the old volume's `Mountpoint` with `docker volume inspect`, then create
+   `sparrow-data` with `docker volume create sparrow-data`. Require the destination volume to
+   be empty, and copy the stopped volume's complete contents with `cp -a`, using Docker's
+   inspected mountpoints rather than assuming `/var/lib/docker`. Preserve numeric ownership
+   and modes. Check the copied `sparrow.db` using SQLite `PRAGMA integrity_check` and compare
+   all copied files against the stopped source before starting any new container.
+4. Remove the stopped Sparrow container, leaving its volume intact. Stop and remove only
+   Caddy from WP Agent's stack. Remove `sparrow-staging-proxy` after confirming it has no
+   endpoints, then run `docker network create --subnet 172.30.90.0/29 sparrow-proxy`.
+   Docker cannot rename a network or create an overlapping subnet while the old network exists.
+5. Copy the private deployment settings, release state, and backups from
+   `/opt/super-sparrow/staging` into `/opt/super-sparrow`, preserving permissions. Remove the
+   copied `compose.staging.yaml` compatibility symlink if present; install the new
+   `deploy/compose.production.yaml` there. Keep the recorded `SPARROW_IMAGE` unchanged for this
+   migration. Install WP Agent PR #96's updated Compose, Caddy, and deployment scripts on the
+   host, including the `sparrow-proxy` network attachment.
+6. Start Sparrow from `/opt/super-sparrow` with
+   `docker compose -f compose.production.yaml up -d --no-deps --pull never sparrow`.
+   Recreate Caddy using WP Agent's usual base and staging Compose files and its existing `.env`.
+   Validate the active Caddy configuration and verify `/api/health`, sign-in, frontend assets,
+   the event stream, and all WP Agent HTTPS routes. Record the new Caddy configuration as
+   last-good using WP Agent's `record` deployment command only after those checks succeed.
+7. Set `DEPLOY_DIR=/opt/super-sparrow` in Doppler's `super-sparrow/prd` config. Move the local
+   recovery key from `~/.local/state/super-sparrow/staging/backup-identity.txt` to
+   `~/.local/state/super-sparrow/backup-identity.txt`, preserving `0700` directory and `0600`
+   file permissions. Archive the old deployment directory securely outside the active path.
+   Release the locks, resume both pipelines, and run the production deployment check.
+
+If the migration fails before the new Sparrow starts, restore the saved Compose files, recreate
+its former proxy network after removing the new network's endpoints, and start the old project
+against the untouched old volume. Once the new Sparrow has accepted writes, its new volume is
+the source of truth: never restart the stale old volume. Stop the new service before copying
+its complete data back for any manual reversal, verify the copied database, and reconnect the
+old proxy before restarting. Keep both pipelines paused until recovery is verified.
 
 `sparrow.env` on the host is generated from Doppler and readable only by root (`0600`).
 Previous settings are retained with the same permissions for rollback. These are plaintext
 runtime files, and Docker administrators can inspect the container environment. Do not edit
 these files manually or commit secrets. The backup private key stays off the VPS.
 
-Local recovery copies remain at `~/.local/state/super-sparrow/staging/backup-identity.txt` and
+Local recovery copies remain at `~/.local/state/super-sparrow/backup-identity.txt` and
 `~/Documents/Super Sparrow Recovery/backup-private-key.txt`, with `0600` file permissions and
 `0700` directories. The separate Doppler recovery project provides an off-device copy.
 [Restoring](#restoring) documents recovery from encrypted R2 copies. The pre-deployment SQLite
 snapshots are local recovery aids; they are not the encrypted off-site backups.
 
-The WP Agent proxy changes must remain in that repository's deployment configuration. A rollback
-of WP Agent to a revision without them can remove Super Sparrow's public route.
+WP Agent records the shared proxy sites with its Caddy rollback snapshot. Automatic rollback
+retains the Sparrow import even when the previous snapshot predates that import. Deliberately
+redeploying WP Agent commits older than this protection requires preserving the production route
+and network attachment manually.
 
 ## Run it with systemd
 

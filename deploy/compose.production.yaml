@@ -1,5 +1,5 @@
-# Production on wpstaging. Keep the original resource names to reuse the live database and proxy.
-name: super-sparrow-staging
+# Production on the shared wpstaging host. Migrate existing resources before changing names.
+name: super-sparrow
 
 services:
   sparrow:
@@ -32,7 +32,9 @@ services:
 networks:
   proxy:
     external: true
-    name: sparrow-staging-proxy
+    name: sparrow-proxy
 
 volumes:
   sparrow-data:
+    external: true
+    name: sparrow-data
