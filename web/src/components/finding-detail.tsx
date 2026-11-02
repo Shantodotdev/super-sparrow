@@ -1,182 +1,311 @@
-import { Input } from "./input";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { findingStatusLabel } from "../lib/finding-status";
-import { formatDate } from "../lib/format";
-import type { Finding } from "../lib/types";
-import { findingsQuery, useDecideFinding, type Decision } from "../queries/findings";
-import { useActor } from "../queries/project";
+import { formatRelative } from "../lib/format";
+import { findingActions } from "../lib/review";
+import type { Finding, FindingStatus } from "../lib/types";
+import { findingsQuery, useChangeFindingStatus, type Decision } from "../queries/findings";
+import { issuesQuery } from "../queries/issues";
+import { useProjectSlugs } from "../hooks/use-project";
 import { Discussion } from "./discussion";
+import { FindingSeverity, FindingStatus as FindingStatusLabel } from "./finding-row";
 import { Icon } from "./icon";
-import { Person } from "./person";
-import { SeverityBadge } from "./severity-badge";
+import { Input } from "./input";
+import { reviewButton, reviewSecondaryButton } from "./review-forms";
+import { ReviewPerson } from "./review-person";
 
 const shortcuts: Record<string, Decision> = { f: "fix", w: "wontfix", l: "later" };
+const actionLabel: Record<FindingStatus, string> = {
+  open: "Withdraw decision",
+  fix: "Fix",
+  wontfix: "Won't fix",
+  later: "Later",
+  fixed: "Mark fixed",
+  verified: "Verify fix",
+};
 
-/**
- * Reports whether a key press is meant for the page's shortcuts: not typed into a field, not
- * combined with a modifier, not a held-down repeat, and not made while a dialog is open over the
- * page, such as the command palette or the New issue window.
- */
-function isShortcut(event: KeyboardEvent): boolean {
-  if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey) {
+/** Allows finding shortcuts only in the active surface, outside fields and other dialogs. */
+function isShortcut(event: KeyboardEvent, scope: HTMLElement | null): boolean {
+  if (
+    !scope ||
+    event.defaultPrevented ||
+    event.repeat ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey
+  )
     return false;
-  }
-
   const target = event.target instanceof HTMLElement ? event.target : null;
   if (
-    target?.closest("input, textarea, select, [contenteditable], [role=combobox], [role=dialog]")
-  ) {
+    target?.closest("input, textarea, select, [contenteditable], [role=combobox], [role=listbox]")
+  )
     return false;
-  }
-  return !document.querySelector("[role=dialog][aria-modal=true]");
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]'));
+  return dialogs.every((dialog) => dialog.contains(scope));
 }
 
-/**
- * Shows one finding with its evidence, discussion, and decision controls. Pressing F or L outside
- * a text field decides Fix or Later; W asks for the reason a won't-fix needs, with the cursor in
- * its box.
- */
-export function FindingDetail({ finding }: { finding: Finding }) {
+/** Displays evidence, valid lifecycle actions, attribution, and discussion for one finding. */
+export function FindingDetail({
+  finding,
+  variant = "panel",
+  onOpenFinding,
+}: {
+  finding: Finding;
+  variant?: "panel" | "drawer";
+  onOpenFinding?: (finding: Finding) => void;
+}) {
   const { data: findings } = useSuspenseQuery(findingsQuery);
-  const actor = useActor();
-  const decide = useDecideFinding();
+  const { data: issues } = useSuspenseQuery(issuesQuery);
+  const projectSlug = useProjectSlugs();
+  const change = useChangeFindingStatus();
   const [askingReason, setAskingReason] = useState(false);
   const [reason, setReason] = useState("");
   const reasonInput = useRef<HTMLInputElement>(null);
-
+  const surface = useRef<HTMLElement>(null);
   const original = findings.find((item) => item.id === finding.duplicate_of_finding_id);
+  const followUp = issues.find((item) => item.id === finding.follow_up_issue_id);
+  const actions = finding.duplicate_of_finding_id ? [] : findingActions(finding.status);
   const location =
     finding.file_path && `${finding.file_path}${finding.line ? `:${finding.line}` : ""}`;
+
+  const decide = async (status: FindingStatus, explanation?: string) => {
+    if (change.isPending) return;
+    try {
+      await change.mutateAsync({ finding, status, reason: explanation });
+      setAskingReason(false);
+      setReason("");
+    } catch {
+      // Keep the reason available when the server refuses the change.
+    }
+  };
 
   useEffect(() => {
     if (askingReason) reasonInput.current?.focus();
   }, [askingReason]);
 
   useEffect(() => {
+    if (finding.status !== "open") setAskingReason(false);
+  }, [finding.status]);
+
+  useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       const decision = shortcuts[event.key.toLowerCase()];
-      if (!decision || askingReason || !isShortcut(event)) return;
-
+      if (
+        !decision ||
+        !actions.includes(decision) ||
+        askingReason ||
+        change.isPending ||
+        !isShortcut(event, surface.current)
+      )
+        return;
       event.preventDefault();
       if (decision === "wontfix") setAskingReason(true);
-      else decide(finding, decision);
+      else void decide(decision);
     };
-
     window.addEventListener("keydown", handleShortcut);
-
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [finding, decide, askingReason]);
-
-  const cancelReason = () => {
-    setAskingReason(false);
-    setReason("");
-  };
+  });
 
   const confirmWontfix = (event: FormEvent) => {
     event.preventDefault();
-    if (!reason.trim()) return;
-
-    decide(finding, "wontfix", reason.trim());
-    cancelReason();
+    if (reason.trim()) void decide("wontfix", reason.trim());
   };
 
   return (
-    <aside className="min-w-0 border-l border-l-[#252a32] px-8 py-[22px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] max-[700px]:px-[16px] max-[700px]:py-[20px] [&_>_p:not(.detail-author)]:leading-normal [&_>_p:not(.detail-author)]:text-[#b2bfd0] [&_h3]:mx-0 [&_h3]:mt-[24px] [&_h3]:mb-[9px] [&_h3]:text-[14px] [&_h3]:font-semibold">
-      <div className="flex flex-wrap items-center gap-[10px] [&_strong]:text-[16px]">
-        <span className="inline-block rounded-full border border-[#2b313a] bg-[#191c22] px-2 py-[4px] text-[12px] text-[#adb9c9] capitalize">
-          {finding.label}
-        </span>
-        <strong>{finding.title}</strong>
-        <SeverityBadge value={finding.severity} />
-        <span className="ml-auto inline-block rounded-full border border-[#2b313a] bg-[#191c22] px-2 py-[4px] text-[12px] text-[#adb9c9] capitalize">
-          ● {findingStatusLabel[finding.status]}
-        </span>
+    <section
+      ref={surface}
+      aria-label="Finding details"
+      className={
+        variant === "drawer"
+          ? "min-w-0 text-[14.5px]"
+          : "min-w-0 border-l border-[#252a32] px-8 py-6 text-[14.5px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:px-4"
+      }
+    >
+      <h2 className="text-[23px] leading-snug font-semibold wrap-anywhere text-[#f2f5fc]">
+        {finding.title}
+      </h2>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
+        <FindingSeverity severity={finding.severity} />
+        <FindingStatusLabel status={finding.status} />
       </div>
-      <p className="detail-author mt-[18px] flex flex-wrap items-center gap-[6px] text-[#aebbd0]">
-        Found by <Person actorId={finding.found_by_actor_id} />{" "}
-        <span className="muted text-[#a2aec2]">
-          {" "}
-          · &nbsp; {finding.issue_key} round {finding.round} · {formatDate(finding.created_at)}
-        </span>
-      </p>
-      {original && (
-        <p className="muted text-[#a2aec2]">
-          Duplicate of round {original.round} {original.label}, “{original.title}”. It is decided
-          and fixed through the original.
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[13px] text-[#97a4b7]">
+        Found by <ReviewPerson actorId={finding.found_by_actor_id} />
+        <span>· {formatRelative(finding.created_at)}</span>
+      </div>
+      {variant === "panel" && (
+        <p className="mt-2 text-[12px] text-[#8290a4]">
+          {finding.issue_key} · Round {finding.round} · {finding.label}
         </p>
       )}
-      <h3>Problem</h3>
-      <p className="whitespace-pre-wrap">{finding.problem}</p>
-      {finding.fix && (
-        <>
-          <h3>Suggested fix</h3>
-          <p className="whitespace-pre-wrap">{finding.fix}</p>
-        </>
+      {original && (
+        <div className="mt-5 rounded-lg bg-[#ffffff05] p-3 text-[13px] text-[#a9b8ca]">
+          Duplicate of{" "}
+          {onOpenFinding ? (
+            <button
+              type="button"
+              className="text-[#89a5ff] hover:underline"
+              onClick={() => onOpenFinding(original)}
+            >
+              Round {original.round} · {original.label}
+            </button>
+          ) : (
+            `Round ${original.round} · ${original.label}`
+          )}
+          . Decisions and fixes are tracked on the original finding.
+        </div>
       )}
-      {(location || finding.evidence) && (
-        <>
-          <h3>Evidence</h3>
-          <div className="rounded-[6px] border border-[#303640] p-[10px] text-[13px] text-[#b0c8f5]">
+      <div className="mt-6 space-y-6 border-t border-[#252a32] pt-6">
+        <section>
+          <h3 className="mb-2 text-[13px] font-semibold">Problem</h3>
+          <p className="leading-relaxed wrap-break-word whitespace-pre-wrap text-[#b7c3d4]">
+            {finding.problem}
+          </p>
+        </section>
+        {finding.fix && (
+          <section>
+            <h3 className="mb-2 text-[13px] font-semibold">Suggested fix</h3>
+            <p className="leading-relaxed wrap-break-word whitespace-pre-wrap text-[#b7c3d4]">
+              {finding.fix}
+            </p>
+          </section>
+        )}
+        {(location || finding.evidence) && (
+          <section>
+            <h3 className="mb-2 text-[13px] font-semibold">Evidence</h3>
             {location && (
-              <div>
-                <Icon name="file-text" /> &nbsp; {location}
+              <div className="flex items-start gap-2 rounded-lg border border-[#2a3039] p-3 font-mono text-[12px] wrap-anywhere text-[#a7c0ff]">
+                <Icon name="file-text" />
+                {location}
               </div>
             )}
-            {finding.evidence && <p className="mt-[6px] whitespace-pre-wrap">{finding.evidence}</p>}
-          </div>
-        </>
-      )}
-      <h3>Discussion</h3>
-      <Discussion issueId={finding.issue_id} findingId={finding.id} />
-      <h3>Decision</h3>
-      {finding.decided_at && (
-        <p className="muted mb-[10px] text-[#a2aec2]">
-          {findingStatusLabel[finding.status]} · decided by{" "}
-          {actor(finding.decided_by_actor_id)?.display_name ?? "Unknown"} on{" "}
-          {formatDate(finding.decided_at)}
-          {finding.decision_reason && `: ${finding.decision_reason}`}
-        </p>
-      )}
-      <div className="flex gap-[10px] [&_button]:flex-1 [&_button]:rounded-full [&_button]:border [&_button]:border-[#343b49] [&_button]:bg-[#141820] [&_button]:p-[10px] [&_button:first-child]:border-[#5278ff] [&_button:first-child]:bg-[#19284e] [&_kbd]:float-right">
-        <button onClick={() => decide(finding, "fix")}>
-          <Icon name="check" /> &nbsp; Fix <kbd>F</kbd>
-        </button>
-        <button onClick={() => setAskingReason(true)}>
-          <Icon name="circle-slash" /> &nbsp; Won't fix <kbd>W</kbd>
-        </button>
-        <button onClick={() => decide(finding, "later")}>
-          <Icon name="clock" /> &nbsp; Later <kbd>L</kbd>
-        </button>
+            {finding.evidence && (
+              <p className="mt-3 leading-relaxed wrap-break-word whitespace-pre-wrap text-[#b7c3d4]">
+                {finding.evidence}
+              </p>
+            )}
+          </section>
+        )}
       </div>
-      {askingReason && (
-        <form
-          onSubmit={confirmWontfix}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") cancelReason();
-          }}
-        >
-          <label>
-            Reason
-            <Input
-              ref={reasonInput}
-              required
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </label>
-          <button className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b]">
-            Confirm won't fix
-          </button>{" "}
-          <button
-            type="button"
-            className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
-            onClick={cancelReason}
+      <section className="mt-6 border-t border-[#252a32] pt-5" aria-label="Finding decision">
+        <h3 className="mb-3 text-[13px] font-semibold">
+          {finding.status === "open" ? "Decision" : "Progress"}
+        </h3>
+        {finding.decided_by_actor_id && (
+          <div className="mb-3 text-[13px] text-[#97a4b7]">
+            Decision by <ReviewPerson actorId={finding.decided_by_actor_id} />
+            {finding.decided_at && <span> · {formatRelative(finding.decided_at)}</span>}
+            {finding.decision_reason && (
+              <p className="mt-2 wrap-break-word whitespace-pre-wrap">{finding.decision_reason}</p>
+            )}
+          </div>
+        )}
+        {finding.fixed_by_actor_id && (
+          <div className="mb-2 text-[13px] text-[#97a4b7]">
+            Fixed by <ReviewPerson actorId={finding.fixed_by_actor_id} />
+          </div>
+        )}
+        {finding.verified_by_actor_id && (
+          <div className="mb-2 text-[13px] text-[#97a4b7]">
+            Verified by <ReviewPerson actorId={finding.verified_by_actor_id} />
+          </div>
+        )}
+        {followUp && (
+          <Link
+            className="mb-4 block text-[13px] text-[#89a5ff] hover:underline"
+            to="/$projectSlug/issues/$issue"
+            params={{ projectSlug: projectSlug(followUp.project_id), issue: followUp.key }}
           >
-            Cancel
-          </button>
-        </form>
-      )}
-    </aside>
+            Follow-up: {followUp.key} · {followUp.title}
+          </Link>
+        )}
+        {!askingReason && actions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {actions.map((status, index) => (
+              <button
+                key={status}
+                type="button"
+                disabled={change.isPending}
+                className={index === 0 ? reviewButton : reviewSecondaryButton}
+                onClick={() => (status === "wontfix" ? setAskingReason(true) : void decide(status))}
+              >
+                {finding.status === "fixed" && status === "fix"
+                  ? "Needs more work"
+                  : actionLabel[status]}
+                {finding.status === "open" && (
+                  <kbd className="ml-2 rounded bg-[#ffffff0c] px-1.5 py-0.5 text-[12px] text-inherit">
+                    {status === "fix" ? "F" : status === "wontfix" ? "W" : "L"}
+                  </kbd>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        {askingReason && (
+          <form
+            onSubmit={confirmWontfix}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setAskingReason(false);
+              }
+            }}
+            className="space-y-3"
+          >
+            <label className="block text-[13px] text-[#a9b8ca]">
+              Why won't this be fixed?
+              <Input
+                ref={reasonInput}
+                aria-label="Decision reason"
+                required
+                maxLength={100000}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                className="mt-2 w-full rounded-lg px-3 py-2.5"
+              />
+            </label>
+            <div className="flex gap-2">
+              <button
+                disabled={change.isPending || !reason.trim()}
+                className={reviewButton}
+                type="submit"
+              >
+                Confirm won't fix
+              </button>
+              <button
+                type="button"
+                disabled={change.isPending}
+                className={reviewSecondaryButton}
+                onClick={() => setAskingReason(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+        {change.isPending && (
+          <p role="status" className="mt-3 text-[13px] text-[#97a4b7]">
+            Saving…
+          </p>
+        )}
+        {change.error && (
+          <p role="alert" className="mt-3 text-[13px] text-[#f2a9ae]">
+            {change.error.message}
+          </p>
+        )}
+      </section>
+      <section className="mt-6 border-t border-[#252a32] pt-5">
+        <h3 className="mb-4 text-[13px] font-semibold">
+          Discussion{" "}
+          <span className="ml-2 font-normal text-[#8290a4]">{finding.comment_count}</span>
+        </h3>
+        <Discussion
+          key={finding.id}
+          issueId={finding.issue_id}
+          findingId={finding.id}
+          variant="review"
+        />
+      </section>
+    </section>
   );
 }

@@ -207,7 +207,7 @@ try {
       `(() => {const e = document.querySelector(${JSON.stringify(selector)}); if (!e) throw new Error('Missing input'); Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(value)}); e.dispatchEvent(new Event('input', {bubbles:true}));})()`,
     );
   };
-  const navigate = async (path: string, destination = path) => {
+  const navigate = async (path: string, destination = path.split("?")[0]!) => {
     await call("Page.navigate", { url: base + path });
     await until(
       () =>
@@ -444,7 +444,7 @@ try {
     const editor = document.querySelector('[contenteditable="true"][aria-label="Subissue description"]');
     editor.focus();
     const data = new DataTransfer();
-    data.setData('text/plain', '## Child task\\n\\n**Child description**');
+    data.setData('text/plain', '## Child task\\n\\n**Child description**\\n\\n- [ ] Verify child checklist\\n- [x] Define child acceptance criteria');
     editor.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
   })()`);
   await screenshot("new-subissue-desktop");
@@ -465,8 +465,55 @@ try {
     "render saved subissue Markdown",
   );
   checks++;
+  if (
+    !(await evaluate(`(() => {
+    const boxes = [...document.querySelectorAll('[aria-label="Subissue description"] input[type="checkbox"]')];
+    return boxes.length === 2 && boxes.every(box => {
+      const input = box.getBoundingClientRect();
+      const text = box.closest('li').querySelector(':scope > div').getBoundingClientRect();
+      const styles = getComputedStyle(box);
+      return input.width === 18 && input.height === 18 && styles.appearance === 'none' && text.left > input.right && Math.abs(text.top - input.top) <= 6;
+    });
+  })()`))
+  )
+    throw new Error("Subissue checkboxes must be custom 18px controls aligned beside their text");
+  checks++;
+  await evaluate(
+    `document.querySelector('[aria-label="Subissue description"] input[type="checkbox"]').focus()`,
+  );
+  await call("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: " ",
+    code: "Space",
+    windowsVirtualKeyCode: 32,
+  });
+  await call("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: " ",
+    code: "Space",
+    windowsVirtualKeyCode: 32,
+  });
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/issues/WP-2/subissues').then(r=>r.json()).then(b=>b.subissues.some(child=>child.description.includes('[x] Verify child checklist')))`,
+      ),
+    "save a subissue checklist toggled with Space",
+  );
+  checks++;
+  await screenshot("custom-subissue-checklist");
+  await evaluate(
+    `Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))`,
+  );
   await evaluate(
     `document.querySelector('[role="combobox"][aria-label="Subissue status"]').click()`,
+  );
+  await until(
+    () =>
+      evaluate(
+        `!![...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'Done')`,
+      ),
+    "open Done option",
   );
   await evaluate(
     `[...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'Done').click()`,
@@ -587,6 +634,15 @@ try {
   checks++;
   await call("Emulation.clearDeviceMetricsOverride", {});
 
+  if (
+    !(await evaluate(`(() => {
+    const box = document.querySelector('[aria-label="Issue plan"] input[type="checkbox"]');
+    const style = getComputedStyle(box);
+    return style.width === '18px' && style.height === '18px' && style.appearance === 'none' && getComputedStyle(box.closest('li')).display === 'flex';
+  })()`))
+  )
+    throw new Error("Issue-plan checkboxes must use the same compact custom control");
+  checks++;
   await evaluate(`document.querySelector('input[type="checkbox"]').click()`);
   await until(
     () =>
@@ -647,6 +703,13 @@ try {
   await navigate(`/${projectSlug}/issues/WP-2`);
   await waitText("Updated by browser with live formatting");
   await evaluate(`document.querySelector('[role="combobox"][aria-label="Priority"]').click()`);
+  await until(
+    () =>
+      evaluate(
+        `!![...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'High')`,
+      ),
+    "open High option",
+  );
   await evaluate(
     `[...document.querySelectorAll('[role="option"]')].find(e=>e.textContent.trim() === 'High').click()`,
   );
@@ -657,6 +720,10 @@ try {
   );
   checks++;
   await evaluate(`document.querySelector('[role="combobox"][aria-label="Assignee"]').click()`);
+  await until(
+    () => evaluate(`document.querySelectorAll('[role="option"]').length > 1`),
+    "open assignee choices",
+  );
   if (
     !(await evaluate(`fetch('/api/people').then(r=>r.json()).then(b=>{
     const options=[...document.querySelectorAll('[role="option"]')];
@@ -725,6 +792,239 @@ try {
     "receive title updates",
   );
   checks++;
+  if (process.env.SPARROW_E2E_SCREENSHOT_DIR) {
+    await call("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1000,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+  }
+  await navigate(`/${projectSlug}/issues/WP-2?tab=rounds`);
+  await waitText("No reviews yet");
+  if (
+    !(await evaluate(`(() => {
+    const tabs = [...document.querySelectorAll('main a')].map(a=>a.textContent.trim());
+    return tabs.findIndex(t=>t.startsWith('Review rounds')) < tabs.indexOf('Findings');
+  })()`))
+  )
+    throw new Error("Review rounds must appear before Findings");
+  checks++;
+  await screenshot("review-rounds-empty");
+  await click("Findings");
+  await waitText("No findings yet");
+  await screenshot("findings-empty");
+  await click("View review rounds");
+  await click("New round");
+  await input('textarea[aria-label="Plan coverage"]', "Finding workflow and drawer navigation");
+  await click("Start review round");
+  await waitText("Review round 1");
+  await until(
+    () =>
+      evaluate(
+        `location.search.includes('round=1') && !!document.querySelector('[role="dialog"]')`,
+      ),
+    "select created review in the URL",
+  );
+  checks++;
+  await screenshot("review-round-active-drawer");
+  await click("Add finding");
+  await input('input[aria-label="Finding title"]', "Drawer persisted finding");
+  await input(
+    'textarea[aria-label="Finding problem"]',
+    "A problem with <script>alert('unsafe')</script> as plain text.",
+  );
+  await input('textarea[aria-label="Suggested fix"]', "Keep the workflow transactional.");
+  await evaluate(`document.querySelector('[role="dialog"] details').open = true`);
+  await input('textarea[aria-label="Finding evidence"]', "Two requests can race.");
+  await input('input[name="file"]', "server/internal/store/reviews.go");
+  await input('input[name="line"]', "118");
+  await evaluate(`(() => {
+    const original = window.fetch.bind(window);
+    window.fetch = async (path, options) => {
+      if (String(path).endsWith('/reviews/1/findings') && options?.method === 'POST') {
+        window.fetch = original;
+        return new Response(JSON.stringify({error:'Simulated finding failure'}), {status:503});
+      }
+      return original(path, options);
+    };
+  })()`);
+  await click("Add finding");
+  await waitText("Simulated finding failure");
+  if (
+    !(await evaluate(
+      `document.querySelector('[aria-label="Finding title"]').value === 'Drawer persisted finding'`,
+    ))
+  )
+    throw new Error("Failed finding creation lost the draft");
+  checks++;
+  await click("Add finding");
+  await until(
+    () =>
+      evaluate(
+        `!!document.querySelector('[aria-label="Finding details"]') && location.search.includes('finding=')`,
+      ),
+    "open committed finding in the drawer",
+  );
+  const drawerFindingID = await evaluate(`new URLSearchParams(location.search).get('finding')`);
+  if (
+    !(await evaluate(
+      `!document.querySelector('[aria-label="Finding details"] script') && document.querySelectorAll('[role="dialog"]').length === 1`,
+    ))
+  )
+    throw new Error("Finding must escape untrusted text and use one drawer");
+  checks++;
+  await input('textarea[aria-label="Add a comment"]', "Discussion from the finding drawer");
+  await evaluate(
+    `document.querySelector('textarea[aria-label="Add a comment"]').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', ctrlKey:true, bubbles:true}))`,
+  );
+  await waitText("Discussion from the finding drawer");
+  await screenshot("finding-detail-drawer");
+  await evaluate(
+    `document.activeElement?.blur(); document.body.dispatchEvent(new KeyboardEvent('keydown', {key:'w', bubbles:true}))`,
+  );
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Decision reason"]')`),
+    "ask for a reason with the W shortcut inside the drawer",
+  );
+  if (
+    !(await evaluate(
+      `[...document.querySelectorAll('[role="dialog"] button')].find(b=>b.textContent.trim() === "Confirm won't fix").disabled`,
+    ))
+  )
+    throw new Error("Won't fix must require a reason");
+  checks++;
+  await input('input[aria-label="Decision reason"]', "Expected behavior.");
+  await click("Confirm won't fix");
+  await waitText("Withdraw decision");
+  await click("Withdraw decision");
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Finding decision"] kbd')`),
+    "withdraw the decision",
+  );
+  await evaluate(
+    `document.activeElement?.blur(); document.body.dispatchEvent(new KeyboardEvent('keydown', {key:'f', bubbles:true}))`,
+  );
+  await waitText("Mark fixed");
+  await click("Mark fixed");
+  await waitText("Verify fix");
+  await click("Verify fix");
+  await waitText("Verified by");
+  await click("Round 1");
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[aria-label="Finding details"]') && !!document.querySelector('[aria-label="Round findings"]')`,
+      ),
+    "return from finding to its round in the same drawer",
+  );
+  if (
+    !(await evaluate(
+      `!document.querySelector('[aria-label="Round findings"]').innerText.includes('needs attention')`,
+    ))
+  )
+    throw new Error("Verified findings must stop needing attention");
+  checks++;
+  await click("Finish review round");
+  await input(
+    'textarea[aria-label="Review summary"]',
+    "Reviewed and verified the complete finding workflow.",
+  );
+  await click("Finish review round");
+  await waitText("Reviewed and verified the complete finding workflow.");
+  await screenshot("review-round-finished-drawer");
+  if (
+    !(await evaluate(
+      `![...document.querySelectorAll('[role="dialog"] button')].some(b=>b.textContent.trim() === 'Add finding' || b.textContent.trim() === 'Finish review round')`,
+    ))
+  )
+    throw new Error("A finished round cannot accept findings");
+  checks++;
+  await evaluate(`document.querySelector('[aria-label="Close review drawer"]').click()`);
+  await until(() => evaluate(`!document.querySelector('[role="dialog"]')`), "close review drawer");
+  await screenshot("review-rounds-populated");
+  await click("Findings");
+  await waitText("No findings need attention");
+  if (
+    !(await evaluate(
+      `!document.querySelector('[role="combobox"][aria-label="Finding status"]') && !document.querySelector('[aria-label="Resolved findings"]')`,
+    ))
+  )
+    throw new Error("Findings must default to attention items without a status filter");
+  checks++;
+  await click("Show 1 resolved finding");
+  await waitText("Drawer persisted finding");
+  await click("Hide 1 resolved finding");
+  await until(
+    () => evaluate(`!document.querySelector('[aria-label="Resolved findings"]')`),
+    "hide resolved findings again",
+  );
+  checks++;
+  await click("Show 1 resolved finding");
+  await waitText("Drawer persisted finding");
+  await call("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 600,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  for (const end of [false, true]) {
+    await evaluate(`window.scrollTo(0, ${end ? "document.body.scrollHeight" : "0"})`);
+    if (
+      !(await evaluate(`(() => {
+      const bar = document.querySelector('[aria-label="Finding actions"]');
+      const rect = bar.getBoundingClientRect();
+      return getComputedStyle(bar).position === 'sticky' && rect.top >= 0 && rect.bottom <= innerHeight + 1;
+    })()`))
+    )
+      throw new Error("Add finding must stay visible at the bottom when scrolling");
+    checks++;
+  }
+  await click("Add finding");
+  await waitText("Start a review first");
+  await evaluate(`document.querySelector('[aria-label="Close review drawer"]').click()`);
+  await until(
+    () => evaluate(`!document.querySelector('[role="dialog"]')`),
+    "close the sticky add-finding flow",
+  );
+  await call("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await evaluate(`window.scrollTo(0, 0)`);
+  if (
+    !(await evaluate(
+      `![...document.querySelectorAll('main button')].some(b=>['Fix', "Won't fix", 'Later'].includes(b.textContent.trim()))`,
+    ))
+  )
+    throw new Error("Finding decisions must remain inside the drawer");
+  checks++;
+  await screenshot("findings-populated");
+  await navigate(
+    `/${projectSlug}/issues/WP-2?tab=findings&findingStatus=all&finding=${drawerFindingID}`,
+  );
+  await until(
+    () => evaluate(`!!document.querySelector('[aria-label="Finding details"]')`),
+    "restore a finding drawer from its URL",
+  );
+  await call("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await screenshot("finding-drawer-mobile");
+  if (
+    !(await evaluate(`(() => {
+    const rect = document.querySelector('[role="dialog"]').getBoundingClientRect();
+    return rect.width <= innerWidth && rect.left >= 0 && document.querySelector('[role="dialog"]').scrollWidth <= rect.width;
+  })()`))
+  )
+    throw new Error("Finding drawer must fit a narrow screen without horizontal scrolling");
+  checks++;
+  await call("Emulation.clearDeviceMetricsOverride", {});
   await navigate(`/${projectSlug}/issues/WP-1/reviews/1`);
   await waitText("Browser finding");
   await evaluate(

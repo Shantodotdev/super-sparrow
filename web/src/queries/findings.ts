@@ -1,7 +1,6 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "../components/toast";
 import { apiWrite } from "../lib/api";
-import type { Finding, FindingStatus } from "../lib/types";
+import type { Finding, FindingStatus, Issue } from "../lib/types";
 import { issuesQuery } from "./issues";
 import { findingPath, getFindings } from "./resources";
 import { projectsQuery } from "./project-resources";
@@ -12,24 +11,47 @@ export const findingsQuery = queryOptions({
 });
 export type Decision = Extract<FindingStatus, "fix" | "wontfix" | "later">;
 
-export function useDecideFinding() {
+/** Publishes a committed lifecycle change and refreshes counts without delaying the drawer. */
+export function useChangeFindingStatus() {
   const client = useQueryClient();
-  const { notify } = useToast();
-  const mutation = useMutation({
+  return useMutation({
     mutationFn: ({
       finding,
       status,
       reason,
     }: {
       finding: Finding;
-      status: Decision;
-      reason: string;
-    }) => apiWrite(`${findingPath(finding)}/status`, "POST", { status, reason }),
-    onSuccess: () => client.invalidateQueries(),
-    onError: (error) => notify(error.message),
+      status: FindingStatus;
+      reason?: string;
+    }) =>
+      apiWrite<{ finding: Finding; follow_up_issue: Issue | null }>(
+        `${findingPath(finding)}/status`,
+        "POST",
+        { status, reason },
+      ),
+    onSuccess: ({ finding, follow_up_issue }) => {
+      void client.cancelQueries({ queryKey: findingsQuery.queryKey });
+      client.setQueryData(findingsQuery.queryKey, (current) =>
+        current?.map((item) => (item.id === finding.id ? finding : item)),
+      );
+      if (follow_up_issue) {
+        void client.cancelQueries({ queryKey: issuesQuery.queryKey });
+        client.setQueryData(
+          issuesQuery.queryKey,
+          (current) =>
+            current && [
+              follow_up_issue,
+              ...current.filter((item) => item.id !== follow_up_issue.id),
+            ],
+        );
+      }
+      for (const key of ["findings", "issues", "issue", "activity"])
+        void client.invalidateQueries({ queryKey: [key] });
+    },
+    onError: () => {
+      void client.invalidateQueries({ queryKey: findingsQuery.queryKey });
+    },
   });
-  return (finding: Finding, status: Decision, reason = "") =>
-    mutation.mutate({ finding, status, reason });
 }
 
 export function useAddComment() {

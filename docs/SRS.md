@@ -82,6 +82,8 @@ Reviews and findings do not store commit hashes or reviewed revision ranges. Sta
 - FR-11: Show open findings across all rounds of an issue in one list.
 - FR-12: Start later review rounds on the same issue, keeping findings and summaries associated with their original round.
 
+The issue page orders its tabs Plan, Review rounds, Findings, Activity, Comments. Review rounds show the active round and finished reviews with their reviewer, coverage or summary, and finding counts. Selecting a round opens a side drawer with its coverage, summary, and severity-ordered findings. A finding opens in the same drawer with navigation back to its round, evidence, actor attribution, valid lifecycle actions, and discussion. The Findings tab shows unresolved findings across rounds, reveals resolved findings only through “Show N resolved findings”, and keeps Add finding in a sticky bottom action bar; decisions are available inside the drawer, not in list rows. Selected rounds, findings, and resolved-finding visibility live in the URL. People can start and finish rounds and add findings to an active round from these views. Finished rounds take no new findings, but their findings remain actionable. Agent names in these views are shown as Claude or Codex while actor IDs retain individual attribution.
+
 ### Identity and history
 
 - FR-13: Every write records its actor. The interface shows the actor's name and an agent badge.

@@ -14,7 +14,12 @@ export type IssuesSearch = {
 
 export type IssueTab = "plan" | "findings" | "rounds" | "activity" | "comments";
 
-export type IssueSearch = { tab?: Exclude<IssueTab, "plan"> };
+export type IssueSearch = {
+  tab?: Exclude<IssueTab, "plan">;
+  round?: number;
+  finding?: string;
+  findingStatus?: "all";
+};
 
 /**
  * The findings page's filters and the selected finding, by ID. A missing status shows the
@@ -51,8 +56,14 @@ export function validateIssuesSearch(search: Record<string, unknown>): IssuesSea
   };
 }
 
-/** Accepts only the non-default issue tabs; the plan tab is the absence of the parameter. */
+/** Validates issue tabs and limits drawer selection and filters to review-related tabs. */
 export function validateIssueSearch(search: Record<string, unknown>): IssueSearch {
+  const reviewTab = search.tab === "rounds" || search.tab === "findings";
+  const round =
+    typeof search.round === "string" || typeof search.round === "number"
+      ? Number(search.round)
+      : NaN;
+
   return {
     tab:
       search.tab === "findings" ||
@@ -61,6 +72,9 @@ export function validateIssueSearch(search: Record<string, unknown>): IssueSearc
       search.tab === "comments"
         ? search.tab
         : undefined,
+    round: reviewTab && Number.isSafeInteger(round) && round > 0 ? round : undefined,
+    finding: reviewTab ? text(search.finding) : undefined,
+    findingStatus: search.tab === "findings" && search.findingStatus === "all" ? "all" : undefined,
   };
 }
 

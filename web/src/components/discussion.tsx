@@ -6,11 +6,13 @@ import type { Comment } from "../lib/types";
 import { useAddComment } from "../queries/findings";
 import { commentsQuery, useActor } from "../queries/project";
 import { Avatar } from "./avatar";
+import { reviewActorName } from "../lib/review";
 
 type DiscussionProps = {
   issueId: string;
   /** The finding whose discussion to show, or "" for the issue's own comments. */
   findingId: string;
+  variant?: "default" | "review";
 };
 
 /** Puts each reply right after the comment it answers, keeping the order comments were made in. */
@@ -26,7 +28,7 @@ function threaded(comments: Comment[]): { comment: Comment; reply: boolean }[] {
 }
 
 /** The comments on an issue or a finding, oldest first, with a box for adding one. */
-export function Discussion({ issueId, findingId }: DiscussionProps) {
+export function Discussion({ issueId, findingId, variant = "default" }: DiscussionProps) {
   const { data: allComments } = useSuspenseQuery(commentsQuery);
   const actor = useActor();
   const addComment = useAddComment();
@@ -34,7 +36,11 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
   const [pending, setPending] = useState(false);
   const [body, setBody] = useState("");
 
-  const comments = allComments.filter((c) => c.issue_id === issueId && c.finding_id === findingId);
+  const comments = allComments.filter((comment) =>
+    findingId
+      ? comment.finding_id === findingId
+      : comment.issue_id === issueId && !comment.finding_id,
+  );
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -59,8 +65,13 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={`flex min-h-0 flex-1 flex-col ${variant === "review" ? "text-[14.5px]" : ""}`}>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {variant === "review" && comments.length === 0 && (
+          <p className="text-[13px] text-[#8290a4]">
+            No comments yet. Add context or ask a question.
+          </p>
+        )}
         {threaded(comments).map(({ comment, reply }) => {
           const author = actor(comment.author_actor_id);
           return (
@@ -70,13 +81,21 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
             >
               <Avatar actor={author} />
               <div className="min-w-0">
-                <div className="flex items-baseline gap-[8px]">
-                  <strong className="text-[#eef0f5]">{author?.display_name ?? "Unknown"}</strong>
-                  <small className="text-[12px] text-[#8b9ab0]">
+                <div className="flex flex-wrap items-baseline gap-[8px]">
+                  <strong className="text-[#eef0f5]">
+                    {variant === "review"
+                      ? reviewActorName(author)
+                      : (author?.display_name ?? "Unknown")}
+                  </strong>
+                  <small
+                    className={`${variant === "review" ? "text-[12.5px]" : "text-[12px]"} text-[#8b9ab0]`}
+                  >
                     {formatRelative(comment.created_at)}
                   </small>
                 </div>
-                <p className="mt-[4px] inline-block max-w-160 rounded-2xl rounded-tl-[4px] bg-[#1c2029] px-4 py-[9px] leading-normal wrap-break-word whitespace-pre-wrap text-[#d5dce8]">
+                <p
+                  className={`mt-[4px] max-w-160 leading-normal wrap-break-word whitespace-pre-wrap text-[#d5dce8] ${variant === "review" ? "pb-3" : "inline-block rounded-2xl rounded-tl-[4px] bg-[#1c2029] px-4 py-[9px]"}`}
+                >
                   {comment.body}
                 </p>
               </div>
@@ -89,6 +108,7 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
         <Textarea
           aria-label="Add a comment"
           rows={3}
+          maxLength={20000}
           value={body}
           onChange={(event) => setBody(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -99,7 +119,7 @@ export function Discussion({ issueId, findingId }: DiscussionProps) {
           className="button rounded-full border border-[#303641] bg-[#14171c] px-[15px] py-[10px] font-[550] hover:bg-[#20242b] disabled:cursor-default"
           disabled={pending || !body.trim()}
         >
-          Send
+          {pending ? "Sending…" : variant === "review" ? "Comment" : "Send"}
         </button>
       </form>
     </div>

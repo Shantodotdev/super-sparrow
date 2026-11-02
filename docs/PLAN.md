@@ -71,6 +71,7 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 - [x] Build the email sign-in screen: enter email, then the 6-digit code.
 - [x] Build the review round page with finding cards, threads, and keyboard decisions.
 - [x] Build the issue page with the plan, checklist, review rounds, open findings, and history.
+- [x] Build compact review-round and finding tabs with linked drawers, creation forms, lifecycle actions, and finding discussions.
 - [x] Show editable subissues below the description and replace the sidebar review rounds with subissues.
 - [x] Open existing subissues in a right-side drawer with inline title and status editing and autosaved Markdown.
 - [x] Build the project issue list, grouped by status and filtered by milestone.

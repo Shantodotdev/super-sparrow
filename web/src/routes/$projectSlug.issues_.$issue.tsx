@@ -10,11 +10,10 @@ import { IssuePrioritySelect } from "../components/issue-priority-select";
 import { IssueTextField } from "../components/issue-text-field";
 import { IssueProperties } from "../components/issue-properties";
 import { NotFoundState } from "../components/not-found-state";
-import { ReviewRoundList } from "../components/review-round-list";
+import { IssueReviews } from "../components/issue-reviews";
 import { SubissueList } from "../components/subissue-list";
 import { subissuesQuery } from "../queries/subissues";
 import { Tabs } from "../components/tabs";
-import { isUnresolved } from "../lib/finding-status";
 import { slugify } from "../lib/format";
 import { statusIcon } from "../lib/issue-status";
 import { validateIssueSearch, type IssueTab } from "../lib/search";
@@ -53,8 +52,8 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
 
 const tabs: { id: IssueTab; label: string; icon: IconName }[] = [
   { id: "plan", label: "Plan", icon: "file-text" },
-  { id: "findings", label: "Findings", icon: "list-filter" },
   { id: "rounds", label: "Review rounds", icon: "list-todo" },
+  { id: "findings", label: "Findings", icon: "list-filter" },
   { id: "activity", label: "Activity", icon: "activity" },
   { id: "comments", label: "Comments", icon: "message-square" },
 ];
@@ -97,7 +96,8 @@ type IssueDetailProps = {
 
 function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
   const project = useProject();
-  const { tab = "plan" } = Route.useSearch();
+  const search = Route.useSearch();
+  const { tab = "plan" } = search;
   const navigate = Route.useNavigate();
   const transitionRun = useRef(0);
 
@@ -133,7 +133,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
       className={`grid grid-cols-[minmax(0,1fr)_440px] max-[1100px]:grid-cols-[minmax(0,1fr)_360px] max-[700px]:block [&_.issue-icon-approach]:text-[#b28aff] [&_.issue-icon-branch]:text-[#b28aff] [&_.issue-icon-checklist]:text-[#61c99d] [&_.issue-icon-comments]:text-[#7bbdcf] [&_.issue-icon-goal]:text-[#7c9dff] [&_.issue-icon-pull-request]:text-[#7fcd9c] [&_.issue-icon-review]:text-[#a38af1] [&_.issue-icon-warning]:text-[#e8ae62] ${tab === "comments" ? "h-dvh grid-rows-[minmax(0,1fr)] overflow-hidden max-[700px]:h-auto max-[700px]:overflow-visible" : "min-h-screen"}`}
     >
       <div
-        className={`px-[32px] pt-[27px] pb-0 max-[700px]:px-[20px] max-[700px]:py-[24px] ${tab === "comments" ? "flex min-h-0 flex-col" : ""}`}
+        className={`px-[32px] pt-[27px] pb-0 max-[700px]:px-[20px] max-[700px]:py-[24px] ${tab === "comments" ? "flex min-h-0 flex-col" : tab === "findings" || tab === "rounds" ? "flex flex-col" : ""}`}
       >
         <h1>
           <IssueTextField
@@ -200,7 +200,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
           ))}
         </Tabs>
         <div
-          className={`[view-transition-name:issue-tab-content] ${tab === "comments" ? "flex min-h-0 flex-1 flex-col" : "flow-root"}`}
+          className={`[view-transition-name:issue-tab-content] ${tab === "comments" ? "flex min-h-0 flex-1 flex-col" : tab === "findings" || tab === "rounds" ? "flex flex-1 flex-col" : "flow-root"}`}
         >
           {tab === "plan" && (
             <>
@@ -208,31 +208,16 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
               <SubissueList issue={issue} />
             </>
           )}
-          {tab === "findings" && (
-            <section className="mt-8">
-              <h2>Open findings</h2>
-              {findings.filter(isUnresolved).length === 0 && <p>No unresolved findings.</p>}
-              {findings.filter(isUnresolved).map((finding) => (
-                <Link
-                  className="mt-3 block text-[#719bff]"
-                  key={finding.id}
-                  to="/$projectSlug/issues/$issue/reviews/$round"
-                  params={{
-                    projectSlug: project.slug,
-                    issue: issue.key,
-                    round: String(finding.round),
-                  }}
-                  search={{ finding: finding.label }}
-                >
-                  {finding.label} · {finding.title}
-                </Link>
-              ))}
-            </section>
-          )}
-          {tab === "rounds" && (
-            <div className="px-0 py-[20px]">
-              <ReviewRoundList issue={issue} rounds={rounds} findings={findings} />
-            </div>
+          {(tab === "rounds" || tab === "findings") && (
+            <IssueReviews
+              issue={issue}
+              rounds={rounds}
+              findings={findings}
+              search={search}
+              onSearchChange={(next) => {
+                void navigate({ search: next });
+              }}
+            />
           )}
           {tab === "activity" && (
             <div className="px-0 py-[20px]">
