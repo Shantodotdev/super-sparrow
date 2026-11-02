@@ -155,7 +155,7 @@ export function ResourceSelector({
                 autoFocus
                 aria-label={`Search or create ${label.toLowerCase()}`}
                 placeholder={`Search ${label.toLowerCase()}…`}
-                maxLength={colors ? 50 : 200}
+                maxLength={colors ? 50 : 100}
                 className="h-9 border-0 bg-transparent px-2 text-sm"
                 value={search}
                 disabled={change.isPending}

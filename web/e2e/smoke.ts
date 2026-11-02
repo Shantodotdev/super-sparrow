@@ -1267,7 +1267,47 @@ try {
   await navigate("/missing-project/issues");
   await waitText("Project not found");
   await navigate(`/${secondSlug}/milestones`);
-  await waitText("Track the work that matters for your project.");
+  await waitText("Your next milestone starts here");
+  await evaluate(
+    `([...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'New milestone')).focus()`,
+  );
+  await click("New milestone");
+  await until(
+    () => evaluate(`!!document.querySelector('[role=dialog] input')`),
+    "open milestone dialog",
+  );
+  await input('input[placeholder="e.g. Phase 01 · Foundation"]', "Unsaved milestone");
+  await evaluate(
+    `document.querySelector('[role=dialog]').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))`,
+  );
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[role=dialog]') && document.activeElement?.textContent.includes('New milestone')`,
+      ),
+    "close milestone dialog and restore opener focus",
+  );
+  checks++;
+  await evaluate(
+    `([...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'New milestone')).focus()`,
+  );
+  await click("New milestone");
+  await until(
+    () =>
+      evaluate(
+        `document.querySelector('[role=dialog] input')?.value === '' && document.querySelector('[role=dialog] input')?.maxLength === 100`,
+      ),
+    "reset milestone draft and enforce the name limit",
+  );
+  await click("Cancel");
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('[role=dialog]') && document.activeElement?.textContent.includes('New milestone')`,
+      ),
+    "cancel milestone dialog and restore opener focus",
+  );
+  checks++;
   await navigate(`/${secondSlug}/findings`);
   await waitText("No findings found");
   await navigate(`/${secondSlug}/activity`);
