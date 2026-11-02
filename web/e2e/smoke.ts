@@ -1133,9 +1133,65 @@ try {
   checks++;
   await click("Create token");
   await waitText("Token label, such as the machine");
+  const tokenDialogWidth = await evaluate(
+    `parseFloat(getComputedStyle(document.querySelector('[role=dialog]')).width)`,
+  );
+  await evaluate(`document.querySelector('[role=combobox][aria-label="Agent"]').click()`);
+  await until(
+    () =>
+      evaluate(`(() => {
+    const options = [...document.querySelectorAll('[role=option]')];
+    return [['Claude Code', '/brands/claude.svg'], ['Codex', '/brands/codex.png']].every(([name, src]) => {
+      const image = options.find(option => option.textContent.trim() === name)?.querySelector('img');
+      return image?.getAttribute('src') === src && image.complete && image.naturalWidth > 0;
+    });
+  })()`),
+    "show loaded Claude and Codex logos in the agent options",
+  );
+  checks++;
+  await evaluate(
+    `([...document.querySelectorAll('[role=option]')].find(option => option.textContent.trim() === 'Codex')).click()`,
+  );
+  if (
+    !(await evaluate(
+      `!document.querySelector('[aria-label="Codex MCP setup"]') && !document.querySelector('pre[aria-label="Permanent MCP setup prompt"]') && document.querySelector('[role=combobox][aria-label="Agent"] img')?.getAttribute('src') === '/brands/codex.png'`,
+    ))
+  )
+    throw new Error("Setup instructions must be hidden until a token is generated");
+  checks++;
   await input("[role=dialog] input", "Browser token");
   await click("Create token");
   await waitText("Copy your token now");
+  if (
+    !(await evaluate(`(() => {
+    const dialog = document.querySelector('[role=dialog]');
+    const input = dialog.querySelector('input[aria-label="New agent token"]');
+    const button = dialog.querySelector('button[aria-label="Copy token"]');
+    const field = input.getBoundingClientRect();
+    const action = button.getBoundingClientRect();
+    return Math.abs(parseFloat(getComputedStyle(dialog).width) - ${tokenDialogWidth}) < 1
+      && button.textContent.trim() === '' && !!button.querySelector('svg')
+      && action.left >= field.left && action.right <= field.right
+      && action.top >= field.top && action.bottom <= field.bottom;
+  })()`))
+  )
+    throw new Error(
+      "Generated token dialog must keep its width and show an icon-only copy action inside the field",
+    );
+  checks++;
+  if (
+    !(await evaluate(`(() => {
+    const token = document.querySelector('input[aria-label="New agent token"]').value;
+    const setup = document.querySelector('[aria-label="Codex MCP setup"]');
+    const prompt = setup?.querySelector('pre[aria-label="Permanent MCP setup prompt"]')?.textContent;
+    return token.startsWith('ssp_') && !!prompt && !prompt.includes(token)
+      && prompt.includes(location.origin + '/mcp') && prompt.includes('http_headers_helper')
+      && prompt.includes('~/.codex/config.toml') && !prompt.includes('claude mcp add-json')
+      && [...setup.querySelectorAll('button')].some(button => button.textContent.trim() === 'Copy setup prompt' && !button.disabled);
+  })()`))
+  )
+    throw new Error("Generated tokens must show the selected client's secret-free setup prompt");
+  checks++;
   await click("Done");
   await waitText("Browser token");
   await until(() => evaluate(`!document.querySelector('[role=dialog]')`), "close token dialog");

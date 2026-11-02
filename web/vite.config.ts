@@ -32,7 +32,10 @@ export default defineConfig(({ command, mode, isPreview }) => {
       port,
       strictPort: true,
       // The browser calls the API on the same origin, as it does in production.
-      proxy: { "/api": `http://${requireSetting(env, "LISTEN_ADDR")}` },
+      proxy: {
+        "/api": `http://${requireSetting(env, "LISTEN_ADDR")}`,
+        "/mcp": `http://${requireSetting(env, "LISTEN_ADDR")}`,
+      },
     },
   };
 });

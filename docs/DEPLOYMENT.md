@@ -173,29 +173,21 @@ One blocking finding.
 
 ## Connecting agents
 
-Each person creates a token per agent and machine in settings. A repository commits one MCP configuration that reads the token from `SPARROW_TOKEN`, so no token is committed.
+Each person creates a token per agent and machine in Settings. The Create agent token form provides a **Copy setup prompt** action after creation, tailored to Claude Code or Codex and the current server address. The prompt contains instructions and endpoint metadata, never the token secret. Tokens are shown once; the server retains only their hashes and cannot return the secret later.
 
-Claude Code reads `.mcp.json` at the repository root:
+The prompt asks the user's agent to configure permanent, user-scoped access on their machine:
 
-```json
-{
-  "mcpServers": {
-    "super-sparrow": {
-      "type": "http",
-      "url": "https://sparrow.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${SPARROW_TOKEN}" }
-    }
-  }
-}
-```
+- Read the official client documentation and confirm the installed client supports HTTP credential helpers.
+- Accept the token through a private local input and store it in the user's persistent OS credential store, scoped to the endpoint and client.
+- Create a local helper outside the repository that reads the stored credential and emits the Authorization header directly to the MCP client. Never capture its raw output in agent logs.
+- Configure Claude Code at user scope using `headersHelper` in its user configuration (normally `~/.claude.json`), or Codex using `http_headers_helper` in its user configuration (normally `~/.codex/config.toml`). Preserve unrelated configuration and use absolute helper paths.
+- Verify MCP discovery and `list_projects` without exposing the token or changing project data. Report any client restart required.
 
-Codex reads `~/.codex/config.toml`:
+This setup persists across terminal closure, application restarts, and reboot; it does not require session environment exports or shell-profile changes. It requires local client execution, supported client versions, and an available OS credential store. If private input, helper support, or secure storage is unavailable, the agent must report the missing prerequisite rather than substitute plaintext storage or a temporary setup. The generated prompt does not itself install or verify the connection; the user's agent performs those steps.
 
-```toml
-[mcp_servers.super-sparrow]
-url = "https://sparrow.example.com/mcp"
-bearer_token_env_var = "SPARROW_TOKEN"
-```
+Configuration persistence does not remove token expiry. A person renews the token in Super Sparrow before its 90-day expiry or creates a replacement and updates its credential-store entry. Agents must not create, renew, or revoke tokens themselves. Never put credentials in a repository or a setup prompt.
+
+For client configuration details, see the official [Claude Code MCP guide](https://code.claude.com/docs/en/mcp) and [Codex MCP guide](https://developers.openai.com/codex/mcp).
 
 See [MCP.md](MCP.md) for the tool workflow, pagination, retry keys, structured errors, and connection verification. `sparrow tool list` and `sparrow tool call list_projects --arguments '{}'` check the endpoint using `SPARROW_URL` and `SPARROW_TOKEN`; discovery in the actual agent client also verifies its configuration.
 

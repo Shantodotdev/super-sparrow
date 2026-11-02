@@ -1,7 +1,7 @@
 import type { Actor } from "../lib/types";
 import { Icon } from "./icon";
 
-const agentIcons: Record<string, string> = {
+export const agentIcons: Record<string, string> = {
   codex: "/brands/codex.png",
   "claude-code": "/brands/claude.svg",
 };

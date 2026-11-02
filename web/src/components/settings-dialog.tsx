@@ -1,3 +1,6 @@
+import { Check, Copy } from "lucide-react";
+import { agentIcons } from "./avatar";
+import { AgentMcpSetup } from "./agent-mcp-setup";
 import { Input } from "./input";
 import { useRef, useState, type FormEvent } from "react";
 import { agentTools } from "../data/team";
@@ -36,7 +39,8 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
   if (kind) lastKind.current = kind;
   const shownKind = kind ?? lastKind.current;
   const isMember = shownKind === "member";
-  const toolName = agentTools.find((tool) => tool.agentName === agentName)!.label;
+  const selectedAgent = created?.token.agent_name ?? agentName;
+  const toolName = agentTools.find((tool) => tool.agentName === selectedAgent)!.label;
 
   const close = () => {
     setName("");
@@ -84,28 +88,48 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
   return (
     <Modal
       open={kind !== null}
-      onClose={close}
-      className="w-[min(100%,510px)] rounded-[10px] border border-[#303641] bg-[#12151a] p-[24px] shadow-[0_20px_70px_#000a] [&_>_.button]:mr-[8px] [&_h2]:mb-[12px] [&_p]:mb-[16px]"
+      onClose={() => {
+        if (!pending) close();
+      }}
+      className="max-h-[82dvh] w-[min(100%,510px)] overflow-y-auto rounded-[10px] border border-[#303641] bg-[#12151a] p-[24px] shadow-[0_20px_70px_#000a] [&_>_.button]:mr-[8px] [&_h2]:mb-[12px] [&_p]:mb-[16px]"
       label={isMember ? "Add member" : "Create agent token"}
     >
       {created ? (
         <div>
           <h2>Copy your token now</h2>
           <p className="muted text-[#a2aec2]">
-            This is the only time the token is shown. Set it as <code>SPARROW_TOKEN</code> where{" "}
-            {toolName} runs; the repository's MCP configuration reads it from there. See
-            &ldquo;Connecting agents&rdquo; in docs/DEPLOYMENT.md.
+            Your {toolName} token is shown only once. Copy it before closing this window.
           </p>
-          <Input
-            readOnly
-            aria-label="New agent token"
-            value={created.secret}
-            onFocus={(event) => event.target.select()}
-          />
-          <div className="mt-[22px] flex justify-end gap-[8px]">
-            <button className={buttonClass} type="button" onClick={() => void copy(created.secret)}>
-              {copied ? "Copied" : "Copy token"}
+          <div className="relative">
+            <Input
+              readOnly
+              aria-label="New agent token"
+              className="w-full pr-12 font-mono text-[13px]"
+              value={created.secret}
+              onFocus={(event) => event.target.select()}
+            />
+            <button
+              type="button"
+              aria-label="Copy token"
+              title={copied ? "Copied" : "Copy token"}
+              onClick={() => void copy(created.secret)}
+              className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-md border-0 bg-[#1a202a] text-[#a9bad2] hover:bg-[#283344] hover:text-white focus-visible:outline-2 focus-visible:outline-[#6486ff]"
+            >
+              {copied ? (
+                <Check aria-hidden="true" className="size-4 text-[#65dca4]" />
+              ) : (
+                <Copy aria-hidden="true" className="size-4" />
+              )}
             </button>
+            <span role="status" className="sr-only">
+              {copied ? "Token copied" : ""}
+            </span>
+          </div>
+          <AgentMcpSetup
+            agentName={selectedAgent}
+            endpoint={new URL("/mcp", window.location.origin).href}
+          />
+          <div className="mt-[22px] flex justify-end">
             <button className={primaryClass} type="button" onClick={close}>
               Done
             </button>
@@ -120,6 +144,8 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
             <Input
               autoFocus
               required
+              disabled={pending}
+              maxLength={100}
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
@@ -130,23 +156,37 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
               <Input
                 type="email"
                 required
+                disabled={pending}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
               />
             </label>
           ) : (
-            <div className="mx-0 my-[16px] grid gap-[8px] font-medium text-[#ccd5e1]">
+            <div
+              inert={pending}
+              className="mx-0 my-[16px] grid gap-[8px] font-medium text-[#ccd5e1]"
+            >
               <span>Agent</span>
               <Select
                 label="Agent"
                 value={agentName}
                 onChange={setAgentName}
-                options={agentTools.map((tool) => ({ value: tool.agentName, label: tool.label }))}
+                options={agentTools.map((tool) => ({
+                  value: tool.agentName,
+                  label: tool.label,
+                  leading: (
+                    <img
+                      src={agentIcons[tool.agentName]}
+                      alt=""
+                      className="size-5 shrink-0 object-contain"
+                    />
+                  ),
+                }))}
               />
             </div>
           )}
           <div className="mt-[22px] flex justify-end gap-[8px]">
-            <button className={buttonClass} type="button" onClick={close}>
+            <button disabled={pending} className={buttonClass} type="button" onClick={close}>
               Cancel
             </button>
             <button disabled={pending} className={primaryClass}>

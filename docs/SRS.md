@@ -144,7 +144,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 - Each person creates their own agent tokens in settings, one per agent and machine, such as "Shanto · Claude Code · laptop". The token is shown once.
 - Tokens start with `ssp_` so secret scanners can recognize them. Only a SHA-256 hash is stored.
 - A token expires after 90 days. Settings shows its expiry and last use, and the person can renew or revoke it.
-- Claude Code, Codex, and the CLI send the token as a bearer token on the MCP endpoint and the API. A repository commits one MCP configuration that reads the token from the `SPARROW_TOKEN` environment variable, so no token is ever committed.
+- Claude Code, Codex, and the CLI send the token as a bearer token on the MCP endpoint and the API. The token creation form offers a secret-free prompt for permanent, user-scoped client setup using an OS credential store and a local HTTP credential helper. The token is supplied through private local input, never in agent chat, setup prompts, or committed configuration. The CLI reads `SPARROW_TOKEN` from its execution environment.
 - Every action through a token is recorded as that agent, owned by that person. An agent's name is its tool, such as "Claude Code"; its owner is stored and shown separately, so the interface and the agent tools can show "Claude Code" with "Shanto" as its owner.
 - An agent may name the model it runs in a `Sparrow-Model` header, which events record as reported.
 - Agents read project history, but not events about people, sessions, or tokens, which hold email addresses and device names.
