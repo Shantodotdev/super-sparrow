@@ -48,15 +48,30 @@ The CLI, web interface, and MCP tools should agree on permissions, operation res
 
 ## 2. Managed sandbox lifecycle
 
+The CLI takes full ownership of sandbox orchestration. Agents request an environment suitable for their task; they do not choose worktree slots, find free ports, inspect Docker or process lists, decide which services to start, or manually repair infrastructure. These responsibilities belong to the CLI throughout the sandbox's lifetime.
+
 Make each sandbox a discoverable environment associated with a project, issue or branch, owner, machine, and code revision.
 
 - Show the environment's purpose, services, addresses, health, provider modes, and configuration identity without revealing secrets.
-- Allocate and track resources so parallel worktrees and teammates do not accidentally collide.
+- Automatically allocate and track ports, database identities, container and network names, storage, and other resources so parallel worktrees and teammates do not accidentally collide. Agents do not supply or calculate resource slots.
+- Coordinate simultaneous requests so two agents cannot allocate the same resource or independently start competing copies of a shared service.
+- Resolve required services and their dependencies, start what is missing, and wait for actual readiness before reporting the environment as ready.
 - Reuse healthy environments and preserve their data when that is the requested behavior.
+- Detect unhealthy services, interrupted startup, stale tracking records, and changed configuration; reconcile them with the actual running environment and perform safe, bounded recovery automatically.
+- Handle occupied ports without asking the agent to find replacements or kill processes. Preserve unrelated processes and update dependent service configuration when resource assignments change.
 - Distinguish restart, recovery, reseed, reset, and deletion so their effects are clear.
 - Track resource ownership and clean up only resources belonging to that environment.
+- Manage shared infrastructure lifetimes so stopping one sandbox does not interrupt another sandbox that still needs it.
 - Support explicit expiration and retirement, with visibility into stale environments and cleanup failures.
 - Preserve enough state for another session to understand and continue the work.
+
+### Agent-facing contract
+
+An agent asks for the desired capability, such as a ready application for browser verification or a deterministic messaging scenario. The CLI resolves the environment, prepares its prerequisites, and returns an environment identifier, usable entry points, provider modes, and a concise readiness result. Subsequent API calls, tests, logs, and previews resolve their services through that environment rather than requiring the agent to reconstruct addresses or maintain process state.
+
+Repeated requests should converge on a suitable ready environment without duplicate launches or unintended reseeding. Service supervision and lifecycle tracking must survive the command that initiated startup; the agent should not need to keep a chat or terminal session alive to manage the stack.
+
+If automatic recovery cannot safely succeed, return a precise blocked or failed result naming the cause and any required human action. Do not silently reset data, terminate unrelated processes, enable paid providers, or weaken isolation to make startup succeed. Full operational ownership includes reporting failure honestly; it does not grant authority to cross permission or data-safety boundaries.
 
 Local development, deterministic testing, real-provider evaluation, and production-like verification have different purposes. Make those purposes visible while giving them consistent lifecycle controls.
 
@@ -194,6 +209,59 @@ A server-side Cloudflare connector cannot reach a teammate's `localhost` by itse
 Start the product scope with web applications and APIs. Live voice, SIP, WebRTC media, and other protocols require separate assessment; a web preview connection does not automatically support them.
 
 Reference behavior: [Cloudflare Tunnel fundamentals](https://developers.cloudflare.com/tunnel/concepts/), [Cloudflare Access for web applications](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/), and [OpenSSH remote forwarding](https://man.openbsd.org/ssh).
+
+## 10. Replace most Makefile workflows
+
+Move most of WP Agent's developer automation from its Makefile into the Super Sparrow CLI. The CLI becomes the documented entry point for developers, agents, and applicable CI operations. This is an explicit replacement goal, beyond adding a CLI that invokes the same Make targets.
+
+### Problems in the current Makefile
+
+The inspected Makefile combines environment setup, dependency installation, infrastructure, development processes, sandbox management, verification, container builds, seeding, voice infrastructure, and cleanup. Its handwritten help menu repeats information maintained elsewhere, including fixed development ports even though addresses depend on the worktree slot.
+
+- `dev` starts infrastructure and the Bun workspace development command; Python workers and voice have separate targets. A developer still needs repository instructions to know how to start the complete application.
+- Prerequisites vary between service targets. API and dashboard startup prepare infrastructure, while several workers and other services assume prerequisites already exist.
+- Infrastructure `down` and `logs` depend on `ts-ready`, which can install dependencies and regenerate Prisma before stopping services or reading logs.
+- Combined checks use Make's keep-going behavior, while individual recipes have their own failure behavior. Test collection and empty-suite handling differ between runtimes.
+- Formatting targets cover different scopes, and the general format command intentionally touches the whole repository.
+- Environment setup, generated data, real-model evaluations, and cleanup have materially different effects but share the same flat target interface.
+- Voice startup contains conditional shell orchestration in addition to invoking Compose.
+
+These are workflow and discoverability problems as well as readability problems. Moving the same recipes into another large file would not resolve them.
+
+### Responsibilities to move
+
+| Current Makefile area                                            | Responsibility of the proposed CLI                                                                                         |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `env`, `install`, `install-ts`, `install-py`, `ts-ready`         | Explain prerequisites, prepare checkout settings, install the selected dependencies, and manage required generated clients |
+| `up`, `down`, `logs`, `infra-up`                                 | Manage and diagnose the selected environment's infrastructure with clear ownership                                         |
+| `dev`, `dev-*`                                                   | Start the full development environment or selected services, with explicit dependencies and lifecycle behavior             |
+| `sandbox-up`, `sandbox-ensure`, `sandbox-down`, `sandbox-status` | Provide the managed sandbox lifecycle described above                                                                      |
+| `check`, `check-ts`, `check-py`, `format-check`                  | Run scoped verification and report each check's result consistently                                                        |
+| `test`, `test-ts`, `test-py`, `test-e2e`, `eval-agent`           | Select verification scope, run it in the appropriate environment, and retain results and evidence                          |
+| `format`, `format-ts`, `format-py`                               | Make file scope explicit and distinguish formatting changes from read-only checks                                          |
+| `seed`, `seed-inbox`                                             | Generate fixtures for an explicitly identified, authorized development or sandbox database                                 |
+| `build`, `start`                                                 | Build and run the local production-like stack as a distinct environment                                                    |
+| `voice-setup`, `voice-up`, `voice-down`, `voice-status`          | Make voice prerequisites, lifecycle, health, and live-provider behavior part of the same interface                         |
+| `clean`                                                          | Explain and remove selected generated artifacts or owned resources without confusing cleanup with data deletion            |
+| `help`                                                           | Provide discoverable, task-specific help that reflects actual options and resolved environment context                     |
+
+### Expected behavior
+
+- Show the selected project, checkout, environment, and resolved addresses when relevant; do not make developers memorize slot arithmetic or fixed ports.
+- Explain whether an operation installs dependencies, generates files, starts services, changes data, or uses paid providers.
+- Starting a complete development environment includes its required services; starting a selected service has clear prerequisite behavior.
+- The CLI resolves resource allocation and running-service state itself. Port selection, process discovery, dependency startup, and safe recovery are never delegated back to the coding agent as routine setup instructions.
+- Routine inspection and shutdown should remain usable when application dependencies or generated clients are broken. They should not unexpectedly trigger installation or generation.
+- Report component results, exit status, executed test counts, and skipped or empty suites consistently. An empty suite is never reported as passing tests.
+- Allow focused checks and tests during iteration, with deliberate broader verification when needed.
+- Distinguish formatting selected files from formatting the entire repository.
+- Keep environment preparation and data-changing actions explicit, with fail-fast validation of required configuration.
+- Developers, agents, and CI should use the same underlying operation definitions rather than maintaining independent copies of the workflow.
+- Local inspection, shutdown, and recovery should not require the central Sparrow service to be available where they can safely operate from local context.
+
+Established tools such as Bun, uv, Prisma, Ruff, Pyright, Playwright, and Compose can continue to perform their specialist work. The CLI owns their coordinated workflow and results; replacing the Makefile does not mean rewriting those tools.
+
+A small Makefile may remain for temporary compatibility or a few simple entry points. It should not remain a second source of operational logic. The final command names, project configuration format, migration order, and compatibility period are implementation decisions for later.
 
 ## Team benefits
 
