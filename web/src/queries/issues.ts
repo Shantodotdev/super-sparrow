@@ -97,6 +97,7 @@ export function usePatchIssue(key: string) {
       );
       void client.invalidateQueries({ queryKey: issuesQuery.queryKey });
       void client.invalidateQueries({ queryKey: issueQuery(key).queryKey });
+      void client.invalidateQueries({ queryKey: ["milestones"] });
       void client.invalidateQueries({ queryKey: ["activity"] });
     },
     onError: (error) => notify(error.message),

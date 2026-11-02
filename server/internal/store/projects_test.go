@@ -91,26 +91,26 @@ func TestMilestonesTakeTheNextPosition(t *testing.T) {
 	tm := newTeam(t)
 	project := tm.project(t, "WP")
 
-	first := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Phase 1", Status: MilestoneActive})).must(t)
-	second := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Phase 2", Status: MilestonePlanned})).must(t)
+	first := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Phase 1"})).must(t)
+	second := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Phase 2"})).must(t)
 	if first.Position != 0 || second.Position != 1 {
 		t.Errorf("positions = %d, %d, want 0, 1", first.Position, second.Position)
 	}
 
-	_, err := tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Phase 1", Status: MilestonePlanned})
+	_, err := tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Phase 1"})
 	wantErr(t, err, ErrConflict)
 
-	_, err = tm.store.CreateMilestone(tm.ctx, tm.agent, NewMilestone{ProjectID: project.ID, Name: "Phase 3", Status: MilestonePlanned})
+	_, err = tm.store.CreateMilestone(tm.ctx, tm.agent, NewMilestone{ProjectID: project.ID, Name: "Phase 3"})
 	wantErr(t, err, ErrForbidden)
 
 	_, err = tm.store.UpdateMilestone(tm.ctx, tm.member, second.ID, MilestoneUpdate{Name: Change("Phase 1")})
 	wantErr(t, err, ErrConflict)
 
-	if _, err := tm.store.UpdateMilestone(tm.ctx, tm.member, first.ID, MilestoneUpdate{Status: Change(MilestoneDone), Position: Change(5)}); err != nil {
+	if _, err := tm.store.UpdateMilestone(tm.ctx, tm.member, first.ID, MilestoneUpdate{Position: Change(5)}); err != nil {
 		t.Fatalf("UpdateMilestone: %v", err)
 	}
 	milestones := got(tm.store.ListMilestones(tm.ctx, project.ID)).must(t)
-	if milestones[0].ID != second.ID || milestones[1].Status != MilestoneDone {
+	if milestones[0].ID != second.ID || milestones[1].Status != MilestonePlanned {
 		t.Errorf("milestones after update: %+v", milestones)
 	}
 }
@@ -173,5 +173,76 @@ func TestLabelColorPersistsAndRecordsActor(t *testing.T) {
 	}
 	if tm.eventCount(t) != before {
 		t.Fatal("invalid colors wrote events")
+	}
+}
+
+func TestMilestoneStatusIsDerivedFromIssues(t *testing.T) {
+	cases := []struct {
+		name     string
+		statuses []IssueStatus
+		want     MilestoneStatus
+	}{
+		{"empty", nil, MilestonePlanned},
+		{"backlog", []IssueStatus{IssueBacklog}, MilestonePlanned},
+		{"todo", []IssueStatus{IssueTodo}, MilestonePlanned},
+		{"unstarted", []IssueStatus{IssueBacklog, IssueTodo}, MilestonePlanned},
+		{"in progress", []IssueStatus{IssueInProgress}, MilestoneActive},
+		{"in review", []IssueStatus{IssueInReview}, MilestoneActive},
+		{"partially done", []IssueStatus{IssueDone, IssueTodo}, MilestoneActive},
+		{"partially canceled", []IssueStatus{IssueCanceled, IssueBacklog}, MilestoneActive},
+		{"all done", []IssueStatus{IssueDone}, MilestoneDone},
+		{"all canceled", []IssueStatus{IssueCanceled}, MilestoneDone},
+		{"all finished", []IssueStatus{IssueDone, IssueCanceled}, MilestoneDone},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tm := newTeam(t)
+			project := tm.project(t, "WP")
+			milestone := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Launch"})).must(t)
+			if milestone.Status != MilestonePlanned {
+				t.Fatalf("empty milestone status = %s", milestone.Status)
+			}
+			for _, status := range tc.statuses {
+				got(tm.store.CreateIssue(tm.ctx, tm.agent, NewIssue{ProjectID: project.ID, Title: "Work", Status: status, MilestoneID: milestone.ID})).must(t)
+			}
+			before := tm.eventCount(t)
+			milestones := got(tm.store.ListMilestones(tm.ctx, project.ID)).must(t)
+			if len(milestones) != 1 || milestones[0].Status != tc.want {
+				t.Fatalf("milestones = %+v, want status %s", milestones, tc.want)
+			}
+			if tm.eventCount(t) != before {
+				t.Fatal("reading derived status wrote an event")
+			}
+			updated := got(tm.store.UpdateMilestone(tm.ctx, tm.member, milestone.ID, MilestoneUpdate{Name: Change("Renamed")})).must(t)
+			if updated.Status != tc.want {
+				t.Fatalf("rename returned status %s, want %s", updated.Status, tc.want)
+			}
+		})
+	}
+}
+
+func TestMilestoneStatusFollowsReopenedAndReassignedIssues(t *testing.T) {
+	tm := newTeam(t)
+	project := tm.project(t, "WP")
+	first := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "First"})).must(t)
+	second := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: project.ID, Name: "Second"})).must(t)
+	issue := got(tm.store.CreateIssue(tm.ctx, tm.agent, NewIssue{ProjectID: project.ID, Title: "Work", Status: IssueDone, MilestoneID: first.ID})).must(t)
+	got(tm.store.UpdateIssue(tm.ctx, tm.agent, issue.ID, IssueUpdate{Status: Change(IssueInReview)})).must(t)
+	milestones := got(tm.store.ListMilestones(tm.ctx, project.ID)).must(t)
+	if milestones[0].Status != MilestoneActive || milestones[1].Status != MilestonePlanned {
+		t.Fatalf("after reopening: %+v", milestones)
+	}
+	got(tm.store.UpdateIssue(tm.ctx, tm.agent, issue.ID, IssueUpdate{MilestoneID: Change(second.ID), Status: Change(IssueDone)})).must(t)
+	milestones = got(tm.store.ListMilestones(tm.ctx, project.ID)).must(t)
+	if milestones[0].Status != MilestonePlanned || milestones[1].Status != MilestoneDone {
+		t.Fatalf("after reassignment: %+v", milestones)
+	}
+	got(tm.store.UpdateIssue(tm.ctx, tm.agent, issue.ID, IssueUpdate{MilestoneID: Change("")})).must(t)
+	milestones = got(tm.store.ListMilestones(tm.ctx, project.ID)).must(t)
+	if milestones[0].Status != MilestonePlanned || milestones[1].Status != MilestonePlanned {
+		t.Fatalf("after clearing milestone: %+v", milestones)
+	}
+	if tm.lastEvent(t).ActorID != tm.agent.ActorID {
+		t.Fatal("issue-driven progress lost the agent actor")
 	}
 }

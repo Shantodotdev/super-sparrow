@@ -43,10 +43,12 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 | `PATCH /api/projects/{key}`           | person | `{name}`; the key never changes                             |
 | `DELETE /api/projects/{key}`          | owner  | Deletes the project and everything in it; its history stays |
 | `GET /api/projects/{key}/milestones`  |        | `{milestones}` in position order                            |
-| `POST /api/projects/{key}/milestones` | person | `{name, status}`: `planned`, `active`, or `done`            |
-| `PATCH /api/milestones/{id}`          | person | `{name?, status?, position?}`; returns `{milestone}`        |
+| `POST /api/projects/{key}/milestones` | person | `{name}`; returns `{milestone}` with calculated status      |
+| `PATCH /api/milestones/{id}`          | person | `{name?, position?}`; returns `{milestone}`                 |
 | `GET /api/projects/{key}/labels`      |        | `{labels}` in name order                                    |
 | `POST /api/projects/{key}/labels`     |        | `{name, color?}`; color is a six-digit hexadecimal value    |
+
+Milestone status is read-only and calculated from its assigned full issues on every read: `planned` when empty or all issues are Backlog/Todo; `done` when every issue is Done/Canceled; otherwise `active` when any issue has started or finished. Reopening or reassigning issues recalculates status automatically. Subissues do not determine milestone status. Milestone create/update requests reject `status`.
 
 Project responses include `slug`, generated once from the project name and kept on rename. The SPA uses `/{slug}/issues`, `/{slug}/milestones`, and `/{slug}/findings`; HTTP API project endpoints continue to use the project key.
 

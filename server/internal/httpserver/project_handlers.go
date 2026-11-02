@@ -105,8 +105,7 @@ func (s *server) listMilestones(w http.ResponseWriter, r *http.Request) error {
 
 func (s *server) createMilestone(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		Name   string `json:"name"`
-		Status string `json:"status"`
+		Name string `json:"name"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		return err
@@ -117,7 +116,7 @@ func (s *server) createMilestone(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	milestone, err := s.store.CreateMilestone(r.Context(), identityFrom(r.Context()).caller(),
-		store.NewMilestone{ProjectID: project.ID, Name: body.Name, Status: store.MilestoneStatus(body.Status)})
+		store.NewMilestone{ProjectID: project.ID, Name: body.Name})
 	if err != nil {
 		return err
 	}
@@ -129,7 +128,6 @@ func (s *server) createMilestone(w http.ResponseWriter, r *http.Request) error {
 func (s *server) updateMilestone(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Name     *string `json:"name"`
-		Status   *string `json:"status"`
 		Position *int    `json:"position"`
 	}
 	nulls, err := decodeUpdate(w, r, &body)
@@ -141,9 +139,6 @@ func (s *server) updateMilestone(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	update := store.MilestoneUpdate{Name: patch(body.Name, nulls["name"]), Position: patch(body.Position, false)}
-	if status := patch(body.Status, nulls["status"]); status.Set {
-		update.Status = store.Change(store.MilestoneStatus(status.Value))
-	}
 	milestone, err := s.store.UpdateMilestone(r.Context(), identityFrom(r.Context()).caller(), r.PathValue("id"), update)
 	if err != nil {
 		return err

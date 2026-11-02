@@ -97,7 +97,8 @@ test("live creation refreshes only affected lists and skips a creation already c
   refreshLiveEvents(cache, [creation()]);
   expect(cache.getQueryState(["issues", "WP"])?.isInvalidated).toBe(true);
   expect(cache.getQueryState(["issues", "SS"])?.isInvalidated).toBe(false);
-  for (const name of ["actors", "me", "labels", "milestones"])
+  expect(cache.getQueryState(["milestones"])?.isInvalidated).toBe(true);
+  for (const name of ["actors", "me", "labels"])
     expect(cache.getQueryState([name])?.isInvalidated).toBe(false);
   cache.setQueryData(["issues"], [issue]);
   cache.setQueryData(["issues", "WP"], [issue]);
@@ -183,5 +184,28 @@ test("subissue events refresh both lists for the parent, including an initially 
   expect(cache.getQueryState(["subissues", issue.key])?.isInvalidated).toBe(true);
   expect(cache.getQueryState(["subissues", "SS-1"])?.isInvalidated).toBe(false);
   expect(cache.getQueryState(["issue", issue.key])?.isInvalidated).toBe(true);
+  cache.clear();
+});
+
+test("issue changes refresh calculated milestone statuses only in the affected project", () => {
+  const cache = client();
+  cache.setQueryData(projectsQuery.queryKey, [{ id: "wp", key: "WP", name: "WP", slug: "wp" }]);
+  for (const key of [["milestones"], ["milestones", "WP"], ["milestones", "SS"]])
+    cache.setQueryData(key, []);
+  refreshLiveEvents(cache, [{ ...creation(), kind: "issue.updated" }]);
+  expect(cache.getQueryState(["milestones"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["milestones", "WP"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["milestones", "SS"])?.isInvalidated).toBe(false);
+  cache.clear();
+});
+
+test("committed issue creation refreshes calculated milestone statuses without an SSE event", () => {
+  const cache = client();
+  for (const key of [["milestones"], ["milestones", "WP"], ["milestones", "SS"]])
+    cache.setQueryData(key, []);
+  cacheCreatedIssue(cache, issue);
+  expect(cache.getQueryState(["milestones"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["milestones", "WP"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["milestones", "SS"])?.isInvalidated).toBe(false);
   cache.clear();
 });

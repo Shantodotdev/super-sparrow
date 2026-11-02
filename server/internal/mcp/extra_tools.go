@@ -16,7 +16,7 @@ func (s *Server) extraTools() []tool {
 		{
 			name:        "list_projects",
 			title:       "List projects",
-			description: "Discover project keys, names, slugs, and existing labels before creating or finding issues.",
+			description: "Discover project keys, names, slugs, existing labels, and milestones with calculated statuses before creating or finding issues.",
 			schema:      object(nil, map[string]any{}),
 			readOnly:    true,
 			run:         bind(s.listProjects),
@@ -113,7 +113,17 @@ func (s *Server) listProjects(ctx context.Context, _ store.Caller, args pageArgs
 		for _, label := range labels {
 			labelOutputs = append(labelOutputs, label.Name)
 		}
-		outputs = append(outputs, map[string]any{"key": p.Key, "name": p.Name, "slug": p.Slug, "labels": labelOutputs, "url": strings.TrimRight(s.publicURL.String(), "/") + "/" + p.Slug + "/issues"})
+		milestones, err := s.store.ListMilestones(ctx, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list milestones for project %s: %w", p.Key, err)
+		}
+		milestoneOutputs := []map[string]any{}
+		for _, milestone := range milestones {
+			milestoneOutputs = append(milestoneOutputs, map[string]any{
+				"id": milestone.ID, "name": milestone.Name, "position": milestone.Position, "status": milestone.Status,
+			})
+		}
+		outputs = append(outputs, map[string]any{"key": p.Key, "name": p.Name, "slug": p.Slug, "labels": labelOutputs, "milestones": milestoneOutputs, "url": strings.TrimRight(s.publicURL.String(), "/") + "/" + p.Slug + "/issues"})
 	}
 	return map[string]any{"projects": outputs, "next_cursor": cursor}, nil
 }

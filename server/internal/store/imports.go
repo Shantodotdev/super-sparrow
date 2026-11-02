@@ -87,7 +87,6 @@ type ImportedMilestone struct {
 	ExternalID string
 	ProjectID  string
 	Name       string
-	Status     MilestoneStatus
 }
 
 // ImportMilestone imports a milestone after the project's others, or links an existing milestone
@@ -96,9 +95,6 @@ func (s *Store) ImportMilestone(ctx context.Context, by Caller, source ImportSou
 	name, err := requiredText("name", input.Name, maxNameLength)
 	if err != nil {
 		return Milestone{}, err
-	}
-	if !input.Status.valid() {
-		return Milestone{}, invalid("status", "must be planned, active, or done")
 	}
 
 	var milestone Milestone
@@ -116,7 +112,7 @@ func (s *Store) ImportMilestone(ctx context.Context, by Caller, source ImportSou
 		milestone, err = scanMilestone(w.tx.QueryRowContext(w.ctx,
 			`SELECT `+milestoneColumns+` FROM milestones WHERE project_id = ? AND name = ?`, input.ProjectID, name))
 		if errors.Is(err, ErrNotFound) {
-			milestone, err = insertImportedMilestone(w, source, input.ExternalID, input.ProjectID, name, input.Status)
+			milestone, err = insertImportedMilestone(w, source, input.ExternalID, input.ProjectID, name)
 		}
 		if err != nil {
 			return err
@@ -128,8 +124,8 @@ func (s *Store) ImportMilestone(ctx context.Context, by Caller, source ImportSou
 	return milestone, err
 }
 
-func insertImportedMilestone(w *writeTx, source ImportSource, externalID, projectID, name string, status MilestoneStatus) (Milestone, error) {
-	milestone := Milestone{ID: newID(), ProjectID: projectID, Name: name, Status: status, CreatedAt: w.now, UpdatedAt: w.now}
+func insertImportedMilestone(w *writeTx, source ImportSource, externalID, projectID, name string) (Milestone, error) {
+	milestone := Milestone{ID: newID(), ProjectID: projectID, Name: name, Status: MilestonePlanned, CreatedAt: w.now, UpdatedAt: w.now}
 	err := w.tx.QueryRowContext(w.ctx,
 		`SELECT coalesce(max(position) + 1, 0) FROM milestones WHERE project_id = ?`, projectID).Scan(&milestone.Position)
 	if err != nil {
@@ -137,15 +133,15 @@ func insertImportedMilestone(w *writeTx, source ImportSource, externalID, projec
 	}
 
 	_, err = w.exec(`
-		INSERT INTO milestones (id, project_id, name, position, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		milestone.ID, projectID, name, milestone.Position, status, w.timestamp(), w.timestamp())
+		INSERT INTO milestones (id, project_id, name, position, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		milestone.ID, projectID, name, milestone.Position, w.timestamp(), w.timestamp())
 	if err != nil {
 		return Milestone{}, fmt.Errorf("import milestone: %w", err)
 	}
 
 	err = w.event(projectID, TargetMilestone, milestone.ID, "milestone.imported",
-		map[string]any{"source": source, "external_id": externalID, "name": name, "status": status})
+		map[string]any{"source": source, "external_id": externalID, "name": name})
 	return milestone, err
 }
 

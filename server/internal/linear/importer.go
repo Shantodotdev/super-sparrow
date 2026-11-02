@@ -63,7 +63,7 @@ func Import(ctx context.Context, st *store.Store, client *Client, projectName, t
 	}
 	sort.Slice(issues, func(i, j int) bool { return issues[i].Number < issues[j].Number })
 
-	milestones, err := importMilestones(ctx, st, client, importer, project, linearProject.ID, issues, &report)
+	milestones, err := importMilestones(ctx, st, client, importer, project, linearProject.ID, &report)
 	if err != nil {
 		return report, err
 	}
@@ -128,10 +128,9 @@ func chooseTeam(project Project, teamKey string) (string, error) {
 	return "", fmt.Errorf("the Linear project %q belongs to teams %s; pass --team to choose one", project.Name, strings.Join(project.Teams, ", "))
 }
 
-// importMilestones imports the project's milestones in order. A milestone whose issues are all
-// closed is done, one with any started issue is active, and the rest are planned.
+// importMilestones imports the project's milestones in order; their status derives from imported issues.
 func importMilestones(ctx context.Context, st *store.Store, client *Client, importer store.Caller, project store.Project,
-	linearProjectID string, issues []Issue, report *Report) (map[string]string, error) {
+	linearProjectID string, report *Report) (map[string]string, error) {
 	linearMilestones, err := client.Milestones(ctx, linearProjectID)
 	if err != nil {
 		return nil, err
@@ -142,7 +141,6 @@ func importMilestones(ctx context.Context, st *store.Store, client *Client, impo
 	for _, linearMilestone := range linearMilestones {
 		milestone, err := st.ImportMilestone(ctx, importer, store.ImportLinear, store.ImportedMilestone{
 			ExternalID: linearMilestone.ID, ProjectID: project.ID, Name: linearMilestone.Name,
-			Status: milestoneStatus(linearMilestone.ID, issues),
 		})
 		if err != nil {
 			report.warn("milestone %q was not imported: %v", linearMilestone.Name, err)
@@ -152,30 +150,6 @@ func importMilestones(ctx context.Context, st *store.Store, client *Client, impo
 		report.Milestones++
 	}
 	return ids, nil
-}
-
-func milestoneStatus(milestoneID string, issues []Issue) store.MilestoneStatus {
-	total, closed, started := 0, 0, false
-	for _, issue := range issues {
-		if issue.ProjectMilestone == nil || issue.ProjectMilestone.ID != milestoneID {
-			continue
-		}
-		total++
-		switch issueStatus(issue) {
-		case store.IssueDone, store.IssueCanceled:
-			closed++
-		case store.IssueInProgress, store.IssueInReview:
-			started = true
-		}
-	}
-
-	switch {
-	case total > 0 && closed == total:
-		return store.MilestoneDone
-	case started || closed > 0:
-		return store.MilestoneActive
-	}
-	return store.MilestonePlanned
 }
 
 func importIssue(ctx context.Context, st *store.Store, importer store.Caller, project store.Project, linearIssue Issue, milestones map[string]string) (store.Issue, error) {

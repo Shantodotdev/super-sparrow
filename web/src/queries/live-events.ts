@@ -13,6 +13,7 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
     if (project) projectKeys.add(project.key);
     switch (event.target_type) {
       case "issue":
+        affected.add("milestones");
         if (event.kind === "issue.created") {
           const issue =
             typeof event.payload.key === "string"

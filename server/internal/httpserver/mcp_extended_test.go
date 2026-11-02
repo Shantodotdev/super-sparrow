@@ -228,3 +228,63 @@ func TestMCPRejectsMalformedProtocolMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestMilestoneStatusIsCalculatedForHTTPAndMCP(t *testing.T) {
+	a := newAPITeam(t)
+	issue := a.project()
+	var created struct {
+		Milestone milestoneView `json:"milestone"`
+	}
+	a.call(http.MethodPost, "/api/projects/WP/milestones", a.member, map[string]string{"name": "Launch"}, http.StatusCreated, &created)
+	if created.Milestone.Status != "planned" {
+		t.Fatalf("new milestone %+v", created.Milestone)
+	}
+	for _, status := range []any{"active", "done", nil} {
+		wantField(t, a.request(http.MethodPost, "/api/projects/WP/milestones", a.member, map[string]any{"name": "Manual", "status": status}), "status")
+		wantField(t, a.request(http.MethodPatch, "/api/milestones/"+created.Milestone.ID, a.member, map[string]any{"status": status}), "status")
+	}
+	for _, step := range []struct {
+		issueStatus string
+		want        string
+	}{
+		{"todo", "planned"},
+		{"in_progress", "active"},
+		{"in_review", "active"},
+		{"done", "done"},
+		{"backlog", "planned"},
+		{"canceled", "done"},
+	} {
+		a.call(http.MethodPatch, "/api/issues/"+issue.Key, a.agent, map[string]string{"milestone_id": created.Milestone.ID, "status": step.issueStatus}, http.StatusOK, nil)
+		before, err := a.store.ListEvents(context.Background(), store.EventFilter{ProjectID: issue.ProjectID, Limit: 200})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Milestones []milestoneView `json:"milestones"`
+		}
+		a.call(http.MethodGet, "/api/projects/WP/milestones", a.agent, nil, http.StatusOK, &response)
+		if len(response.Milestones) != 1 || response.Milestones[0].Status != step.want {
+			t.Fatalf("HTTP milestones for %s: %+v", step.issueStatus, response.Milestones)
+		}
+		projects := a.toolObject("list_projects", map[string]any{})["projects"].([]any)
+		milestones := projects[0].(map[string]any)["milestones"].([]any)
+		if len(milestones) != 1 {
+			t.Fatalf("MCP milestones %+v", milestones)
+		}
+		milestone := milestones[0].(map[string]any)
+		if milestone["id"] != created.Milestone.ID || milestone["name"] != "Launch" || milestone["status"] != step.want || milestone["position"] != float64(0) {
+			t.Fatalf("MCP milestone for %s: %+v", step.issueStatus, milestone)
+		}
+		after, err := a.store.ListEvents(context.Background(), store.EventFilter{ProjectID: issue.ProjectID, Limit: 200})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(before, after) {
+			t.Fatal("reading calculated status changed history")
+		}
+		last := after[len(after)-1]
+		if last.TargetID != issue.ID || last.ActorID != a.agentActor().ID {
+			t.Fatalf("issue progress has incorrect attribution: %+v", last)
+		}
+	}
+}

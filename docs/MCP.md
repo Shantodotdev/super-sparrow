@@ -6,7 +6,7 @@ Connect with an agent token using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agent
 
 | Tool                    | Purpose                                                                                                                                                 |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_projects`         | Discover keys, names, slugs, existing label names, and project links.                                                                                   |
+| `list_projects`         | Discover keys, names, slugs, existing label names, milestones with calculated statuses, and project links.                                              |
 | `list_issues`           | Find issues by project key, optional statuses, and case-insensitive title/key search. Newest issue first.                                               |
 | `get_issue_for_branch`  | Match the recorded branch or an issue key in a branch name.                                                                                             |
 | `get_issue`             | Read issue properties, checklist progress, unresolved finding count, and the first 50 review summaries. `review_rounds_truncated` signals more reviews. |
@@ -17,6 +17,8 @@ Connect with an agent token using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agent
 | `list_subissues`        | Read lightweight tasks, including keys, descriptions, revisions, statuses, and their creators.                                                          |
 | `create_subissue`       | Create a lightweight task under an issue with a title and explicit status.                                                                              |
 | `update_subissue`       | Edit supplied title, description, or status fields using its key, such as `WP-142.1`. Description edits need `description_revision`.                    |
+
+Each project from `list_projects` includes `milestones` in position order, each with `id`, `name`, `position`, and read-only `status`. Status uses the same issue-derived calculation as the HTTP API: `planned` for no issues or only Backlog/Todo, `done` for all Done/Canceled, and `active` for any started or finished issue otherwise. Issue changes, including reopening and reassignment, are reflected on the next read. Reading milestones creates no events; the issue write retains its authenticated actor.
 
 Use subissues for a work breakdown. They share their parent issue's reviews and discussions. A parent full issue passed to `create_issue` represents a separate linked issue.
 

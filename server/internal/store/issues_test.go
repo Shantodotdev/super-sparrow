@@ -152,7 +152,7 @@ func TestIssueReferencesMustFitTheProject(t *testing.T) {
 	tm := newTeam(t)
 	project := tm.project(t, "WP")
 	other := tm.project(t, "SS")
-	foreignMilestone := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: other.ID, Name: "M", Status: MilestonePlanned})).must(t)
+	foreignMilestone := got(tm.store.CreateMilestone(tm.ctx, tm.member, NewMilestone{ProjectID: other.ID, Name: "M"})).must(t)
 	foreignLabel := got(tm.store.CreateLabel(tm.ctx, tm.member, other.ID, "Bug")).must(t)
 
 	_, err := tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: project.ID, Title: "T", Status: IssueTodo, MilestoneID: foreignMilestone.ID})

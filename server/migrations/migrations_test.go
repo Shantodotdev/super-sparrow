@@ -240,3 +240,55 @@ func TestLabelColorsBackfillExistingLabels(t *testing.T) {
 		t.Fatal("database accepted an invalid color")
 	}
 }
+
+func TestMilestoneStatusColumnIsRemovedWithoutLosingWork(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := database.Migrate(ctx, db, upTo(t, "0014")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		INSERT INTO projects (id, key, name, slug, created_at, updated_at)
+		VALUES ('project', 'WP', 'Project', 'project', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+		INSERT INTO milestones (id, project_id, name, position, status, created_at, updated_at)
+		VALUES ('milestone', 'project', 'Launch', 2, 'done', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+		INSERT INTO issues (id, project_id, number, title, plan, status, milestone_id, created_by_actor_id, created_at, updated_at)
+		SELECT 'issue', 'project', 1, 'Work', '', 'todo', 'milestone', id, created_at, updated_at FROM actors WHERE kind = 'system';
+		INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+		SELECT 'event', 'project', 'milestone', 'milestone', 'milestone.created', id, '{"status":"done"}', created_at FROM actors WHERE kind = 'system';`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
+		t.Fatal(err)
+	}
+	var columns int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('milestones') WHERE name = 'status'`).Scan(&columns); err != nil || columns != 0 {
+		t.Fatalf("milestone status columns = %d: %v", columns, err)
+	}
+	var name, milestoneID, payload, actor string
+	var position int
+	if err := db.QueryRow(`SELECT name, position FROM milestones WHERE id = 'milestone'`).Scan(&name, &position); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT milestone_id, created_by_actor_id FROM issues WHERE id = 'issue'`).Scan(&milestoneID, &actor); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT payload FROM events WHERE id = 'event'`).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Launch" || position != 2 || milestoneID != "milestone" || actor != "00000000-0000-7000-8000-000000000000" || payload != `{"status":"done"}` {
+		t.Fatal("migration changed milestone content, issue assignment, attribution, or history")
+	}
+	var violations int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+		t.Fatalf("foreign key violations = %d: %v", violations, err)
+	}
+}

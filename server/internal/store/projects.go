@@ -168,17 +168,24 @@ func scanProject(row scanner) (Project, error) {
 type NewMilestone struct {
 	ProjectID string
 	Name      string
-	Status    MilestoneStatus
 }
 
 // MilestoneUpdate lists the milestone fields to change.
 type MilestoneUpdate struct {
 	Name     Field[string]
-	Status   Field[MilestoneStatus]
 	Position Field[int]
 }
 
-const milestoneColumns = `id, project_id, name, position, status, created_at, updated_at`
+// milestoneColumns derives status from the current full issues, including canceled work as finished.
+const milestoneColumns = `id, project_id, name, position,
+  CASE
+    WHEN EXISTS (SELECT 1 FROM issues WHERE milestone_id = milestones.id)
+      AND NOT EXISTS (SELECT 1 FROM issues WHERE milestone_id = milestones.id AND status NOT IN ('done', 'canceled'))
+      THEN 'done'
+    WHEN EXISTS (SELECT 1 FROM issues WHERE milestone_id = milestones.id AND status IN ('in_progress', 'in_review', 'done', 'canceled'))
+      THEN 'active'
+    ELSE 'planned'
+  END, created_at, updated_at`
 
 // CreateMilestone adds a milestone after the project's existing milestones. Only a person can
 // create milestones.
@@ -187,11 +194,8 @@ func (s *Store) CreateMilestone(ctx context.Context, by Caller, input NewMilesto
 	if err != nil {
 		return Milestone{}, err
 	}
-	if !input.Status.valid() {
-		return Milestone{}, invalid("status", "must be planned, active, or done")
-	}
 
-	milestone := Milestone{ID: newID(), ProjectID: input.ProjectID, Name: name, Status: input.Status}
+	milestone := Milestone{ID: newID(), ProjectID: input.ProjectID, Name: name, Status: MilestonePlanned}
 	err = s.write(ctx, by, func(w *writeTx) error {
 		if err := w.requireHuman("create milestones"); err != nil {
 			return err
@@ -208,21 +212,21 @@ func (s *Store) CreateMilestone(ctx context.Context, by Caller, input NewMilesto
 
 		milestone.CreatedAt, milestone.UpdatedAt = w.now, w.now
 		_, err = w.exec(`
-			INSERT INTO milestones (id, project_id, name, position, status, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			milestone.ID, input.ProjectID, name, milestone.Position, input.Status, w.timestamp(), w.timestamp())
+			INSERT INTO milestones (id, project_id, name, position, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			milestone.ID, input.ProjectID, name, milestone.Position, w.timestamp(), w.timestamp())
 		if err != nil {
 			return mapUniqueViolation(err, "this project already has a milestone named "+name, "create milestone")
 		}
 
 		return w.event(input.ProjectID, TargetMilestone, milestone.ID, "milestone.created",
-			map[string]any{"name": name, "status": input.Status, "position": milestone.Position})
+			map[string]any{"name": name, "position": milestone.Position})
 	})
 
 	return milestone, err
 }
 
-// UpdateMilestone changes a milestone's name, status, or position and returns it. Only a person
+// UpdateMilestone changes a milestone's name or position and returns its calculated status. Only a person
 // can change milestones.
 func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID string, update MilestoneUpdate) (Milestone, error) {
 	if update.Name.Set {
@@ -231,9 +235,6 @@ func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID stri
 			return Milestone{}, err
 		}
 		update.Name.Value = name
-	}
-	if update.Status.Set && !update.Status.Value.valid() {
-		return Milestone{}, invalid("status", "must be planned, active, or done")
 	}
 	if update.Position.Set && update.Position.Value < 0 {
 		return Milestone{}, invalid("position", "must not be negative")
@@ -255,10 +256,6 @@ func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID stri
 			next.Name = update.Name.Value
 			changes["name"] = map[string]any{"from": current.Name, "to": next.Name}
 		}
-		if update.Status.Set && update.Status.Value != current.Status {
-			next.Status = update.Status.Value
-			changes["status"] = map[string]any{"from": current.Status, "to": next.Status}
-		}
 		if update.Position.Set && update.Position.Value != current.Position {
 			next.Position = update.Position.Value
 			changes["position"] = map[string]any{"from": current.Position, "to": next.Position}
@@ -267,8 +264,8 @@ func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID stri
 			return nil
 		}
 
-		_, err = w.exec(`UPDATE milestones SET name = ?, status = ?, position = ?, updated_at = ? WHERE id = ?`,
-			next.Name, next.Status, next.Position, w.timestamp(), current.ID)
+		_, err = w.exec(`UPDATE milestones SET name = ?, position = ?, updated_at = ? WHERE id = ?`,
+			next.Name, next.Position, w.timestamp(), current.ID)
 		if err != nil {
 			return mapUniqueViolation(err, "this project already has a milestone named "+next.Name, "update milestone")
 		}
@@ -281,7 +278,7 @@ func (s *Store) UpdateMilestone(ctx context.Context, by Caller, milestoneID stri
 	return scanMilestone(s.db.QueryRowContext(ctx, `SELECT `+milestoneColumns+` FROM milestones WHERE id = ?`, milestoneID))
 }
 
-// ListMilestones returns a project's milestones in position order.
+// ListMilestones returns a project's milestones in position order with status derived from their issues.
 func (s *Store) ListMilestones(ctx context.Context, projectID string) ([]Milestone, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+milestoneColumns+` FROM milestones WHERE project_id = ? ORDER BY position, name`, projectID)

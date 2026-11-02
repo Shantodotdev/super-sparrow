@@ -12,7 +12,7 @@ func TestImportKeepsNumbersAndRunsTwiceSafely(t *testing.T) {
 	}
 
 	milestone := got(tm.store.ImportMilestone(tm.ctx, tm.system, ImportLinear, ImportedMilestone{
-		ExternalID: "m1", ProjectID: project.ID, Name: "Version 01", Status: MilestoneActive,
+		ExternalID: "m1", ProjectID: project.ID, Name: "Version 01",
 	})).must(t)
 	input := ImportedIssue{
 		ExternalID: "i142", ProjectID: project.ID, Number: 142, Title: "Meta comments", Status: IssueDone, MilestoneID: milestone.ID,

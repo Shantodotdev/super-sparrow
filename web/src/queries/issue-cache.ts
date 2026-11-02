@@ -21,4 +21,9 @@ export function cacheCreatedIssue(client: QueryClient, issue: Issue): void {
   );
   client.setQueryData<Issue>(["issue", issue.key], keepNewest);
   void client.invalidateQueries({ predicate: (query) => matches(query.queryKey) });
+  void client.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] === "milestones" &&
+      (query.queryKey.length === 1 || query.queryKey[1] === issue.project_key),
+  });
 }

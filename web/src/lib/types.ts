@@ -20,6 +20,7 @@ export type Actor = {
   created_at: string;
 };
 
+/** Calculated by the backend from assigned issues; never supplied in milestone writes. */
 export type MilestoneStatus = "planned" | "active" | "done";
 
 export type Milestone = {

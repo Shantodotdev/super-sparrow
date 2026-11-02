@@ -124,14 +124,14 @@ func TestProjectsMilestonesAndLabels(t *testing.T) {
 	}
 
 	a.call(http.MethodPatch, "/api/projects/wp", a.member, map[string]string{"name": "WP Agent 2"}, http.StatusOK, nil)
-	a.call(http.MethodPost, "/api/projects/WP/milestones", a.member, map[string]string{"name": "Version 01", "status": "active"}, http.StatusCreated, nil)
+	a.call(http.MethodPost, "/api/projects/WP/milestones", a.member, map[string]string{"name": "Version 01"}, http.StatusCreated, nil)
 	a.call(http.MethodPost, "/api/projects/WP/labels", a.agent, map[string]string{"name": "backend"}, http.StatusCreated, nil)
 
 	var milestones struct {
 		Milestones []milestoneView `json:"milestones"`
 	}
 	a.call(http.MethodGet, "/api/projects/WP/milestones", a.agent, nil, http.StatusOK, &milestones)
-	a.call(http.MethodPatch, "/api/milestones/"+milestones.Milestones[0].ID, a.member, map[string]string{"status": "done"}, http.StatusOK, nil)
+	a.call(http.MethodPatch, "/api/milestones/"+milestones.Milestones[0].ID, a.member, map[string]string{"name": "Version 02"}, http.StatusOK, nil)
 	wantField(t, a.request(http.MethodPatch, "/api/milestones/"+milestones.Milestones[0].ID, a.member, map[string]any{"position": nil}), "position")
 
 	var labels struct {
@@ -177,7 +177,7 @@ func TestAgentsAreRefusedPersonAndOwnerActions(t *testing.T) {
 		{http.MethodPost, "/api/projects", map[string]string{"key": "AB", "name": "Agent project"}},
 		{http.MethodPatch, "/api/projects/WP", map[string]string{"name": "Renamed"}},
 		{http.MethodDelete, "/api/projects/WP", nil},
-		{http.MethodPost, "/api/projects/WP/milestones", map[string]string{"name": "M", "status": "planned"}},
+		{http.MethodPost, "/api/projects/WP/milestones", map[string]string{"name": "M"}},
 	} {
 		if response := a.request(attempt.method, attempt.path, a.agent, attempt.body); response.Code != http.StatusForbidden {
 			t.Errorf("agent %s %s: status %d", attempt.method, attempt.path, response.Code)

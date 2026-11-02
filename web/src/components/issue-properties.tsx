@@ -89,7 +89,7 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
           const { milestone } = await apiWrite<{ milestone: Milestone }>(
             `/api/projects/${encodeURIComponent(project.key)}/milestones`,
             "POST",
-            { name, status: "planned" },
+            { name },
           );
           client.setQueryData(milestonesQuery.queryKey, (current) => [
             ...(current ?? []),

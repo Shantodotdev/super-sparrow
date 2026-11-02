@@ -69,7 +69,7 @@ type Project struct {
 	UpdatedAt       time.Time
 }
 
-// MilestoneStatus is where a milestone stands.
+// MilestoneStatus is a read-only status derived from the milestone's full issues.
 type MilestoneStatus string
 
 const (
@@ -77,10 +77,6 @@ const (
 	MilestoneActive  MilestoneStatus = "active"
 	MilestoneDone    MilestoneStatus = "done"
 )
-
-func (s MilestoneStatus) valid() bool {
-	return s == MilestonePlanned || s == MilestoneActive || s == MilestoneDone
-}
 
 // Milestone is a phase of a project.
 type Milestone struct {
