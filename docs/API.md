@@ -50,7 +50,7 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 
 Milestone status is read-only and calculated from its assigned full issues on every read: `planned` when empty or all issues are Backlog/Todo; `done` when every issue is Done/Canceled; otherwise `active` when any issue has started or finished. Reopening or reassigning issues recalculates status automatically. Subissues do not determine milestone status. Milestone create/update requests reject `status`.
 
-Project responses include `slug`, generated once from the project name and kept on rename. The SPA uses `/{slug}/issues`, `/{slug}/milestones`, and `/{slug}/findings`; HTTP API project endpoints continue to use the project key.
+Project responses include `slug`, generated once from the project name and kept on rename. The SPA uses `/{slug}/issues` and `/{slug}/milestones`; HTTP API project endpoints continue to use the project key.
 
 ## Issues and plans
 

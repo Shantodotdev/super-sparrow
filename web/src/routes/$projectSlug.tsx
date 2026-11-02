@@ -5,7 +5,6 @@ import { projectsQuery } from "../queries/project";
 import { NotFoundState } from "../components/not-found-state";
 
 const legacyRoutes = {
-  findings: "/$projectSlug/findings",
   milestones: "/$projectSlug/milestones",
 } as const;
 

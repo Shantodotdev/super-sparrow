@@ -102,7 +102,7 @@ The MCP endpoint uses the streamable HTTP transport without sessions: each reque
 
 ### Interface
 
-- FR-19: Views: project issue list, issue page, review round page, open findings list, activity feed, settings for actors and tokens.
+- FR-19: Views: project issue list, issue page, review round page, activity feed, settings for actors and tokens.
 - FR-20: Views update live through the event stream.
 - FR-21: Command palette and keyboard shortcuts for navigation and finding decisions.
 - FR-22: The desktop app adds a tray icon, native notifications, and a global shortcut to open an issue by key.

@@ -1,6 +1,5 @@
-import { findingSeverities, findingStatuses } from "./finding-status";
 import { issueStatuses } from "./issue-status";
-import type { FindingSeverity, FindingStatus, IssueStatus } from "./types";
+import type { IssueStatus } from "./types";
 
 /** The issues page's view and filters; a missing value means the list view or no filter. */
 export type IssuesSearch = {
@@ -19,18 +18,6 @@ export type IssueSearch = {
   round?: number;
   finding?: string;
   findingStatus?: "all";
-};
-
-/**
- * The findings page's filters and the selected finding, by ID. A missing status shows the
- * unresolved findings, as the page's title says.
- */
-export type FindingsSearch = {
-  q?: string;
-  severity?: FindingSeverity;
-  status?: FindingStatus | "all";
-  issue?: string;
-  finding?: string;
 };
 
 /** The finding selected on a review round page, by its label such as R2. */
@@ -75,16 +62,6 @@ export function validateIssueSearch(search: Record<string, unknown>): IssueSearc
     round: reviewTab && Number.isSafeInteger(round) && round > 0 ? round : undefined,
     finding: reviewTab ? text(search.finding) : undefined,
     findingStatus: search.tab === "findings" && search.findingStatus === "all" ? "all" : undefined,
-  };
-}
-
-export function validateFindingsSearch(search: Record<string, unknown>): FindingsSearch {
-  return {
-    q: text(search.q),
-    severity: oneOf(search.severity, findingSeverities),
-    status: search.status === "all" ? "all" : oneOf(search.status, findingStatuses),
-    issue: text(search.issue),
-    finding: text(search.finding),
   };
 }
 

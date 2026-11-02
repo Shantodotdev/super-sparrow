@@ -1,7 +1,7 @@
 // The Go API's JSON shapes, as server/internal/httpserver/views.go writes them. Timestamps are
 // RFC 3339 strings, and an empty string means "none" for optional IDs, as the API sends them.
 
-export type NavSection = "issues" | "activity" | "milestones" | "findings" | "settings";
+export type NavSection = "issues" | "activity" | "milestones" | "settings";
 
 export type ActorKind = "human" | "agent" | "system";
 

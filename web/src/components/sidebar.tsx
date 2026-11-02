@@ -90,13 +90,6 @@ export function Sidebar() {
                       label="Milestones"
                       active={projectSlug === project.slug && section === "milestones"}
                     />
-                    <NavItem
-                      to="/$projectSlug/findings"
-                      params={{ projectSlug: project.slug }}
-                      icon="list-filter"
-                      label="Open findings"
-                      active={projectSlug === project.slug && section === "findings"}
-                    />
                   </div>
                 )}
               </section>

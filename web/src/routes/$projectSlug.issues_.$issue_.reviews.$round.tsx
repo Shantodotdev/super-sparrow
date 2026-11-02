@@ -133,9 +133,9 @@ function ReviewRoundView({ issue, round, rounds, roundFindings }: ReviewRoundVie
               }))}
             />
             <Link
-              to="/$projectSlug/findings"
-              params={{ projectSlug: project.slug }}
-              search={{ issue: issue.key }}
+              to="/$projectSlug/issues/$issue"
+              params={{ projectSlug: project.slug, issue: issue.key }}
+              search={{ tab: "findings" }}
               className="text-button border-0 bg-none p-[4px] text-[12px] text-[#aebbd0] hover:text-white"
             >
               {issue.unresolved_findings} unresolved{" "}
