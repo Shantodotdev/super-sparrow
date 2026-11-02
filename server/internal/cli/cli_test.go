@@ -197,3 +197,61 @@ func TestCLIRejectsRetiredCommitFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestCLICallsAllAgentTools(t *testing.T) {
+	env, st, _ := cliServer(t)
+	var tools struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	mustRun(t, env, "", &tools, "tool", "list")
+	if len(tools.Tools) != 23 {
+		t.Fatalf("listed %d tools", len(tools.Tools))
+	}
+	var issue struct {
+		Key string `json:"key"`
+	}
+	args := `{"project_key":"WP","title":"Tool issue","status":"todo","idempotency_key":"cli-retry"}`
+	mustRun(t, env, args, &issue, "tool", "call", "create_issue", "--arguments-file", "-")
+	if issue.Key != "WP-1" {
+		t.Fatalf("issue %+v", issue)
+	}
+	mustRun(t, env, "", &issue, "tool", "call", "create_issue", "--arguments", args)
+	mustRun(t, env, "", nil, "tool", "call", "create_subissue", "--arguments", `{"issue_key":"WP-1","title":"Task","status":"todo"}`)
+	var listed struct {
+		Subissues []struct {
+			Key string `json:"key"`
+		} `json:"subissues"`
+	}
+	mustRun(t, env, "", &listed, "tool", "call", "list_subissues", "--arguments", `{"issue_key":"WP-1"}`)
+	if len(listed.Subissues) != 1 || listed.Subissues[0].Key != "WP-1.1" {
+		t.Fatalf("subissues %+v", listed)
+	}
+	if err := run(t, env, "", nil, "tool", "call", "get_issue", "--arguments", `{"issue_key":null}`); err == nil || !strings.Contains(err.Error(), "issue_key") {
+		t.Fatalf("tool error %v", err)
+	}
+	if err := run(t, env, "", nil, "tool", "call", "get_issue", "--arguments", `[]`); err == nil {
+		t.Fatal("CLI accepted non-object arguments")
+	}
+	events, err := st.ListEvents(context.Background(), store.EventFilter{ProjectEventsOnly: true, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentWrites := 0
+	for _, event := range events {
+		if event.Kind == "issue.created" || event.Kind == "issue.subissue_created" {
+			actor, err := st.GetActor(context.Background(), event.ActorID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if actor.Kind != store.ActorAgent || actor.DisplayName != "Codex" {
+				t.Fatalf("wrong actor %+v", actor)
+			}
+			agentWrites++
+		}
+	}
+	if agentWrites != 2 {
+		t.Fatalf("CLI recorded %d agent writes", agentWrites)
+	}
+}

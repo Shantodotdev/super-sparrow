@@ -59,6 +59,8 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 
 - [x] Add the MCP server over streamable HTTP, using agent tokens.
 - [x] Implement the MCP tools listed in SRS FR-16.
+- [x] Extend discovery, plan and subissue editing, review retrieval, bounded discussion pages, structured errors, and durable retry keys.
+- [x] Expose every MCP tool through generic CLI tool commands and document connection verification.
 - [x] Write each tool's description so an agent can use it without extra instructions.
 - [x] Build the CLI on the HTTP API, covering the same operations.
 - [ ] Connect Claude Code and Codex to the server and run one full plan, review, and fix loop.

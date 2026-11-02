@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ type tool struct {
 }
 
 func (s *Server) toolList() []tool {
-	return []tool{
+	return append([]tool{
 		{
 			name:  "get_issue_for_branch",
 			title: "Find the issue for a branch",
@@ -122,7 +123,8 @@ func (s *Server) toolList() []tool {
 				"not yet verified (fixed). Each finding includes its discussion. When addressing a review, work on the findings with " +
 				"status fix, and follow what the discussion says about how to fix them.",
 			schema: object([]string{"issue_key"}, map[string]any{
-				"issue_key": issueKey,
+				"issue_key":        issueKey,
+				"include_comments": boolean("Include the first discussion page; true when omitted. Use false for a compact list."),
 				"statuses": array("Only list findings with these statuses.",
 					enum("A finding status.", "open", "fix", "wontfix", "later", "fixed", "verified")),
 			}),
@@ -217,13 +219,13 @@ func (s *Server) toolList() []tool {
 				"title":            text("The issue's title."),
 				"status":           enum("Where the issue starts.", "backlog", "todo", "in_progress", "in_review", "done", "canceled"),
 				"plan":             text("The plan, in markdown."),
-				"parent_issue_key": text("The key of the issue this one belongs under, such as WP-142."),
+				"parent_issue_key": text("A parent full issue for a linked follow-up. For lightweight work breakdowns, use create_subissue instead."),
 				"branch_name":      text("The git branch for this issue, if one exists."),
 				"labels":           array("Names of existing labels in the project.", text("A label name.")),
 			}),
 			run: bind(s.createIssue),
 		},
-	}
+	}, s.extraTools()...)
 }
 
 // Schemas, kept small so each tool's input reads clearly.
@@ -234,6 +236,9 @@ var (
 )
 
 func object(required []string, properties map[string]any) map[string]any {
+	if required == nil {
+		required = []string{}
+	}
 	return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
 }
 
@@ -296,15 +301,16 @@ func decodeArgs(raw json.RawMessage, dst any) error {
 // Outputs. They name actors and link to pages, so an agent can report what it did.
 
 type issueOutput struct {
-	Key                string        `json:"key"`
-	Title              string        `json:"title"`
-	Status             string        `json:"status"`
-	URL                string        `json:"url"`
-	BranchName         string        `json:"branch_name,omitempty"`
-	PullRequestURL     string        `json:"pull_request_url,omitempty"`
-	Checklist          string        `json:"checklist"`
-	ReviewRounds       []roundOutput `json:"review_rounds"`
-	UnresolvedFindings int           `json:"unresolved_findings"`
+	Key                   string        `json:"key"`
+	Title                 string        `json:"title"`
+	Status                string        `json:"status"`
+	URL                   string        `json:"url"`
+	BranchName            string        `json:"branch_name,omitempty"`
+	PullRequestURL        string        `json:"pull_request_url,omitempty"`
+	Checklist             string        `json:"checklist"`
+	ReviewRounds          []roundOutput `json:"review_rounds"`
+	UnresolvedFindings    int           `json:"unresolved_findings"`
+	ReviewRoundsTruncated bool          `json:"review_rounds_truncated"`
 }
 
 type roundOutput struct {
@@ -316,25 +322,27 @@ type roundOutput struct {
 }
 
 type findingOutput struct {
-	Round          int             `json:"round"`
-	Finding        string          `json:"finding"`
-	Severity       string          `json:"severity"`
-	Status         string          `json:"status"`
-	Title          string          `json:"title"`
-	Problem        string          `json:"problem"`
-	Fix            string          `json:"fix"`
-	Evidence       string          `json:"evidence,omitempty"`
-	FilePath       string          `json:"file_path,omitempty"`
-	Line           int             `json:"line,omitempty"`
-	DecisionReason string          `json:"decision_reason,omitempty"`
-	FoundBy        *actorOutput    `json:"found_by"`
-	DecidedBy      *actorOutput    `json:"decided_by,omitempty"`
-	FixedBy        *actorOutput    `json:"fixed_by,omitempty"`
-	VerifiedBy     *actorOutput    `json:"verified_by,omitempty"`
-	FollowUpIssue  string          `json:"follow_up_issue,omitempty"`
-	DuplicateOf    string          `json:"duplicate_of,omitempty"`
-	URL            string          `json:"url"`
-	Comments       []commentOutput `json:"comments"`
+	Round              int             `json:"round"`
+	Finding            string          `json:"finding"`
+	Severity           string          `json:"severity"`
+	Status             string          `json:"status"`
+	Title              string          `json:"title"`
+	Problem            string          `json:"problem"`
+	Fix                string          `json:"fix"`
+	Evidence           string          `json:"evidence,omitempty"`
+	FilePath           string          `json:"file_path,omitempty"`
+	Line               int             `json:"line,omitempty"`
+	DecisionReason     string          `json:"decision_reason,omitempty"`
+	FoundBy            *actorOutput    `json:"found_by"`
+	DecidedBy          *actorOutput    `json:"decided_by,omitempty"`
+	FixedBy            *actorOutput    `json:"fixed_by,omitempty"`
+	VerifiedBy         *actorOutput    `json:"verified_by,omitempty"`
+	FollowUpIssue      string          `json:"follow_up_issue,omitempty"`
+	DuplicateOf        string          `json:"duplicate_of,omitempty"`
+	URL                string          `json:"url"`
+	Comments           []commentOutput `json:"comments"`
+	CommentsNextCursor string          `json:"comments_next_cursor,omitempty"`
+	CommentsIncluded   bool            `json:"comments_included"`
 }
 
 // commentOutput is one comment in a discussion. ReplyTo is the ID of the comment it answers.
@@ -348,7 +356,7 @@ type commentOutput struct {
 }
 
 func (s *Server) issueURL(issue store.Issue) string {
-	return strings.TrimRight(s.publicURL.String(), "/") + "/" + issue.Key()
+	return strings.TrimRight(s.publicURL.String(), "/") + "/" + url.PathEscape(issue.ProjectSlug) + "/issues/" + issue.Key()
 }
 
 func (s *Server) roundURL(issue store.Issue, round int) string {
@@ -356,7 +364,7 @@ func (s *Server) roundURL(issue store.Issue, round int) string {
 }
 
 func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOutput, error) {
-	rounds, err := s.store.ListReviewRounds(ctx, issue.ID)
+	rounds, err := s.store.ListAgentRounds(ctx, issue.ID, 51, 0)
 	if err != nil {
 		return issueOutput{}, err
 	}
@@ -374,6 +382,10 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 		BranchName: issue.BranchName, PullRequestURL: issue.PullRequestURL,
 		Checklist:    fmt.Sprintf("%d of %d items done", done, len(items)),
 		ReviewRounds: make([]roundOutput, 0, len(rounds)), UnresolvedFindings: issue.UnresolvedFindings,
+	}
+	if len(rounds) > 50 {
+		output.ReviewRoundsTruncated = true
+		rounds = rounds[:50]
 	}
 	for _, round := range rounds {
 		output.ReviewRounds = append(output.ReviewRounds, s.newRoundOutput(issue, round, nil))
@@ -439,6 +451,11 @@ func (n *actorNames) name(ctx context.Context, id string) (*actorOutput, error) 
 }
 
 func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding) ([]findingOutput, error) {
+	return s.findingOutputs(ctx, issue, findings, true)
+}
+
+// findingOutputs optionally includes a bounded first discussion page for each finding.
+func (s *Server) findingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding, includeComments bool) ([]findingOutput, error) {
 	names := newActorNames(s.store)
 	outputs := make([]findingOutput, 0, len(findings))
 
@@ -446,7 +463,7 @@ func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findi
 		output := findingOutput{
 			Round: f.RoundNumber, Finding: f.Label(), Severity: string(f.Severity), Status: string(f.Status),
 			Title: f.Title, Problem: f.Problem, Fix: f.Fix, Evidence: f.Evidence, FilePath: f.FilePath, Line: f.Line,
-			DecisionReason: f.DecisionReason, URL: s.roundURL(issue, f.RoundNumber) + "#" + f.Label(),
+			DecisionReason: f.DecisionReason, URL: s.roundURL(issue, f.RoundNumber) + "?finding=" + f.Label(),
 		}
 
 		var err error
@@ -473,12 +490,17 @@ func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findi
 			output.FollowUpIssue = followUp.Key()
 		}
 
-		comments, err := s.store.ListComments(ctx, "", f.ID)
-		if err != nil {
-			return nil, err
-		}
-		if output.Comments, err = newCommentOutputs(ctx, names, comments); err != nil {
-			return nil, err
+		output.CommentsIncluded = includeComments
+		if includeComments {
+			comments, err := s.store.ListAgentComments(ctx, "", f.ID, 51, 0)
+			if err != nil {
+				return nil, err
+			}
+			_, _, hash, _ := (pageArgs{}).bounds([]string{"comments", issue.ID, f.ID})
+			comments, output.CommentsNextCursor = pageSlice(comments, 50, 0, hash)
+			if output.Comments, err = newCommentOutputs(ctx, names, comments); err != nil {
+				return nil, err
+			}
 		}
 
 		outputs = append(outputs, output)
@@ -632,6 +654,9 @@ func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, a
 		if item.Index == nil || item.Checked == nil || item.Text == nil {
 			return nil, &store.ValidationError{Field: "items", Message: "each item needs an index, checked, and its text"}
 		}
+		if _, exists := changes[*item.Index]; exists {
+			return nil, &store.ValidationError{Field: "items", Message: "must not repeat a checklist index"}
+		}
 		changes[*item.Index] = checklist.Change{Checked: *item.Checked, Text: *item.Text}
 	}
 
@@ -724,14 +749,19 @@ func (s *Server) finishReviewRound(ctx context.Context, caller store.Caller, arg
 }
 
 func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args struct {
-	IssueKey string   `json:"issue_key"`
-	Statuses []string `json:"statuses"`
+	pageArgs
+	IssueKey        string   `json:"issue_key"`
+	Statuses        []string `json:"statuses"`
+	IncludeComments *bool    `json:"include_comments"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
 		return nil, err
 	}
-
+	limit, offset, hash, err := args.bounds([]any{"open_findings", issue.ID, args.Statuses})
+	if err != nil {
+		return nil, err
+	}
 	statuses := store.UnresolvedFindingStatuses
 	if len(args.Statuses) > 0 {
 		statuses = nil
@@ -739,16 +769,16 @@ func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args stru
 			statuses = append(statuses, store.FindingStatus(status))
 		}
 	}
-
-	findings, err := s.store.ListIssueFindings(ctx, issue.ID, statuses, true)
+	findings, err := s.store.ListAgentFindings(ctx, issue.ID, "", statuses, true, limit+1, offset)
 	if err != nil {
 		return nil, err
 	}
-	outputs, err := s.newFindingOutputs(ctx, issue, findings)
+	findings, cursor := pageSlice(findings, limit, offset, hash)
+	outputs, err := s.findingOutputs(ctx, issue, findings, args.IncludeComments == nil || *args.IncludeComments)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"issue_key": issue.Key(), "findings": outputs}, nil
+	return map[string]any{"issue_key": issue.Key(), "findings": outputs, "next_cursor": cursor}, nil
 }
 
 func (s *Server) setFindingStatus(ctx context.Context, caller store.Caller, args struct {
@@ -859,10 +889,15 @@ func (s *Server) addComment(ctx context.Context, caller store.Caller, args struc
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"comment_id": comment.ID, "issue_key": issue.Key(), "url": s.issueURL(issue)}, nil
+	link := s.issueURL(issue) + "?tab=comments"
+	if finding != nil {
+		link = s.roundURL(issue, finding.RoundNumber) + "?finding=" + finding.Label()
+	}
+	return map[string]any{"comment_id": comment.ID, "issue_key": issue.Key(), "url": link}, nil
 }
 
 func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
+	pageArgs
 	IssueKey string `json:"issue_key"`
 	Round    *int   `json:"round"`
 	Finding  string `json:"finding"`
@@ -882,15 +917,20 @@ func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
 		about = fmt.Sprintf("%s round %d %s", issue.Key(), finding.RoundNumber, finding.Label())
 	}
 
-	comments, err := s.store.ListComments(ctx, issueID, findingID)
+	limit, offset, hash, err := args.bounds([]string{"comments", issue.ID, findingID})
 	if err != nil {
 		return nil, err
 	}
+	comments, err := s.store.ListAgentComments(ctx, issueID, findingID, limit+1, offset)
+	if err != nil {
+		return nil, err
+	}
+	comments, cursor := pageSlice(comments, limit, offset, hash)
 	outputs, err := newCommentOutputs(ctx, newActorNames(s.store), comments)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"about": about, "comments": outputs}, nil
+	return map[string]any{"about": about, "comments": outputs, "next_cursor": cursor}, nil
 }
 
 func (s *Server) postFixSummary(ctx context.Context, caller store.Caller, args struct {

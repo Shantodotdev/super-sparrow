@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +22,12 @@ const timeLayout = "2006-01-02T15:04:05.000Z"
 
 // Store is the data access layer. It is safe for concurrent use.
 type Store struct {
-	db  *sql.DB
+	db  storeDatabase
 	now func() time.Time
 
-	changeMu sync.Mutex
-	changed  chan struct{}
+	changeMu    sync.Mutex
+	changed     chan struct{}
+	transaction *writeTx
 }
 
 // New returns a Store over db, which must already be migrated. now supplies the current time;
@@ -56,6 +58,22 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// storeDatabase lets a tool's reads share the transaction that commits its writes and retry receipt.
+type storeDatabase interface {
+	Exec(string, ...any) (sql.Result, error)
+	QueryRow(string, ...any) *sql.Row
+	querier
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+}
+
+// transactionDatabase refuses nested transactions; scoped writes reuse the enclosing writeTx.
+type transactionDatabase struct{ *sql.Tx }
+
+func (d transactionDatabase) BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error) {
+	return nil, errors.New("nested transaction is not supported")
+}
+
 // writeTx is the transaction a change runs in, with the caller it runs as.
 type writeTx struct {
 	tx     *sql.Tx
@@ -67,6 +85,12 @@ type writeTx struct {
 
 // write runs fn in a transaction as the caller and commits when fn succeeds.
 func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error) error {
+	if s.transaction != nil {
+		if by.ActorID != s.transaction.caller.ID || strings.TrimSpace(by.ReportedModel) != s.transaction.model {
+			return forbidden("transaction caller cannot change")
+		}
+		return fn(s.transaction)
+	}
 	model, err := optionalText("reported_model", by.ReportedModel, maxReportedModel)
 	if err != nil {
 		return err

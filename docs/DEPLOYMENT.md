@@ -197,6 +197,8 @@ url = "https://sparrow.example.com/mcp"
 bearer_token_env_var = "SPARROW_TOKEN"
 ```
 
+See [MCP.md](MCP.md) for the tool workflow, pagination, retry keys, structured errors, and connection verification. `sparrow tool list` and `sparrow tool call list_projects --arguments '{}'` check the endpoint using `SPARROW_URL` and `SPARROW_TOKEN`; discovery in the actual agent client also verifies its configuration.
+
 An agent may also send `Sparrow-Model: <model>` to record the model it runs on its changes. The server records the value as reported; it cannot verify it.
 
 Scripts and agents without MCP use the CLI. It runs the same operations through the HTTP API with `SPARROW_URL` and `SPARROW_TOKEN`, and `sparrow help` lists its commands.

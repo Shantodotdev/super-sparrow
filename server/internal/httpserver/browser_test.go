@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -57,10 +58,18 @@ func TestBrowserSmoke(t *testing.T) {
 	})
 	server.Start()
 	defer server.Close()
+	a.handler = handler
+	issue := a.toolObject("get_issue", map[string]any{"issue_key": "WP-1"})
+	round := a.toolObject("get_review_round", map[string]any{"issue_key": "WP-1", "round": 1})
+	finding := a.toolObject("get_finding", map[string]any{"issue_key": "WP-1", "round": 1, "finding": "R1"})
+	links, err := json.Marshal(map[string]any{"issue": issue["url"], "round": round["round"].(map[string]any)["url"], "finding": finding["url"]})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	command := exec.CommandContext(ctx, "bun", "../../../web/e2e/smoke.ts")
-	command.Env = append(os.Environ(), "SPARROW_E2E_URL="+server.URL)
+	command.Env = append(os.Environ(), "SPARROW_E2E_URL="+server.URL, "SPARROW_E2E_MCP_LINKS="+string(links))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("browser smoke: %v\n%s", err, output)

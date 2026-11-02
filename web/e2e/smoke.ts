@@ -1025,6 +1025,26 @@ try {
     throw new Error("Finding drawer must fit a narrow screen without horizontal scrolling");
   checks++;
   await call("Emulation.clearDeviceMetricsOverride", {});
+  const mcpLinks = JSON.parse(process.env.SPARROW_E2E_MCP_LINKS ?? "null") as {
+    issue: string;
+    round: string;
+    finding: string;
+  } | null;
+  if (!mcpLinks) throw new Error("SPARROW_E2E_MCP_LINKS is required for route coverage");
+  await navigate(new URL(mcpLinks.issue).pathname);
+  await until(
+    () =>
+      evaluate(`document.querySelector('[aria-label="Issue title"]')?.value === 'Meta comments'`),
+    "MCP issue link opens its issue",
+  );
+  checks++;
+  await navigate(new URL(mcpLinks.round).pathname);
+  await waitText("Browser finding");
+  await navigate(new URL(mcpLinks.finding).pathname + new URL(mcpLinks.finding).search);
+  await waitText("Test problem");
+  if (!(await evaluate(`new URL(location.href).searchParams.get('finding') === 'R1'`)))
+    throw new Error("MCP finding URL must select its finding through route search");
+  checks++;
   await navigate(`/${projectSlug}/issues/WP-1/reviews/1`);
   await waitText("Browser finding");
   await evaluate(

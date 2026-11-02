@@ -92,9 +92,11 @@ The issue page orders its tabs Plan, Review rounds, Findings, Activity, Comments
 
 ### Agent interface
 
-- FR-16: The MCP server exposes these tools: `get_issue_for_branch`, `get_issue`, `get_plan`, `update_plan_checklist`, `start_review_round`, `add_finding`, `finish_review_round`, `list_open_findings`, `set_finding_status`, `mark_duplicate`, `add_comment`, `list_comments`, `post_fix_summary`, `create_issue`. Findings that tools return include their discussion.
-- FR-17: Tool inputs are validated. Invalid inputs return a clear error that names the field.
-- FR-18: The CLI covers the same operations for scripts and agents without MCP.
+- FR-16: The MCP server exposes these tools: `get_issue_for_branch`, `get_issue`, `get_plan`, `update_plan_checklist`, `start_review_round`, `add_finding`, `finish_review_round`, `list_open_findings`, `set_finding_status`, `mark_duplicate`, `add_comment`, `list_comments`, `post_fix_summary`, `create_issue`, `list_projects`, `list_issues`, `update_plan`, `list_subissues`, `create_subissue`, `update_subissue`, `list_review_rounds`, `get_review_round`, and `get_finding`. Findings include a bounded discussion page unless explicitly omitted. List tools support cursors, writes accept actor-scoped retry keys, and plan/description edits require revisions. [MCP.md](MCP.md) defines the complete tool behavior.
+- FR-17: Tool inputs are validated. Invalid inputs return a clear error that names the field. Tool results include structured JSON, and failures include stable error codes.
+- FR-18: The CLI covers the same operations for scripts and agents without a configured MCP connection, including generic `tool list` and `tool call` commands.
+
+Successful write results and optional retry receipts are stored with their events in the same SQLite transaction. Retry keys are scoped to the authenticated agent and refuse changed requests.
 
 The MCP endpoint uses the streamable HTTP transport without sessions: each request is answered with JSON, and the server sends nothing unprompted.
 

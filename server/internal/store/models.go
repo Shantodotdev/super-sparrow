@@ -127,12 +127,13 @@ func (s IssueStatus) closed() bool { return s == IssueDone || s == IssueCanceled
 
 // Issue is a task whose description is its plan.
 type Issue struct {
-	ID         string
-	ProjectID  string
-	ProjectKey string
-	Number     int
-	Title      string
-	Plan       string
+	ID          string
+	ProjectID   string
+	ProjectKey  string
+	ProjectSlug string
+	Number      int
+	Title       string
+	Plan        string
 	// PlanRevision goes up by one with every change to Plan. An update that edits the plan names
 	// the revision it started from.
 	PlanRevision    int

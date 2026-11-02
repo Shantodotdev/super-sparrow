@@ -13,7 +13,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 )
 
-const issueColumns = `i.id, i.project_id, p.key, i.number, i.title, i.plan, i.plan_revision, i.status, i.priority, i.parent_issue_id,
+const issueColumns = `i.id, i.project_id, p.key, p.slug, i.number, i.title, i.plan, i.plan_revision, i.status, i.priority, i.parent_issue_id,
 	i.milestone_id, i.assignee_actor_id, i.branch_name, i.pull_request_url,
 	(SELECT group_concat(label_id) FROM issue_labels WHERE issue_id = i.id),
 	i.created_by_actor_id, i.completed_at, i.created_at, i.updated_at,
@@ -161,7 +161,7 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 		Title: fields.title, Plan: fields.plan, PlanRevision: 1, Status: fields.status, Priority: fields.priority,
 		ParentIssueID: fields.parentID, MilestoneID: fields.milestoneID, AssigneeActorID: fields.assigneeID,
 		BranchName: fields.branch, PullRequestURL: fields.pullRequest, LabelIDs: fields.labelIDs,
-		CreatedByID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now,
+		CreatedByID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now, ProjectSlug: project.Slug,
 	}
 	var completedAt sql.NullString
 	if issue.Status.closed() {
@@ -681,7 +681,7 @@ func scanIssue(row scanner) (Issue, error) {
 	var parent, milestone, assignee, branch, pullRequest, labels, completed sql.NullString
 	var created, updated string
 
-	err := row.Scan(&issue.ID, &issue.ProjectID, &issue.ProjectKey, &issue.Number, &issue.Title, &issue.Plan,
+	err := row.Scan(&issue.ID, &issue.ProjectID, &issue.ProjectKey, &issue.ProjectSlug, &issue.Number, &issue.Title, &issue.Plan,
 		&issue.PlanRevision, &issue.Status, &issue.Priority, &parent, &milestone, &assignee, &branch, &pullRequest, &labels,
 		&issue.CreatedByID, &completed, &created, &updated, &issue.UnresolvedFindings, &issue.CommentCount)
 	if errors.Is(err, sql.ErrNoRows) {

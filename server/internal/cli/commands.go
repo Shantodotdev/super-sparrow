@@ -18,6 +18,9 @@ import (
 
 // Usage lists the client commands.
 const Usage = `Client commands (need SPARROW_URL and SPARROW_TOKEN; SPARROW_MODEL is optional):
+  tool list                             Discover all agent tools
+  tool call NAME (--arguments JSON | --arguments-file FILE)
+                                        Run any MCP tool, including retries and pagination
   issue get KEY                         Show an issue
   issue for-branch [BRANCH]             Find the issue for a branch (default: the current git branch)
   issue create --project KEY --title TEXT --status STATUS [--plan TEXT | --plan-file FILE]
@@ -40,7 +43,7 @@ A FILE of - reads standard input. Every command prints the API's JSON response.`
 // IsCommand reports whether name is a client command.
 func IsCommand(name string) bool {
 	switch name {
-	case "issue", "plan", "review", "finding", "comment", "fix-summary":
+	case "issue", "plan", "review", "finding", "comment", "fix-summary", "tool":
 		return true
 	}
 	return false
@@ -86,6 +89,13 @@ func (r *runner) run(ctx context.Context, args []string) (json.RawMessage, error
 
 	command, rest := args[0]+" "+args[1], args[2:]
 	switch command {
+	case "tool list":
+		if len(rest) != 0 {
+			return nil, usageError("tool list takes no arguments")
+		}
+		return r.agentTool(ctx, "tools/list", nil)
+	case "tool call":
+		return r.callAgentTool(ctx, rest)
 	case "issue get":
 		return r.get(ctx, rest, 1, func(p []string) string { return "/api/issues/" + url.PathEscape(p[0]) })
 	case "issue for-branch":

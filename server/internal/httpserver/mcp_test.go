@@ -100,7 +100,7 @@ func TestMCPHandshakeAndToolList(t *testing.T) {
 		names = append(names, tool["name"].(string))
 	}
 	want := "get_issue_for_branch,get_issue,get_plan,update_plan_checklist,start_review_round,add_finding," +
-		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue"
+		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue,list_projects,list_issues,update_plan,list_subissues,create_subissue,update_subissue,get_review_round,get_finding,list_review_rounds"
 	if strings.Join(names, ",") != want {
 		t.Fatalf("tools %v", names)
 	}
@@ -140,7 +140,7 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 	// Find the issue and work through its plan.
 	var issue issueOutputForTest
 	a.mustTool("get_issue_for_branch", map[string]any{"branch": "feat/wp-1-meta"}, &issue)
-	if issue.Key != "WP-1" || issue.URL != origin+"/WP-1" || issue.Checklist != "0 of 2 items done" {
+	if issue.Key != "WP-1" || issue.URL != origin+"/wp-agent/issues/WP-1" || issue.Checklist != "0 of 2 items done" {
 		t.Fatalf("issue for branch %+v", issue)
 	}
 	a.mustTool("get_issue", map[string]any{"issue_key": "wp-1"}, &issue)
@@ -166,7 +166,7 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		URL   string `json:"url"`
 	}
 	a.mustTool("start_review_round", map[string]any{"issue_key": "WP-1"}, &round)
-	if round.Round != 1 || round.URL != origin+"/WP-1/reviews/1" {
+	if round.Round != 1 || round.URL != origin+"/wp-agent/issues/WP-1/reviews/1" {
 		t.Fatalf("round %+v", round)
 	}
 	var finding struct {
