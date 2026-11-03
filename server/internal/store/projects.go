@@ -356,6 +356,60 @@ func (s *Store) CreateLabelWithColor(ctx context.Context, by Caller, projectID, 
 	return label, err
 }
 
+// LabelUpdate lists the label fields to change.
+type LabelUpdate struct {
+	Name  Field[string]
+	Color Field[string]
+}
+
+// UpdateLabel renames or recolors a label of the project and records its actor. Issues and
+// subissues keep the label, since they refer to it by ID.
+func (s *Store) UpdateLabel(ctx context.Context, by Caller, projectID, labelID string, update LabelUpdate) (Label, error) {
+	var err error
+	if update.Name.Set {
+		if update.Name.Value, err = requiredText("name", update.Name.Value, maxLabelLength); err != nil {
+			return Label{}, err
+		}
+	}
+	if update.Color.Set {
+		update.Color.Value = strings.ToLower(strings.TrimSpace(update.Color.Value))
+		if !labelColorPattern.MatchString(update.Color.Value) {
+			return Label{}, invalid("color", "must be a six-digit hex color, such as #a7c0ff")
+		}
+	}
+
+	var label Label
+	err = s.write(ctx, by, func(w *writeTx) error {
+		var created, updated string
+		err := w.tx.QueryRowContext(w.ctx, `SELECT id, project_id, name, color, created_at, updated_at FROM labels WHERE id = ? AND project_id = ?`,
+			labelID, projectID).Scan(&label.ID, &label.ProjectID, &label.Name, &label.Color, &created, &updated)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("label")
+		}
+		if err != nil {
+			return fmt.Errorf("read label %s: %w", labelID, err)
+		}
+		if label.CreatedAt, label.UpdatedAt, err = timestamps(created, updated); err != nil {
+			return err
+		}
+
+		changes := map[string]any{}
+		applyChange(update.Name, &label.Name, "name", changes)
+		applyChange(update.Color, &label.Color, "color", changes)
+		if len(changes) == 0 {
+			return nil
+		}
+
+		_, err = w.exec(`UPDATE labels SET name = ?, color = ?, updated_at = ? WHERE id = ?`, label.Name, label.Color, w.timestamp(), label.ID)
+		if err != nil {
+			return mapUniqueViolation(err, "this project already has a label named "+label.Name, "update label")
+		}
+		label.UpdatedAt = w.now
+		return w.event(projectID, TargetLabel, label.ID, "label.updated", map[string]any{"changes": changes})
+	})
+	return label, err
+}
+
 // ListLabels returns a project's labels in name order.
 func (s *Store) ListLabels(ctx context.Context, projectID string) ([]Label, error) {
 	rows, err := s.db.QueryContext(ctx,

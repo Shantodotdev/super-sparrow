@@ -288,3 +288,56 @@ func TestMilestoneStatusIsCalculatedForHTTPAndMCP(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPManagesAndAppliesLabels(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+
+	created := a.toolObject("create_label", map[string]any{"project_key": "WP", "name": "Security", "color": "#f2a9ae"})
+	if created["label"].(map[string]any)["color"] != "#f2a9ae" {
+		t.Fatalf("created %+v", created)
+	}
+	a.mustTool("create_label", map[string]any{"project_key": "WP", "name": "Release"}, nil)
+	renamed := a.toolObject("update_label", map[string]any{"project_key": "WP", "name": "release", "new_name": "Beta"})
+	if renamed["label"].(map[string]any)["name"] != "Beta" {
+		t.Fatalf("renamed %+v", renamed)
+	}
+	labels := a.toolObject("list_labels", map[string]any{"project_key": "WP"})["labels"].([]any)
+	if len(labels) != 2 || labels[0].(map[string]any)["name"] != "Beta" {
+		t.Fatalf("labels %+v", labels)
+	}
+
+	issue := a.toolObject("set_labels", map[string]any{"issue_key": "WP-1", "labels": []string{"Security", "beta"}})
+	if !reflect.DeepEqual(issue["labels"], []any{"Beta", "Security"}) {
+		t.Fatalf("issue %+v", issue)
+	}
+	sub := a.toolObject("create_subissue", map[string]any{"issue_key": "WP-1", "title": "Fix", "status": "todo", "labels": []string{"Security"}})
+	if !reflect.DeepEqual(sub["labels"], []any{"Security"}) {
+		t.Fatalf("subissue %+v", sub)
+	}
+	sub = a.toolObject("set_labels", map[string]any{"issue_key": "WP-1", "subissue_key": "wp-1.1", "labels": []string{}})
+	if !reflect.DeepEqual(sub["labels"], []any{}) {
+		t.Fatalf("cleared subissue %+v", sub)
+	}
+	sub = a.toolObject("update_subissue", map[string]any{"issue_key": "WP-1", "subissue_key": "WP-1.1", "labels": []string{"Beta"}})
+	if !reflect.DeepEqual(sub["labels"], []any{"Beta"}) {
+		t.Fatalf("updated subissue %+v", sub)
+	}
+
+	result := a.rpc("tools/call", map[string]any{"name": "set_labels", "arguments": map[string]any{"issue_key": "WP-1", "labels": []string{"Missing"}}})
+	if result["structuredContent"].(map[string]any)["error"].(map[string]any)["field"] != "labels" {
+		t.Fatalf("unknown label %+v", result)
+	}
+
+	events, err := a.store.ListEvents(context.Background(), store.EventFilter{ActorID: a.agentActor().ID, ProjectEventsOnly: true, Limit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := []string{}
+	for _, event := range events {
+		kinds = append(kinds, event.Kind)
+	}
+	if !strings.Contains(strings.Join(kinds, ","), "label.created,label.created,label.updated,issue.labels_changed,issue.subissue_created,issue.subissue_updated,issue.subissue_updated") {
+		t.Fatalf("agent events %v", kinds)
+	}
+}

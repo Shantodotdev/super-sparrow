@@ -35,18 +35,19 @@ The Go server's JSON API, for the web interface, the CLI, and scripts. The handl
 
 ## Projects, milestones, and labels
 
-| Method and path                       | Access | What it does                                                |
-| ------------------------------------- | ------ | ----------------------------------------------------------- |
-| `GET /api/projects`                   |        | `{projects}` in key order                                   |
-| `POST /api/projects`                  | person | `{key, name}`                                               |
-| `GET /api/projects/{key}`             |        | `{project}`                                                 |
-| `PATCH /api/projects/{key}`           | person | `{name}`; the key never changes                             |
-| `DELETE /api/projects/{key}`          | owner  | Deletes the project and everything in it; its history stays |
-| `GET /api/projects/{key}/milestones`  |        | `{milestones}` in position order                            |
-| `POST /api/projects/{key}/milestones` | person | `{name}`; returns `{milestone}` with calculated status      |
-| `PATCH /api/milestones/{id}`          | person | `{name?, position?}`; returns `{milestone}`                 |
-| `GET /api/projects/{key}/labels`      |        | `{labels}` in name order                                    |
-| `POST /api/projects/{key}/labels`     |        | `{name, color?}`; color is a six-digit hexadecimal value    |
+| Method and path                         | Access | What it does                                                             |
+| --------------------------------------- | ------ | ------------------------------------------------------------------------ |
+| `GET /api/projects`                     |        | `{projects}` in key order                                                |
+| `POST /api/projects`                    | person | `{key, name}`                                                            |
+| `GET /api/projects/{key}`               |        | `{project}`                                                              |
+| `PATCH /api/projects/{key}`             | person | `{name}`; the key never changes                                          |
+| `DELETE /api/projects/{key}`            | owner  | Deletes the project and everything in it; its history stays              |
+| `GET /api/projects/{key}/milestones`    |        | `{milestones}` in position order                                         |
+| `POST /api/projects/{key}/milestones`   | person | `{name}`; returns `{milestone}` with calculated status                   |
+| `PATCH /api/milestones/{id}`            | person | `{name?, position?}`; returns `{milestone}`                              |
+| `GET /api/projects/{key}/labels`        |        | `{labels}` in name order                                                 |
+| `POST /api/projects/{key}/labels`       |        | `{name, color?}`; color is a six-digit hexadecimal value                 |
+| `PATCH /api/projects/{key}/labels/{id}` |        | Supplied `name` and/or `color`; returns `{label}`. Emits `label.updated` |
 
 Milestone status is read-only and calculated from its assigned full issues on every read: `planned` when empty or all issues are Backlog/Todo; `done` when every issue is Done/Canceled; otherwise `active` when any issue has started or finished. Reopening or reassigning issues recalculates status automatically. Subissues do not determine milestone status. Milestone create/update requests reject `status`.
 
@@ -69,17 +70,17 @@ Issue statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and `c
 
 ## Subissues
 
-Subissues are lightweight children, separate from full issues and their existing `parent_issue_id` links. Their only content fields are title, Markdown description, ID, and status. They have no reviews, findings, comments, assignees, labels, priorities, milestones, branches, pull requests, or nested children. Review and discussion endpoints accept full issues only.
+Subissues are lightweight children, separate from full issues and their existing `parent_issue_id` links. Their fields are title, Markdown description, ID, status, labels (`label_ids`, from the parent issue's project), and creator (`created_by_actor_id`). They have no reviews, findings, comments, assignees, priorities, milestones, branches, pull requests, or nested children. Review and discussion endpoints accept full issues only.
 
-| Method and path                          | What it does                                                                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/issues/{key}/subissues`        | `{subissues}` in ascending number order, including descriptions; an empty list is `[]`                                                                        |
-| `POST /api/issues/{key}/subissues`       | `{title, description?, status}`; returns `{subissue}` with 201                                                                                                |
-| `PATCH /api/issues/{key}/subissues/{id}` | Supplied `title`, `description`, and/or `status`; returns `{subissue}`. Description edits require `description_revision`; a stale edit returns 409 atomically |
+| Method and path                          | What it does                                                                                                                                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/issues/{key}/subissues`        | `{subissues}` in ascending number order, including descriptions; an empty list is `[]`                                                                                                        |
+| `POST /api/issues/{key}/subissues`       | `{title, description?, status, label_ids?}`; returns `{subissue}` with 201                                                                                                                    |
+| `PATCH /api/issues/{key}/subissues/{id}` | Supplied `title`, `description`, `status`, and/or `label_ids` (replaces the set); returns `{subissue}`. Description edits require `description_revision`; a stale edit returns 409 atomically |
 
 Each subissue returns `id` (UUID), `key` (such as `WP-142.1`), `issue_id`, `title`, `description`, `description_revision`, and `status`. Numbers increase within the parent without consuming project issue numbers. Title is required (up to 200 characters), description supports up to 100,000 characters, and status is required on creation and uses the issue statuses. `description: null` clears the description when paired with its revision; null titles and statuses are rejected. Omitted update fields are preserved. The subissue ID must belong to the issue in the path; otherwise the server returns 404.
 
-People and agents use the same authenticated endpoints. Actor fields are rejected; the server derives identity from the session or token. Each committed creation or edit emits `issue.subissue_created` or `issue.subissue_updated` on the parent issue, with the subissue ID and number in its payload. These events appear in the parent history and event stream. The web interface shows subissues below the description and instead of review rounds in the sidebar, with creation available from either list. Clicking an existing subissue opens a right-side drawer: titles save on blur, statuses save immediately, and Markdown descriptions autosave with revision checks and recoverable drafts. MCP exposes `list_subissues`, `create_subissue`, and `update_subissue`; the CLI can call them through `tool call`. Existing CLI issue commands operate on full issues. See [MCP.md](MCP.md) for tool arguments, pagination, and safe retries.
+People and agents use the same authenticated endpoints. Actor fields are rejected; the server derives identity from the session or token. Each committed creation or edit emits `issue.subissue_created` or `issue.subissue_updated` on the parent issue, with the subissue ID and number in its payload. These events appear in the parent history and event stream. The web interface shows subissues below the description and instead of review rounds in the sidebar, with creation available from either list. Clicking an existing subissue opens a right-side drawer: titles save on blur, statuses save immediately, and Markdown descriptions autosave with revision checks and recoverable drafts. MCP exposes `list_subissues`, `create_subissue`, `update_subissue`, and `set_labels`; the CLI can call them through `tool call`. Existing CLI issue commands operate on full issues. See [MCP.md](MCP.md) for tool arguments, pagination, and safe retries.
 
 ## Reviews and findings
 

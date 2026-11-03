@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
 import type { IssueStatus } from "../lib/types";
 import { Icon } from "./icon";
+import { LabelSelector } from "./label-selector";
 import { Input } from "./input";
 import { MarkdownEditor } from "./markdown-editor";
 import { Modal } from "./modal";
@@ -25,6 +26,7 @@ type SubissueFormDialogProps = {
   status: IssueStatus;
   onStatusChange: (status: IssueStatus) => void;
   statusLabel: string;
+  labels?: { projectId: string; selected: string[]; onChange: (ids: string[]) => Promise<unknown> };
   error?: string;
   pending: boolean;
   submitDisabled: boolean;
@@ -50,6 +52,7 @@ export function SubissueFormDialog({
   status,
   onStatusChange,
   statusLabel,
+  labels,
   error,
   pending,
   submitDisabled,
@@ -123,6 +126,15 @@ export function SubissueFormDialog({
                 iconClassName: statusIconColor[value],
               }))}
             />
+            {labels && (
+              <div className="min-w-[180px]">
+                <LabelSelector
+                  projectId={labels.projectId}
+                  selected={labels.selected}
+                  onChange={labels.onChange}
+                />
+              </div>
+            )}
           </div>
         </div>
         <div className="mt-[22px] flex items-center justify-end gap-4">

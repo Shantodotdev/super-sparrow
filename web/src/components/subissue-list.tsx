@@ -4,6 +4,7 @@ import { issueStatusLabel, statusIcon, statusIconColor } from "../lib/issue-stat
 import type { Issue, IssueStatus } from "../lib/types";
 import { subissuesQuery, useSaveSubissue } from "../queries/subissues";
 import { Icon } from "./icon";
+import { LabelChips } from "./label-chips";
 import { SubissueDrawer } from "./subissue-drawer";
 import { SubissueFormDialog } from "./subissue-form-dialog";
 
@@ -50,7 +51,7 @@ export function SubissueList({ issue, compact = false }: { issue: Issue; compact
               className={
                 compact
                   ? "my-[6px] flex w-full items-center gap-[12px] rounded-[6px] border border-[#272d35] bg-[#111419] p-[10px] text-left transition-colors hover:border-[#3a424f] hover:bg-[#18191a]"
-                  : "grid min-h-[45px] w-full grid-cols-[20px_max-content_minmax(0,1fr)] items-center gap-[10px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left transition-colors hover:bg-[#18191a]"
+                  : "grid min-h-[45px] w-full grid-cols-[20px_max-content_minmax(0,1fr)_auto] items-center gap-[10px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left transition-colors hover:bg-[#18191a]"
               }
               onClick={() => {
                 setSelectedId(subissue.id);
@@ -73,6 +74,9 @@ export function SubissueList({ issue, compact = false }: { issue: Issue; compact
                   <span className="text-[13px] text-[#aebed4]">{subissue.key}</span>
                   <span className="min-w-0 truncate text-[14px] text-[#eef0f5]">
                     {subissue.title}
+                  </span>
+                  <span className="max-w-[260px] justify-self-end [&>span]:flex-nowrap [&>span]:overflow-hidden">
+                    <LabelChips labelIds={subissue.label_ids} />
                   </span>
                 </>
               )}
@@ -106,12 +110,14 @@ function SubissueCreator({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<IssueStatus>("backlog");
+  const [labelIds, setLabelIds] = useState<string[]>([]);
   const save = useSaveSubissue(issue.key);
   useEffect(() => {
     if (!open) return;
     setTitle("");
     setDescription("");
     setStatus("backlog");
+    setLabelIds([]);
     setCreateMore(false);
     save.reset();
   }, [open, save.reset]);
@@ -120,11 +126,12 @@ function SubissueCreator({
     event.preventDefault();
     if (save.isPending) return;
     try {
-      await save.mutateAsync({ title, description, status });
+      await save.mutateAsync({ title, description, status, label_ids: labelIds });
       if (createMore) {
         setTitle("");
         setDescription("");
         setStatus("backlog");
+        setLabelIds([]);
         titleInput.current?.focus();
       } else {
         onClose();
@@ -157,6 +164,11 @@ function SubissueCreator({
       status={status}
       onStatusChange={setStatus}
       statusLabel="Subissue status"
+      labels={{
+        projectId: issue.project_id,
+        selected: labelIds,
+        onChange: async (ids) => setLabelIds(ids),
+      }}
       error={save.error?.message}
       pending={save.isPending}
       submitDisabled={!title.trim()}

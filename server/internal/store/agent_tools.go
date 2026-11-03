@@ -108,7 +108,7 @@ func (s *Store) ListAgentProjects(ctx context.Context, limit, offset int) ([]Pro
 
 // ListAgentSubissues returns a bounded subissue page in number order.
 func (s *Store) ListAgentSubissues(ctx context.Context, issueID string, limit, offset int) ([]Subissue, error) {
-	return agentRows(ctx, s.db, `SELECT `+subissueColumns+` FROM subissues WHERE issue_id = ? ORDER BY number LIMIT ? OFFSET ?`, scanSubissue, issueID, limit, offset)
+	return agentRows(ctx, s.db, subissueSelect+` WHERE issue_id = ? ORDER BY number LIMIT ? OFFSET ?`, scanSubissue, issueID, limit, offset)
 }
 
 // ListAgentRounds returns a bounded review page in number order.

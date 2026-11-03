@@ -145,6 +145,8 @@ export type Subissue = {
   description: string;
   description_revision: number;
   status: IssueStatus;
+  label_ids: string[];
+  created_by_actor_id: string;
 };
 
 export type EventTarget =

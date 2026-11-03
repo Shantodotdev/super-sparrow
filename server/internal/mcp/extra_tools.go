@@ -47,15 +47,15 @@ func (s *Server) extraTools() []tool {
 		{
 			name:        "create_subissue",
 			title:       "Create a subissue",
-			description: "Create a lightweight task under an issue. It shares its parent's reviews and discussions. Use this rather than create_issue for a work breakdown.",
-			schema:      object([]string{"issue_key", "title", "status"}, map[string]any{"issue_key": issueKey, "title": text("Subissue title."), "description": text("Task description in markdown."), "status": status}),
+			description: "Create a lightweight task under an issue. It shares its parent's reviews and discussions. Use this rather than create_issue for a work breakdown. Labels must already exist in the issue's project.",
+			schema:      object([]string{"issue_key", "title", "status"}, map[string]any{"issue_key": issueKey, "title": text("Subissue title."), "description": text("Task description in markdown."), "status": status, "labels": array("Names of existing labels in the project.", text("A label name."))}),
 			run:         bind(s.createSubissue),
 		},
 		{
 			name:        "update_subissue",
 			title:       "Edit a subissue",
-			description: "Update supplied fields of a subissue. Description edits require description_revision from list_subissues. Stale edits are refused.",
-			schema:      object([]string{"issue_key", "subissue_key"}, map[string]any{"issue_key": issueKey, "subissue_key": text("Key from list_subissues, such as WP-142.1."), "title": text("New title."), "description": text("Complete description markdown."), "description_revision": integer("Starting description revision.", 1), "status": status}),
+			description: "Update supplied fields of a subissue. Description edits require description_revision from list_subissues. Stale edits are refused. Labels replace the current set.",
+			schema:      object([]string{"issue_key", "subissue_key"}, map[string]any{"issue_key": issueKey, "subissue_key": text("Key from list_subissues, such as WP-142.1."), "title": text("New title."), "description": text("Complete description markdown."), "description_revision": integer("Starting description revision.", 1), "status": status, "labels": array("Names of existing labels in the project; an empty list removes them all.", text("A label name."))}),
 			run:         bind(s.updateSubissue),
 		},
 		{
@@ -193,12 +193,32 @@ type subissueOutput struct {
 	Description string            `json:"description"`
 	Revision    int               `json:"description_revision"`
 	Status      store.IssueStatus `json:"status"`
+	Labels      []string          `json:"labels"`
 	CreatedBy   *actorOutput      `json:"created_by"`
 }
 
 func (s *Server) subissueOutput(ctx context.Context, issue store.Issue, sub store.Subissue) (subissueOutput, error) {
 	actor, err := newActorNames(s.store).name(ctx, sub.CreatedByID)
-	return subissueOutput{Key: fmt.Sprintf("%s.%d", issue.Key(), sub.Number), Title: sub.Title, Description: sub.Description, Revision: sub.DescriptionRevision, Status: sub.Status, CreatedBy: actor}, err
+	if err != nil {
+		return subissueOutput{}, err
+	}
+	labels, err := s.labelNameList(ctx, issue.ProjectID, sub.LabelIDs)
+	return subissueOutput{Key: fmt.Sprintf("%s.%d", issue.Key(), sub.Number), Title: sub.Title, Description: sub.Description, Revision: sub.DescriptionRevision, Status: sub.Status, Labels: labels, CreatedBy: actor}, err
+}
+
+// subissue finds a subissue of the issue by its key, such as WP-142.1, ignoring case.
+func (s *Server) subissue(ctx context.Context, issue store.Issue, key string) (store.Subissue, error) {
+	subs, err := s.store.ListSubissues(ctx, issue.ID)
+	if err != nil {
+		return store.Subissue{}, err
+	}
+	index := slices.IndexFunc(subs, func(sub store.Subissue) bool {
+		return strings.EqualFold(fmt.Sprintf("%s.%d", issue.Key(), sub.Number), strings.TrimSpace(key))
+	})
+	if index < 0 {
+		return store.Subissue{}, store.Refuse(store.ErrNotFound, "there is no subissue %s on %s", key, issue.Key())
+	}
+	return subs[index], nil
 }
 
 func (s *Server) listSubissues(ctx context.Context, _ store.Caller, args struct {
@@ -230,16 +250,21 @@ func (s *Server) listSubissues(ctx context.Context, _ store.Caller, args struct 
 }
 
 func (s *Server) createSubissue(ctx context.Context, caller store.Caller, args struct {
-	IssueKey    string `json:"issue_key"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
+	IssueKey    string   `json:"issue_key"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Status      string   `json:"status"`
+	Labels      []string `json:"labels"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
 		return nil, err
 	}
-	sub, err := s.store.CreateSubissue(ctx, caller, issue.ID, store.NewSubissue{Title: args.Title, Description: args.Description, Status: store.IssueStatus(args.Status)})
+	labelIDs, err := s.labelIDs(ctx, issue.ProjectID, issue.ProjectKey, "labels", args.Labels)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := s.store.CreateSubissue(ctx, caller, issue.ID, store.NewSubissue{Title: args.Title, Description: args.Description, Status: store.IssueStatus(args.Status), LabelIDs: labelIDs})
 	if err != nil {
 		return nil, err
 	}
@@ -247,31 +272,33 @@ func (s *Server) createSubissue(ctx context.Context, caller store.Caller, args s
 }
 
 func (s *Server) updateSubissue(ctx context.Context, caller store.Caller, args struct {
-	IssueKey    string  `json:"issue_key"`
-	SubissueKey string  `json:"subissue_key"`
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	Revision    int     `json:"description_revision"`
-	Status      *string `json:"status"`
+	IssueKey    string    `json:"issue_key"`
+	SubissueKey string    `json:"subissue_key"`
+	Title       *string   `json:"title"`
+	Description *string   `json:"description"`
+	Revision    int       `json:"description_revision"`
+	Status      *string   `json:"status"`
+	Labels      *[]string `json:"labels"`
 }) (any, error) {
-	if args.Title == nil && args.Description == nil && args.Status == nil {
-		return nil, &store.ValidationError{Field: "fields", Message: "supply title, description, or status"}
+	if args.Title == nil && args.Description == nil && args.Status == nil && args.Labels == nil {
+		return nil, &store.ValidationError{Field: "fields", Message: "supply title, description, status, or labels"}
 	}
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
 		return nil, err
 	}
-	subs, err := s.store.ListSubissues(ctx, issue.ID)
+	current, err := s.subissue(ctx, issue, args.SubissueKey)
 	if err != nil {
 		return nil, err
 	}
-	index := slices.IndexFunc(subs, func(sub store.Subissue) bool {
-		return strings.EqualFold(fmt.Sprintf("%s.%d", issue.Key(), sub.Number), args.SubissueKey)
-	})
-	if index < 0 {
-		return nil, store.Refuse(store.ErrNotFound, "there is no subissue %s on %s", args.SubissueKey, issue.Key())
-	}
 	update := store.SubissueUpdate{DescriptionRevision: args.Revision}
+	if args.Labels != nil {
+		labelIDs, err := s.labelIDs(ctx, issue.ProjectID, issue.ProjectKey, "labels", *args.Labels)
+		if err != nil {
+			return nil, err
+		}
+		update.LabelIDs = store.Change(labelIDs)
+	}
 	if args.Title != nil {
 		update.Title = store.Change(*args.Title)
 	}
@@ -281,7 +308,7 @@ func (s *Server) updateSubissue(ctx context.Context, caller store.Caller, args s
 	if args.Status != nil {
 		update.Status = store.Change(store.IssueStatus(*args.Status))
 	}
-	sub, err := s.store.UpdateSubissue(ctx, caller, issue.ID, subs[index].ID, update)
+	sub, err := s.store.UpdateSubissue(ctx, caller, issue.ID, current.ID, update)
 	if err != nil {
 		return nil, err
 	}

@@ -4,19 +4,30 @@ Connect with an agent token using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agent
 
 ## Discover and plan work
 
-| Tool                    | Purpose                                                                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_projects`         | Discover keys, names, slugs, existing label names, milestones with calculated statuses, and project links.                                              |
-| `list_issues`           | Find issues by project key, optional statuses, and case-insensitive title/key search. Newest issue first.                                               |
-| `get_issue_for_branch`  | Match the recorded branch or an issue key in a branch name.                                                                                             |
-| `get_issue`             | Read issue properties, checklist progress, unresolved finding count, and the first 50 review summaries. `review_rounds_truncated` signals more reviews. |
-| `get_plan`              | Read Markdown, checklist item indices/text, and `plan_revision`.                                                                                        |
-| `update_plan`           | Replace the complete plan, supplying its starting `plan_revision`. Reload and reapply after a conflict. An empty plan clears it.                        |
-| `update_plan_checklist` | Change checked states using each item's index and exact text. Reject stale indices and repeated indices.                                                |
-| `create_issue`          | Create a full issue with an explicit status, optional plan, branch, existing label names, and optional parent full issue.                               |
-| `list_subissues`        | Read lightweight tasks, including keys, descriptions, revisions, statuses, and their creators.                                                          |
-| `create_subissue`       | Create a lightweight task under an issue with a title and explicit status.                                                                              |
-| `update_subissue`       | Edit supplied title, description, or status fields using its key, such as `WP-142.1`. Description edits need `description_revision`.                    |
+| Tool                    | Purpose                                                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_projects`         | Discover keys, names, slugs, existing label names, milestones with calculated statuses, and project links.                                                           |
+| `list_issues`           | Find issues by project key, optional statuses, and case-insensitive title/key search. Newest issue first.                                                            |
+| `get_issue_for_branch`  | Match the recorded branch or an issue key in a branch name.                                                                                                          |
+| `get_issue`             | Read issue properties, label names, checklist progress, unresolved finding count, and the first 50 review summaries. `review_rounds_truncated` signals more reviews. |
+| `get_plan`              | Read Markdown, checklist item indices/text, and `plan_revision`.                                                                                                     |
+| `update_plan`           | Replace the complete plan, supplying its starting `plan_revision`. Reload and reapply after a conflict. An empty plan clears it.                                     |
+| `update_plan_checklist` | Change checked states using each item's index and exact text. Reject stale indices and repeated indices.                                                             |
+| `create_issue`          | Create a full issue with an explicit status, optional plan, branch, existing label names, and optional parent full issue.                                            |
+| `list_subissues`        | Read lightweight tasks, including keys, descriptions, revisions, statuses, label names, and their creators.                                                          |
+| `create_subissue`       | Create a lightweight task under an issue with a title, explicit status, and optional existing label names.                                                           |
+| `update_subissue`       | Edit supplied title, description, status, or labels using its key, such as `WP-142.1`. Description edits need `description_revision`; labels replace the set.        |
+
+## Labels
+
+| Tool           | Purpose                                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `list_labels`  | Read a project's label names and colors in name order.                                                           |
+| `create_label` | Create a label with a unique name and an optional six-digit hex color. Without a color it gets the default blue. |
+| `update_label` | Rename or recolor a label found by its current name, ignoring case. Issues and subissues keep it.                |
+| `set_labels`   | Replace the labels of an issue, or of its subissue when `subissue_key` is given. An empty list removes them all. |
+
+Tools refer to labels by name, ignoring case; an unknown name is refused with `field` set to the argument that named it. Agents cannot delete labels.
 
 Each project from `list_projects` includes `milestones` in position order, each with `id`, `name`, `position`, and read-only `status`. Status uses the same issue-derived calculation as the HTTP API: `planned` for no issues or only Backlog/Todo, `done` for all Done/Canceled, and `active` for any started or finished issue otherwise. Issue changes, including reopening and reassignment, are reflected on the next read. Reading milestones creates no events; the issue write retains its authenticated actor.
 

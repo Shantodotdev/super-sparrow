@@ -39,7 +39,7 @@ const (
 
 const instructions = `Super Sparrow tracks this team's issues, plans, and code reviews. Each issue has a key such as WP-142, and its description is its plan.
 
-Discover project keys and labels with list_projects and find existing work with list_issues. Use create_subissue, list_subissues, and update_subissue for a work breakdown; create_issue makes a full issue. Edit complete plans with update_plan using plan_revision from get_plan.
+Discover project keys and labels with list_projects and find existing work with list_issues. Manage labels with list_labels, create_label, and update_label, and apply them with set_labels or the labels argument of create_issue, create_subissue, and update_subissue. Use create_subissue, list_subissues, and update_subissue for a work breakdown; create_issue makes a full issue. Edit complete plans with update_plan using plan_revision from get_plan.
 
 Start from the current git branch: get_issue_for_branch finds the issue, and get_plan returns the plan and its checklist. Tick checklist items with update_plan_checklist as you finish them.
 

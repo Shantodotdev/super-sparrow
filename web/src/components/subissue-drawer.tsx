@@ -5,6 +5,8 @@ import type { Issue, IssueStatus, Subissue } from "../lib/types";
 import { useSaveSubissue } from "../queries/subissues";
 import { Icon } from "./icon";
 import { Input } from "./input";
+import { LabelChips } from "./label-chips";
+import { LabelSelector } from "./label-selector";
 import { Modal } from "./modal";
 import { Select } from "./select";
 import { SubissueDescription } from "./subissue-description";
@@ -146,6 +148,17 @@ function SubissueDetail({
             iconClassName: statusIconColor[status],
           }))}
         />
+      </div>
+      <div className="mt-5 grid shrink-0 grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-[13px] text-[#8fa0b7]">
+        <span className="self-start pt-[9px]">Labels</span>
+        <div className="flex min-w-0 flex-col gap-2 [&_button[aria-expanded]]:min-h-[34px] [&_button[aria-expanded]]:text-[13px]">
+          {subissue.label_ids.length > 0 && <LabelChips labelIds={subissue.label_ids} />}
+          <LabelSelector
+            projectId={issue.project_id}
+            selected={subissue.label_ids}
+            onChange={(labelIds) => save.mutateAsync({ id: subissue.id, label_ids: labelIds })}
+          />
+        </div>
       </div>
       {save.error && (
         <p role="alert" className="mt-3 text-sm text-[#f2a9ae]">

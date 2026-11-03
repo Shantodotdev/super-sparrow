@@ -192,3 +192,27 @@ func (s *server) createLabel(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, http.StatusCreated, map[string]any{"label": newLabelView(label)})
 	return nil
 }
+
+func (s *server) updateLabel(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Name  *string `json:"name"`
+		Color *string `json:"color"`
+	}
+	nulls, err := decodeUpdate(w, r, &body)
+	if err != nil {
+		return err
+	}
+
+	project, err := s.projectFromPath(r)
+	if err != nil {
+		return err
+	}
+	update := store.LabelUpdate{Name: patch(body.Name, nulls["name"]), Color: patch(body.Color, nulls["color"])}
+	label, err := s.store.UpdateLabel(r.Context(), identityFrom(r.Context()).caller(), project.ID, r.PathValue("id"), update)
+	if err != nil {
+		return err
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"label": newLabelView(label)})
+	return nil
+}

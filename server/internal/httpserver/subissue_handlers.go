@@ -9,18 +9,21 @@ import (
 
 // subissueView exposes content and persistence metadata, without the full issue's properties.
 type subissueView struct {
-	ID                  string `json:"id"`
-	Key                 string `json:"key"`
-	IssueID             string `json:"issue_id"`
-	Title               string `json:"title"`
-	Description         string `json:"description"`
-	DescriptionRevision int    `json:"description_revision"`
-	Status              string `json:"status"`
+	ID                  string   `json:"id"`
+	Key                 string   `json:"key"`
+	IssueID             string   `json:"issue_id"`
+	Title               string   `json:"title"`
+	Description         string   `json:"description"`
+	DescriptionRevision int      `json:"description_revision"`
+	Status              string   `json:"status"`
+	LabelIDs            []string `json:"label_ids"`
+	CreatedByActorID    string   `json:"created_by_actor_id"`
 }
 
 func newSubissueView(subissue store.Subissue, issueKey string) subissueView {
 	return subissueView{ID: subissue.ID, Key: fmt.Sprintf("%s.%d", issueKey, subissue.Number), IssueID: subissue.IssueID,
-		Title: subissue.Title, Description: subissue.Description, DescriptionRevision: subissue.DescriptionRevision, Status: string(subissue.Status)}
+		Title: subissue.Title, Description: subissue.Description, DescriptionRevision: subissue.DescriptionRevision, Status: string(subissue.Status),
+		LabelIDs: subissue.LabelIDs, CreatedByActorID: subissue.CreatedByID}
 }
 
 // listSubissues returns the lightweight subissues belonging to the issue in the path.
@@ -44,9 +47,10 @@ func (s *server) listSubissues(w http.ResponseWriter, r *http.Request) error {
 // createSubissue creates content under a full issue, using the session or token as actor.
 func (s *server) createSubissue(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Status      string `json:"status"`
+		Title       string   `json:"title"`
+		Description string   `json:"description"`
+		Status      string   `json:"status"`
+		LabelIDs    []string `json:"label_ids"`
 	}
 	if err := decodeJSON(w, r, &body); err != nil {
 		return err
@@ -57,6 +61,7 @@ func (s *server) createSubissue(w http.ResponseWriter, r *http.Request) error {
 	}
 	subissue, err := s.store.CreateSubissue(r.Context(), identityFrom(r.Context()).caller(), issue.ID, store.NewSubissue{
 		Title: body.Title, Description: body.Description, Status: store.IssueStatus(body.Status),
+		LabelIDs: body.LabelIDs,
 	})
 	if err != nil {
 		return err
@@ -68,10 +73,11 @@ func (s *server) createSubissue(w http.ResponseWriter, r *http.Request) error {
 // updateSubissue edits only the supplied content fields, scoped to the parent issue.
 func (s *server) updateSubissue(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
-		Title               *string `json:"title"`
-		Description         *string `json:"description"`
-		DescriptionRevision int     `json:"description_revision"`
-		Status              *string `json:"status"`
+		Title               *string   `json:"title"`
+		Description         *string   `json:"description"`
+		DescriptionRevision int       `json:"description_revision"`
+		Status              *string   `json:"status"`
+		LabelIDs            *[]string `json:"label_ids"`
 	}
 	nulls, err := decodeUpdate(w, r, &body)
 	if err != nil {
@@ -83,7 +89,7 @@ func (s *server) updateSubissue(w http.ResponseWriter, r *http.Request) error {
 	}
 	update := store.SubissueUpdate{
 		Title: patch(body.Title, nulls["title"]), Description: patch(body.Description, nulls["description"]),
-		DescriptionRevision: body.DescriptionRevision,
+		DescriptionRevision: body.DescriptionRevision, LabelIDs: patch(body.LabelIDs, nulls["label_ids"]),
 	}
 	if status := patch(body.Status, nulls["status"]); status.Set {
 		update.Status = store.Change(store.IssueStatus(status.Value))

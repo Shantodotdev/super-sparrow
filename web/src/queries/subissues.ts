@@ -20,6 +20,7 @@ export type SubissueChanges = {
   description?: string;
   description_revision?: number;
   status?: IssueStatus;
+  label_ids?: string[];
 };
 
 /** Publishes committed subissues immediately and refreshes lists and history in the background. */

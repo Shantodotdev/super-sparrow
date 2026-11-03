@@ -3,17 +3,18 @@ import { webUrl } from "../lib/format";
 import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
 import { usePatchIssue } from "../queries/issues";
-import { actorsQuery, labelsQuery, milestonesQuery } from "../queries/project";
+import { actorsQuery, milestonesQuery } from "../queries/project";
 import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 import { ResourceSelector } from "./resource-selector";
 import { apiWrite } from "../lib/api";
 import { useProject } from "../hooks/use-project";
-import type { Label, Milestone } from "../lib/types";
+import type { Milestone } from "../lib/types";
 import { SubissueList } from "./subissue-list";
 import { Select } from "./select";
 import { Avatar } from "./avatar";
 import { IssueTextField } from "./issue-text-field";
+import { LabelSelector } from "./label-selector";
 
 type IssuePropertiesProps = {
   issue: Issue;
@@ -24,7 +25,6 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
   const project = useProject();
   const client = useQueryClient();
   const { data: actors } = useSuspenseQuery(actorsQuery);
-  const { data: labels } = useSuspenseQuery(labelsQuery);
   const { data: milestones } = useSuspenseQuery(milestonesQuery);
   const patch = usePatchIssue(issue.key);
 
@@ -103,22 +103,10 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
         <div className="mb-2">
           <LabelChips labelIds={issue.label_ids} />
         </div>
-        <ResourceSelector
-          label="Labels"
-          multiple
-          colors
-          options={labels.filter((label) => label.project_id === issue.project_id)}
+        <LabelSelector
+          projectId={issue.project_id}
           selected={issue.label_ids}
           onChange={(ids) => patch.mutateAsync({ label_ids: ids })}
-          onCreate={async (name, color) => {
-            const { label } = await apiWrite<{ label: Label }>(
-              `/api/projects/${encodeURIComponent(project.key)}/labels`,
-              "POST",
-              { name, color },
-            );
-            client.setQueryData(labelsQuery.queryKey, (current) => [...(current ?? []), label]);
-            return label.id;
-          }}
         />
       </div>
       <h3>Branch</h3>

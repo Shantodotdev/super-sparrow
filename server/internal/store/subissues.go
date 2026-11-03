@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,7 @@ type Subissue struct {
 	Description         string
 	DescriptionRevision int
 	Status              IssueStatus
+	LabelIDs            []string
 	CreatedByID         string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
@@ -27,18 +30,25 @@ type NewSubissue struct {
 	Title       string
 	Description string
 	Status      IssueStatus
+	LabelIDs    []string
 }
 
-// SubissueUpdate changes only the supplied fields; description edits require their starting revision.
+// SubissueUpdate changes only the supplied fields; description edits require their starting
+// revision, and setting LabelIDs replaces the whole set.
 type SubissueUpdate struct {
 	Title               Field[string]
 	Description         Field[string]
 	DescriptionRevision int
 	Status              Field[IssueStatus]
+	LabelIDs            Field[[]string]
 }
 
 const subissueColumns = `id, issue_id, number, title, description, description_revision, status,
 	created_by_actor_id, created_at, updated_at`
+
+// subissueSelect reads a subissue's columns followed by its label IDs.
+const subissueSelect = `SELECT ` + subissueColumns + `,
+	(SELECT group_concat(label_id) FROM subissue_labels WHERE subissue_id = subissues.id) FROM subissues`
 
 // CreateSubissue allocates a number under the issue and records the authenticated actor atomically.
 func (s *Store) CreateSubissue(ctx context.Context, by Caller, issueID string, input NewSubissue) (Subissue, error) {
@@ -53,11 +63,18 @@ func (s *Store) CreateSubissue(ctx context.Context, by Caller, issueID string, i
 	if !input.Status.valid() {
 		return Subissue{}, invalid("status", "must be backlog, todo, in_progress, in_review, done, or canceled")
 	}
+	if len(input.LabelIDs) > maxLabelsPerIssue {
+		return Subissue{}, invalid("label_ids", "must have at most %d labels", maxLabelsPerIssue)
+	}
+	labelIDs := uniqueSorted(input.LabelIDs)
 
 	var subissue Subissue
 	err = s.write(ctx, by, func(w *writeTx) error {
 		issue, err := getIssue(w.ctx, w.tx, `i.id = ?`, issueID)
 		if err != nil {
+			return err
+		}
+		if err := checkLabels(w, issue.ProjectID, labelIDs); err != nil {
 			return err
 		}
 
@@ -67,16 +84,19 @@ func (s *Store) CreateSubissue(ctx context.Context, by Caller, issueID string, i
 			return fmt.Errorf("take subissue number: %w", err)
 		}
 		subissue = Subissue{ID: newID(), IssueID: issue.ID, Number: number, Title: title,
-			Description: description, DescriptionRevision: 1, Status: input.Status,
+			Description: description, DescriptionRevision: 1, Status: input.Status, LabelIDs: labelIDs,
 			CreatedByID: w.caller.ID, CreatedAt: w.now, UpdatedAt: w.now}
 		_, err = w.exec(`INSERT INTO subissues (`+subissueColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			subissue.ID, issue.ID, number, title, description, 1, input.Status, w.caller.ID, w.timestamp(), w.timestamp())
 		if err != nil {
 			return fmt.Errorf("create subissue: %w", err)
 		}
+		if err := insertSubissueLabels(w, subissue.ID, labelIDs); err != nil {
+			return err
+		}
 
 		return w.event(issue.ProjectID, TargetIssue, issue.ID, "issue.subissue_created", map[string]any{
-			"subissue_id": subissue.ID, "number": number, "title": title, "status": input.Status,
+			"subissue_id": subissue.ID, "number": number, "title": title, "status": input.Status, "label_ids": labelIDs,
 		})
 	})
 	return subissue, err
@@ -84,7 +104,7 @@ func (s *Store) CreateSubissue(ctx context.Context, by Caller, issueID string, i
 
 // ListSubissues returns all lightweight subissues of an issue in number order.
 func (s *Store) ListSubissues(ctx context.Context, issueID string) ([]Subissue, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+subissueColumns+` FROM subissues WHERE issue_id = ? ORDER BY number`, issueID)
+	rows, err := s.db.QueryContext(ctx, subissueSelect+` WHERE issue_id = ? ORDER BY number`, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("list subissues: %w", err)
 	}
@@ -123,6 +143,12 @@ func (s *Store) UpdateSubissue(ctx context.Context, by Caller, issueID, subissue
 	if update.Status.Set && !update.Status.Value.valid() {
 		return Subissue{}, invalid("status", "must be backlog, todo, in_progress, in_review, done, or canceled")
 	}
+	if update.LabelIDs.Set {
+		if len(update.LabelIDs.Value) > maxLabelsPerIssue {
+			return Subissue{}, invalid("label_ids", "must have at most %d labels", maxLabelsPerIssue)
+		}
+		update.LabelIDs.Value = uniqueSorted(update.LabelIDs.Value)
+	}
 
 	var subissue Subissue
 	err = s.write(ctx, by, func(w *writeTx) error {
@@ -130,7 +156,7 @@ func (s *Store) UpdateSubissue(ctx context.Context, by Caller, issueID, subissue
 		if err != nil {
 			return err
 		}
-		subissue, err = scanSubissue(w.tx.QueryRowContext(w.ctx, `SELECT `+subissueColumns+` FROM subissues WHERE id = ? AND issue_id = ?`, subissueID, issue.ID))
+		subissue, err = scanSubissue(w.tx.QueryRowContext(w.ctx, subissueSelect+` WHERE id = ? AND issue_id = ?`, subissueID, issue.ID))
 		if err != nil {
 			return err
 		}
@@ -149,6 +175,19 @@ func (s *Store) UpdateSubissue(ctx context.Context, by Caller, issueID, subissue
 			subissue.DescriptionRevision++
 			changes["description"] = map[string]any{"revision": subissue.DescriptionRevision}
 		}
+		if update.LabelIDs.Set && !slices.Equal(update.LabelIDs.Value, subissue.LabelIDs) {
+			if err := checkLabels(w, issue.ProjectID, update.LabelIDs.Value); err != nil {
+				return err
+			}
+			if _, err := w.exec(`DELETE FROM subissue_labels WHERE subissue_id = ?`, subissue.ID); err != nil {
+				return fmt.Errorf("clear subissue labels: %w", err)
+			}
+			if err := insertSubissueLabels(w, subissue.ID, update.LabelIDs.Value); err != nil {
+				return err
+			}
+			changes["label_ids"] = map[string]any{"from": subissue.LabelIDs, "to": update.LabelIDs.Value}
+			subissue.LabelIDs = update.LabelIDs.Value
+		}
 		if len(changes) == 0 {
 			return nil
 		}
@@ -166,17 +205,32 @@ func (s *Store) UpdateSubissue(ctx context.Context, by Caller, issueID, subissue
 	return subissue, err
 }
 
-// scanSubissue reads a subissue and parses its stored timestamps.
+// insertSubissueLabels attaches labels, already checked to belong to the subissue's project.
+func insertSubissueLabels(w *writeTx, subissueID string, labelIDs []string) error {
+	for _, labelID := range labelIDs {
+		if _, err := w.exec(`INSERT INTO subissue_labels (subissue_id, label_id) VALUES (?, ?)`, subissueID, labelID); err != nil {
+			return fmt.Errorf("label subissue: %w", err)
+		}
+	}
+	return nil
+}
+
+// scanSubissue reads a subissue selected with subissueSelect and parses its stored timestamps.
 func scanSubissue(row scanner) (Subissue, error) {
 	var subissue Subissue
 	var created, updated string
+	var labels sql.NullString
 	err := row.Scan(&subissue.ID, &subissue.IssueID, &subissue.Number, &subissue.Title, &subissue.Description,
-		&subissue.DescriptionRevision, &subissue.Status, &subissue.CreatedByID, &created, &updated)
+		&subissue.DescriptionRevision, &subissue.Status, &subissue.CreatedByID, &created, &updated, &labels)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subissue{}, ErrNotFound
 	}
 	if err != nil {
 		return Subissue{}, fmt.Errorf("read subissue: %w", err)
+	}
+	subissue.LabelIDs = []string{}
+	if labels.Valid {
+		subissue.LabelIDs = uniqueSorted(strings.Split(labels.String, ","))
 	}
 	subissue.CreatedAt, subissue.UpdatedAt, err = timestamps(created, updated)
 	return subissue, err

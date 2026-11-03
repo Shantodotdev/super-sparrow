@@ -213,7 +213,7 @@ func (s *Server) toolList() []tool {
 			title: "Create an issue",
 			description: "Create an issue in a project, such as a follow-up for work outside the current issue. The plan is the " +
 				"issue's description in markdown; use `- [ ]` items for its checklist. Use status backlog for work nobody has " +
-				"scheduled. Labels must already exist in the project. Returns the new issue's key.",
+				"scheduled. Labels must already exist in the project; see list_labels and create_label. Returns the new issue's key.",
 			schema: object([]string{"project_key", "title", "status"}, map[string]any{
 				"project_key":      text("The project's key, such as WP."),
 				"title":            text("The issue's title."),
@@ -221,11 +221,11 @@ func (s *Server) toolList() []tool {
 				"plan":             text("The plan, in markdown."),
 				"parent_issue_key": text("A parent full issue for a linked follow-up. For lightweight work breakdowns, use create_subissue instead."),
 				"branch_name":      text("The git branch for this issue, if one exists."),
-				"labels":           array("Names of existing labels in the project.", text("A label name.")),
+				"labels":           array("Names of existing labels in the project; create missing ones with create_label.", text("A label name.")),
 			}),
 			run: bind(s.createIssue),
 		},
-	}, s.extraTools()...)
+	}, append(s.extraTools(), s.labelTools()...)...)
 }
 
 // Schemas, kept small so each tool's input reads clearly.
@@ -308,6 +308,7 @@ type issueOutput struct {
 	BranchName            string        `json:"branch_name,omitempty"`
 	PullRequestURL        string        `json:"pull_request_url,omitempty"`
 	Checklist             string        `json:"checklist"`
+	Labels                []string      `json:"labels"`
 	ReviewRounds          []roundOutput `json:"review_rounds"`
 	UnresolvedFindings    int           `json:"unresolved_findings"`
 	ReviewRoundsTruncated bool          `json:"review_rounds_truncated"`
@@ -368,6 +369,10 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 	if err != nil {
 		return issueOutput{}, err
 	}
+	labels, err := s.labelNameList(ctx, issue.ProjectID, issue.LabelIDs)
+	if err != nil {
+		return issueOutput{}, err
+	}
 
 	items := checklist.Items(issue.Plan)
 	done := 0
@@ -380,7 +385,7 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 	output := issueOutput{
 		Key: issue.Key(), Title: issue.Title, Status: string(issue.Status), URL: s.issueURL(issue),
 		BranchName: issue.BranchName, PullRequestURL: issue.PullRequestURL,
-		Checklist:    fmt.Sprintf("%d of %d items done", done, len(items)),
+		Checklist: fmt.Sprintf("%d of %d items done", done, len(items)), Labels: labels,
 		ReviewRounds: make([]roundOutput, 0, len(rounds)), UnresolvedFindings: issue.UnresolvedFindings,
 	}
 	if len(rounds) > 50 {
@@ -978,13 +983,7 @@ func (s *Server) createIssue(ctx context.Context, caller store.Caller, args stru
 	BranchName     string   `json:"branch_name"`
 	Labels         []string `json:"labels"`
 }) (any, error) {
-	if strings.TrimSpace(args.ProjectKey) == "" {
-		return nil, &store.ValidationError{Field: "project_key", Message: "is required"}
-	}
-	project, err := s.store.GetProjectByKey(ctx, args.ProjectKey)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, store.Refuse(store.ErrNotFound, "there is no project %s", strings.ToUpper(args.ProjectKey))
-	}
+	project, err := s.project(ctx, args.ProjectKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1004,22 +1003,8 @@ func (s *Server) createIssue(ctx context.Context, caller store.Caller, args stru
 		}
 		input.ParentIssueID = parent.ID
 	}
-	if len(args.Labels) > 0 {
-		labels, err := s.store.ListLabels(ctx, project.ID)
-		if err != nil {
-			return nil, err
-		}
-		byName := map[string]string{}
-		for _, label := range labels {
-			byName[strings.ToLower(label.Name)] = label.ID
-		}
-		for _, name := range args.Labels {
-			id, ok := byName[strings.ToLower(strings.TrimSpace(name))]
-			if !ok {
-				return nil, &store.ValidationError{Field: "labels", Message: fmt.Sprintf("project %s has no label %q", project.Key, name)}
-			}
-			input.LabelIDs = append(input.LabelIDs, id)
-		}
+	if input.LabelIDs, err = s.labelIDs(ctx, project.ID, project.Key, "labels", args.Labels); err != nil {
+		return nil, err
 	}
 
 	issue, err := s.store.CreateIssue(ctx, caller, input)
