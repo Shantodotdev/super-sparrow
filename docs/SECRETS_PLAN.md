@@ -32,8 +32,13 @@ A full `sparrow` CLI that does everything the MCP tools do. Agents on a person's
 
 ### Install
 
-- The Sparrow server serves the CLI binary for Linux, macOS, and Windows, built for its own version, so the CLI always matches the server. This works while the repository is private.
-- `sparrow update` downloads the server's current CLI.
+- **Signed releases.** GitHub Actions builds the CLI for Linux, macOS, and Windows on each version tag and signs the release (its version and each file's checksum) with an Ed25519 key. The key is a secret of a GitHub `release` environment, used only for version tags, and a teammate approves each release run. The Sparrow server never holds it.
+- **First install.** A teammate downloads the CLI from the private repository's GitHub Releases with `gh` and checks its checksum. The first download never trusts the Sparrow server.
+- **Updates.** The Sparrow server hosts the signed releases, so the CLI always matches the server. `sparrow update` downloads the server's current CLI and replaces itself only when the signature matches a public key built into the CLI. A break-in on the server cannot produce a CLI that passes this check.
+- **No downgrades.** The CLI refuses a signed release older than itself, so an old version with a known bug cannot be served again.
+- **Key rotation.** The CLI carries a second public key, so a leaked signing key can be replaced without reinstalling everywhere.
+- **HTTPS only.** The CLI refuses plain `http` addresses, except `localhost` in development.
+- Apple and Windows code signing are not planned: they cost a yearly fee and the CLI is an internal tool.
 
 ### Commands
 
@@ -213,6 +218,8 @@ None yet.
 - Anyone permitted can download a whole staging or production config as a `.env`.
 - A CLI session lasts 30 days and renews while in use.
 - The server serves the CLI binary; `sparrow update` keeps it current.
+- CLI releases are signed in GitHub Actions with an approved `release` environment; the CLI checks the signature and refuses downgrades.
+- The first CLI install comes from the private repository's GitHub Releases.
 - Doppler is cancelled after the first successful staging deploy from Sparrow; no side-by-side week.
 - Recovery keys live in the team's password manager.
 - The CLI is built before secrets.
