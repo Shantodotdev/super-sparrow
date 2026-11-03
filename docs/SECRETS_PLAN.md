@@ -1,6 +1,6 @@
 # Secrets and CLI plan
 
-Status: **draft, not final.** This plan changes as the idea is discussed. Nothing is built until it is final.
+Status: **built** on the `feat/sparrow-cli-secrets` branch, except the Doppler move and the release signing key, which the team does by hand.
 
 It covers two connected pieces of work: a secrets feature that replaces Doppler, and a full Sparrow CLI that local agents use through their person's sign-in instead of tokens.
 
@@ -53,9 +53,8 @@ A full `sparrow` CLI that does everything the MCP tools do. Agents on a person's
 - Every write records who made it: the signed-in person, or one of that person's agents.
 - Agent names are a fixed list: `claude-code` and `codex`. There is no free-text or "other" name; a new agent is added to the list in code when the team needs it.
 - The CLI detects Claude Code and Codex from the environment they run commands in. An agent can also name itself with `--agent` or the `SPARROW_AGENT` environment variable, and its model with `SPARROW_MODEL` as today.
-- If the CLI cannot tell which agent is running and none is named, the write is refused. A person running commands themselves passes `--human`, and the write is recorded as them.
-- Human-only actions (deciding fix, wontfix, or later, managing people, creating tokens) are allowed in the CLI with `--human`. The team accepts that an agent could pass `--human`; the CLI never passes it for an agent it detected.
-- The server cannot verify what the CLI says about who is running it. The person's sign-in is what is verified.
+- When the CLI detects or is told an agent, it sends the `Sparrow-Agent` header and the server records that agent of the signed-in person. Otherwise the request is the person's own, including person-only actions and MCP tool commands.
+- The server cannot verify what the CLI says about which agent is running. The person's sign-in is what is verified, and the header can only narrow the person to one of their own agents.
 
 ### Cloud sessions and CI
 
@@ -210,8 +209,8 @@ None yet.
 - A full `sparrow` CLI does everything the MCP tools do. Local agents use it through their person's `sparrow login` session, with no tokens.
 - Tokens are only for cloud sessions and CI.
 - Every write records which agent made it (Claude Code, Codex, or another).
-- The CLI detects Claude Code and Codex; a write with no detected or named agent is refused unless the person passes `--human`.
-- Human-only actions are allowed in the CLI with `--human`.
+- The CLI detects Claude Code and Codex. With no detected or named agent, the CLI acts as the signed-in person, including person-only actions. There is no `--human` flag.
+- People can run every MCP tool command through their signed-in CLI.
 - Agent names are only `claude-code` and `codex`, with no free-text names.
 - The MCP endpoint keeps working for both local and cloud agents.
 - Staging and production changes appear in the activity feed, names only.

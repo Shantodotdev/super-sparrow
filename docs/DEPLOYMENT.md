@@ -1,6 +1,6 @@
 # Deployment
 
-Super Sparrow runs as one service behind the existing reverse proxy, which terminates HTTPS. The server serves the API, the MCP endpoint, the event stream, and the built frontend on one address.
+Super Sparrow runs as one service behind the existing reverse proxy, which terminates HTTPS. The server serves the API, the MCP endpoint, the event stream, the built frontend, and the signed CLI releases on one address.
 
 ## Settings
 
@@ -9,13 +9,15 @@ Set `APP_ENV=production` on a server. Production requires every setting in `.env
 - `PUBLIC_URL` is the HTTPS address people open, such as `https://sparrow.example.com`. Over HTTPS the session cookie is `Secure` and `__Host-` prefixed.
 - `SIGN_IN_CODE_KEY` is a random secret of at least 32 characters, such as the output of `openssl rand -hex 32`. Sign-in codes are hashed with it, so keep it out of the database's backups.
 - `TRUSTED_PROXIES` lists the reverse proxy's address, so per-IP rate limits see the client's address from `X-Forwarded-For`.
+- `SECRETS_ENCRYPTION_KEY` encrypts every stored secret value. It is required in every environment, development too, and must be 32 random bytes in base64, such as the output of `openssl rand -base64 32`. Save it in the team's password manager when you create it, and never change it: values sealed with another key cannot be decrypted, so a changed or lost key loses the secrets. It stays out of the database and its backups, so a backup restores secrets only together with this key. The server refuses to start without it.
 - `WEB_DIR` is the built frontend's folder: `web/dist/client` after `make build-web`, or `/srv/web` in the Docker image.
+- `CLI_DIR` is the folder of the signed CLI release the server hands out: the files [CLI releases](#cli-releases) lists. It is `/srv/cli` in the Docker image. It must exist, but may be empty before the first signed release; the server then answers 404 for the CLI files.
 - The backup settings below.
 - `GITHUB_WEBHOOK_SECRET` is the webhook's secret.
 
 ## Run it with Docker Compose
 
-1. Copy `.env.example` to `deploy/sparrow.env` and fill it in. Compose sets `APP_ENV=production`, the listen address, the database path, and the frontend folder, which belong to the image, so leave those four out.
+1. Copy `.env.example` to `deploy/sparrow.env` and fill it in. Compose sets `APP_ENV=production`, the listen address, the database path, the frontend folder, and the CLI folder, which belong to the image, so leave those five out.
 2. `cd deploy && VERSION=v0.2.0 docker compose up -d --build`
 3. `docker compose exec sparrow sparrow create-owner --name "Your Name" --email you@example.com` adds the first owner.
 
@@ -29,13 +31,13 @@ R2 backups. WP Agent's Caddy provides HTTPS; Super Sparrow deployments do not re
 
 ### Doppler and GitHub settings
 
-Doppler is the source of truth for production secrets and deployment settings:
+Doppler still holds Super Sparrow's own production secrets and deployment settings, until they move to GitHub's `production` environment secrets. Super Sparrow cannot load its own settings from itself, because it would be down exactly when they are needed to fix it:
 
-- **`super-sparrow` / `prd`** holds the application settings from `.env.example` and
+- **`super-sparrow` / `prd`** holds the application settings from `.env.example`, `SECRETS_ENCRYPTION_KEY` among them, and
   `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR`, `DEPLOY_SSH_KEY`, and `DEPLOY_KNOWN_HOSTS`.
   The image's environment, listen address, and paths stay in `deploy/compose.production.yaml`.
 - **`super-sparrow-recovery` / `prd`** holds `BACKUP_AGE_IDENTITY`, the backup private key, and
-  references to the production R2 settings. No CI service token is created for this project.
+  references to the production R2 settings. No CI service token is created for this project. Keep a copy of `SECRETS_ENCRYPTION_KEY` in the team's password manager as well.
 - `RESEND_API_KEY` is the sending-only key imported from Super Sparrow's local `.env`.
   Manage and rotate it in this project's production config.
 - GitHub's **`production`** environment holds only `DOPPLER_TOKEN`, a read-only service token
@@ -155,7 +157,7 @@ and network attachment manually.
 ## Run it with systemd
 
 1. Download `sparrow-<version>-linux-amd64` and `sparrow-<version>-web.tar.gz` from the GitHub Release, or build both with `make build`. Install the binary at `/usr/local/bin/sparrow`, and unpack the frontend into `/srv/sparrow/web` (from a build, copy `web/dist/client` there).
-2. Put the settings in `/etc/sparrow/sparrow.env`, readable by root only, with `APP_ENV=production`, `DATABASE_PATH=/var/lib/sparrow/sparrow.db`, and `WEB_DIR=/srv/sparrow/web`.
+2. Put the settings in `/etc/sparrow/sparrow.env`, readable by root only, with `APP_ENV=production`, `DATABASE_PATH=/var/lib/sparrow/sparrow.db`, `WEB_DIR=/srv/sparrow/web`, and `CLI_DIR=/srv/sparrow/cli`. Download the latest release's `sparrow-*` binaries, `manifest.json`, and `manifest.json.sig` into the CLI folder, or leave it empty until there is a signed release.
 3. Copy `deploy/sparrow.service` to `/etc/systemd/system/`, then run `systemctl enable --now sparrow`.
 4. Run `create-owner` once with the same settings: `sudo systemd-run --pty -p DynamicUser=yes -p StateDirectory=sparrow -p EnvironmentFile=/etc/sparrow/sparrow.env /usr/local/bin/sparrow create-owner --name "Your Name" --email you@example.com`.
 
@@ -195,6 +197,8 @@ To set them up:
 3. `sparrow restore --copy sync --identity - --database /var/lib/sparrow/sparrow.db` restores the hourly copy, reading the private key from standard input, so paste it and press Ctrl-D. `--identity` also takes a file, such as one saved by `backup-keygen`; delete that file afterwards. Use `--copy daily/2026-03-01` for a dated copy. The command decrypts the copy, runs `PRAGMA integrity_check`, and only then writes the database file. It refuses to overwrite an existing database, so move a damaged one aside first. The copies are standard age files, so `age -d -i key.txt copy.db.gz.age | gunzip > sparrow.db` also works.
 4. Start the server. It applies any newer migrations at startup.
 
+Secret values are in the database encrypted with `SECRETS_ENCRYPTION_KEY`, and the key is not in the backup, so restoring a database to a fresh server also needs the same key in its settings. With a different key the server starts, but no secret can be read.
+
 A sync loses at most the last hour of changes. Restore a daily copy to undo a mistake that the sync has already copied, such as a bad delete.
 
 ## GitHub webhook
@@ -233,7 +237,60 @@ Plan coverage: Steps 1 to 3.
 One blocking finding.
 ```
 
+## CLI releases
+
+Each version tag builds the `sparrow` CLI for Linux, macOS, and Windows (amd64 and arm64) and signs it, so teammates and agents can install and update it without trusting the server that hands it out. The `release` workflow's `cli` jobs build the six binaries. Its `sign` job then writes `manifest.json`, which lists the version and each file's size and SHA-256 checksum, signs it with an Ed25519 key into `manifest.json.sig`, writes `SHA256SUMS`, and uploads all of them to the GitHub Release. The `sign` job runs in the GitHub `release` environment, which holds the signing key and waits for a reviewer's approval on every run. The Sparrow server never holds the key.
+
+To set it up once:
+
+1. In the repository's settings, create an environment named `release`. Add required reviewers, and restrict deployment to `v*` tags, so only a tagged release can use the key.
+2. Run `sparrow release keygen` twice, once for the current key and once for a spare. Each run prints the private key on standard output and the public key and its key ID on standard error. Save both private keys in the team's password manager; they are not stored anywhere else.
+3. Add the current private key to the `release` environment as the secret `CLI_SIGNING_KEY`. Keep the spare's private key out of GitHub.
+4. Put both public keys in `PublicKeys` in `server/internal/release/release.go`, the current one first, and merge that before you push the first tag. Every CLI trusts the keys built into it, so the spare lets you replace a leaked key: sign the next release with the spare and every installed CLI still accepts it.
+
+To release, push a `v*` tag as in [GETTING_STARTED.md](GETTING_STARTED.md#releases) and approve the `sign` job. The next deploy from `main` downloads the latest signed CLI into `deploy/cli`, which the Dockerfile copies to `/srv/cli`, so the server offers it at `/cli/{file}`. When there is no release yet, or the latest one has no signature, the image ships without a CLI.
+
+### Installing and updating
+
+The first install comes from the private repository's GitHub Releases, so it never trusts the Sparrow server. With the GitHub CLI signed in to an account that can read the repository, for Linux on amd64:
+
+1. `gh release download --repo shantodotdev/super-sparrow --pattern sparrow-linux-amd64 --pattern SHA256SUMS`
+2. `grep ' sparrow-linux-amd64$' SHA256SUMS | sha256sum --check` must print `OK`. On macOS use `shasum -a 256 --check` instead.
+3. `chmod +x sparrow-linux-amd64`, then move it onto your `PATH` as `sparrow`. Other platforms use their own file name: `sparrow-darwin-arm64`, `sparrow-windows-amd64.exe`, and so on.
+4. `sparrow login --url https://sparrow.example.com` signs you in.
+
+After that, `sparrow update` downloads the server's current release and replaces the running program. It needs the server's address, from the stored login or `SPARROW_URL`, but no sign-in. It accepts a release only when:
+
+- the address is `https`, or `http` for `localhost` only;
+- the manifest's signature matches a public key built into the CLI;
+- the version is newer than its own, so a signed older release with a known bug cannot be served again (a `dev` build may update to any release);
+- the downloaded file has the size and checksum the signed manifest names.
+
+On Windows the old program is kept as `sparrow.exe.old` next to the new one.
+
+## Settings for CI
+
+A project with secrets turned on keeps its `staging` and `production` settings in Super Sparrow's Secrets page, encrypted, with a history of every change. CI reads one config with a service token:
+
+1. Someone allowed to manage staging and production creates the token in the project's Secrets page, choosing the config and a label such as `circleci staging`. The `sst_…` secret is shown once. Store it as a CI secret; Super Sparrow keeps only its hash.
+2. The job downloads the config with `curl`, which installs nothing new. The token names the project and config, so the request carries nothing else but the format:
+
+```bash
+curl -fsS -H "Authorization: Bearer $SPARROW_SERVICE_TOKEN" \
+  "https://sparrow.example.com/api/secrets/download?format=env" > .env
+```
+
+Use `format=json` or `format=shell` instead, as [API.md](API.md#secrets) describes. A value with a single quote or a line break cannot be written as an `env` line, so the server refuses `format=env` for it; use `json` or `shell`. A wrong, expired, or revoked token gets 401.
+
+A service token reads one config and cannot write, and every download goes in the access log. It lasts a year; renew it from the Secrets page, which marks a token that expires within 14 days. Revoke a token there when a job no longer needs it. People and their agents never read staging or production values with the CLI: those need the permission and a browser.
+
 ## Connecting agents
+
+On a person's own machine, agents use the CLI through that person's sign-in and need no token. Install the CLI as above and run `sparrow login`. It emails a 6-digit code, like the web, and keeps the session in the operating system's keychain. Where there is no keychain, such as a headless Linux machine, it writes `credentials.json` under the user's config folder with owner-only permissions and prints a warning. The session lasts 30 days and renews while in use. It appears in Settings next to the person's other devices, marked CLI, and can be signed out there or with `sparrow logout`.
+
+Inside Claude Code and Codex the CLI sends the `Sparrow-Agent` header, so their writes are recorded as that person's `claude-code` or `codex` agent. It detects Claude Code from `CLAUDECODE=1`, and Codex from `CODEX_SANDBOX`, `CODEX_SANDBOX_NETWORK_DISABLED`, or `CODEX_THREAD_ID`. `--agent claude-code|codex` or `SPARROW_AGENT` names the agent when detection cannot. With none of them, the CLI acts as the person. The server cannot verify which agent runs the CLI; it verifies the person's sign-in. Those two names are the only agent names, for tokens too.
+
+Agent tokens are for cloud sessions, where there is no person's sign-in to use. A cloud session sets `SPARROW_URL` and `SPARROW_TOKEN` for the CLI, or connects to the MCP endpoint with the token, as below. A local agent can still use a token and MCP if you prefer.
 
 Each person creates a token per agent and machine in Settings. The Create agent token form provides a **Copy setup prompt** action after creation, tailored to Claude Code or Codex and the current server address. The prompt contains instructions and endpoint metadata, never the token secret. Tokens are shown once; the server retains only their hashes and cannot return the secret later.
 
@@ -255,4 +312,4 @@ See [MCP.md](MCP.md) for the tool workflow, pagination, retry keys, structured e
 
 An agent may also send `Sparrow-Model: <model>` to record the model it runs on its changes. The server records the value as reported; it cannot verify it.
 
-Scripts and agents without MCP use the CLI. It runs the same operations through the HTTP API with `SPARROW_URL` and `SPARROW_TOKEN`, and `sparrow help` lists its commands.
+Scripts and agents without MCP use the CLI. It runs the same operations, with a command for every MCP tool, through the HTTP API with a `sparrow login` session or `SPARROW_URL` and `SPARROW_TOKEN`, and `sparrow help` lists its commands.
