@@ -1,4 +1,4 @@
-# Builds the server image: the Go binary and the built frontend it serves. Build it from the
+# Builds the server image: the Go binary, the built frontend it serves, and the signed CLI releases it hosts. Build it from the
 # repository root: docker build -f deploy/Dockerfile --build-arg VERSION=v0.2.0 .
 
 FROM oven/bun:1.4.4 AS web
@@ -27,6 +27,7 @@ RUN mkdir -p /out/data
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=server /out/sparrow /usr/local/bin/sparrow
 COPY --from=web /src/web/dist/client /srv/web
+COPY deploy/cli /srv/cli
 COPY --from=server --chown=nonroot:nonroot /out/data /data
 VOLUME /data
 EXPOSE 8090
