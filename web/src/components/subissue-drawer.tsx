@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
 import type { Issue, IssueStatus, Subissue } from "../lib/types";
 import { useSaveSubissue } from "../queries/subissues";
 import { Icon } from "./icon";
-import { Input } from "./input";
+import { Textarea } from "./input";
 import { LabelChips } from "./label-chips";
 import { LabelSelector } from "./label-selector";
 import { Modal } from "./modal";
@@ -63,11 +63,22 @@ function SubissueDetail({
   });
   const save = useSaveSubissue(issue.key);
   const { notify } = useToast();
+  const titleField = useRef<HTMLTextAreaElement>(null);
+  const shownTitle = title ?? subissue.title;
+
+  // Grow the title field with its text so long titles wrap instead of scrolling sideways.
+  useLayoutEffect(() => {
+    const field = titleField.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [shownTitle]);
 
   const updateTitle = (value: string) => {
-    setTitle(value);
+    const singleLine = value.replace(/\s*\n\s*/g, " ");
+    setTitle(singleLine);
     try {
-      sessionStorage.setItem(draftKey, value);
+      sessionStorage.setItem(draftKey, singleLine);
     } catch {
       /* Editing remains available when browser storage is unavailable. */
     }
@@ -108,18 +119,23 @@ function SubissueDetail({
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-7 max-[600px]:px-5">
       <div className="flex shrink-0 items-start gap-3">
         <h1 className="min-w-0 flex-1">
-          <Input
+          <Textarea
+            ref={titleField}
             autoFocus
+            rows={1}
             aria-label="Subissue title"
             placeholder="Subissue title"
             maxLength={200}
-            className="h-auto w-full rounded-none border-0 bg-transparent p-0 text-[28px] font-semibold text-[#f2f5fc]"
-            value={title ?? subissue.title}
+            className="block h-auto resize-none overflow-hidden rounded-none border-0 bg-transparent p-0 text-[28px] leading-tight font-semibold wrap-anywhere text-[#f2f5fc]"
+            value={shownTitle}
             disabled={save.isPending}
             onChange={(event) => updateTitle(event.target.value)}
             onBlur={() => void saveTitle()}
             onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
             }}
           />
         </h1>
