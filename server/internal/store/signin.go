@@ -28,13 +28,15 @@ const (
 	maxDeviceLabel    = 100
 )
 
-const sessionColumns = `id, actor_id, device_label, last_seen_at, expires_at, revoked_at, created_at, updated_at`
+const sessionColumns = `id, actor_id, client, device_label, last_seen_at, expires_at, revoked_at, created_at, updated_at`
 
 // NewSession describes the session a successful sign-in creates. The caller makes the session
 // secret and passes only its hash.
 type NewSession struct {
 	Hash        []byte
 	DeviceLabel string
+	// Client is ClientBrowser for a cookie session or ClientCLI for a signed-in CLI.
+	Client Client
 }
 
 // AuthenticatedSession is a session that passed its checks, with the person it belongs to.
@@ -119,6 +121,9 @@ func (s *Store) VerifySignInCode(ctx context.Context, email string, codeHash []b
 	if len(input.Hash) != hashLength {
 		return Actor{}, Session{}, fmt.Errorf("session hash must be %d bytes", hashLength)
 	}
+	if input.Client != ClientBrowser && input.Client != ClientCLI {
+		return Actor{}, Session{}, fmt.Errorf("session client must be browser or cli, not %q", input.Client)
+	}
 
 	var actor Actor
 	var session Session
@@ -165,20 +170,20 @@ func (s *Store) VerifySignInCode(ctx context.Context, email string, codeHash []b
 		}
 
 		session = Session{
-			ID: newID(), ActorID: actor.ID, DeviceLabel: label,
+			ID: newID(), ActorID: actor.ID, Client: input.Client, DeviceLabel: label,
 			LastSeenAt: now, ExpiresAt: now.Add(SessionLifetime), CreatedAt: now, UpdatedAt: now,
 		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO sessions (id, actor_id, session_hash, device_label, last_seen_at, expires_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			session.ID, actor.ID, input.Hash, label, stamp, session.ExpiresAt.Format(timeLayout), stamp, stamp)
+			INSERT INTO sessions (id, actor_id, client, session_hash, device_label, last_seen_at, expires_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			session.ID, actor.ID, input.Client, input.Hash, label, stamp, session.ExpiresAt.Format(timeLayout), stamp, stamp)
 		if err != nil {
 			return fmt.Errorf("create session: %w", err)
 		}
 
 		w := &writeTx{tx: tx, ctx: ctx, caller: actor, now: now}
 		return w.event("", TargetActor, actor.ID, "session.created",
-			map[string]any{"session_id": session.ID, "device_label": label})
+			map[string]any{"session_id": session.ID, "device_label": label, "client": input.Client})
 	})
 	if err != nil {
 		return Actor{}, Session{}, err
@@ -365,7 +370,7 @@ func scanSession(row scanner) (Session, error) {
 	var lastSeen, expires, created, updated string
 	var revoked sql.NullString
 
-	err := row.Scan(&session.ID, &session.ActorID, &session.DeviceLabel, &lastSeen, &expires, &revoked, &created, &updated)
+	err := row.Scan(&session.ID, &session.ActorID, &session.Client, &session.DeviceLabel, &lastSeen, &expires, &revoked, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, notFound("session")
 	}

@@ -24,6 +24,8 @@ const timeLayout = "2006-01-02T15:04:05.000Z"
 type Store struct {
 	db  storeDatabase
 	now func() time.Time
+	// secrets encrypts secret values. Secret operations fail until UseSecretBox sets it.
+	secrets SecretBox
 
 	changeMu    sync.Mutex
 	changed     chan struct{}
@@ -35,6 +37,10 @@ type Store struct {
 func New(db *sql.DB, now func() time.Time) *Store {
 	return &Store{db: db, now: now, changed: make(chan struct{})}
 }
+
+// UseSecretBox sets the encryption that secret values are stored with. The server calls it once
+// at startup, before serving requests.
+func (s *Store) UseSecretBox(box SecretBox) { s.secrets = box }
 
 // Changed returns a channel that is closed after the next committed change. Live views take it
 // before reading new events, so a change committed in between still wakes them.
@@ -79,6 +85,7 @@ type writeTx struct {
 	tx     *sql.Tx
 	ctx    context.Context
 	caller Actor
+	client Client
 	model  string
 	now    time.Time
 }
@@ -86,7 +93,8 @@ type writeTx struct {
 // write runs fn in a transaction as the caller and commits when fn succeeds.
 func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error) error {
 	if s.transaction != nil {
-		if by.ActorID != s.transaction.caller.ID || strings.TrimSpace(by.ReportedModel) != s.transaction.model {
+		if by.ActorID != s.transaction.caller.ID || strings.TrimSpace(by.ReportedModel) != s.transaction.model ||
+			by.Client != s.transaction.client {
 			return forbidden("transaction caller cannot change")
 		}
 		return fn(s.transaction)
@@ -114,7 +122,7 @@ func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error)
 		return forbidden("caller is disabled")
 	}
 
-	w := &writeTx{tx: tx, ctx: ctx, caller: caller, model: model, now: s.now().UTC().Truncate(time.Millisecond)}
+	w := &writeTx{tx: tx, ctx: ctx, caller: caller, client: by.Client, model: model, now: s.now().UTC().Truncate(time.Millisecond)}
 	if err := fn(w); err != nil {
 		return err
 	}

@@ -44,6 +44,8 @@ type Options struct {
 	WebDir string
 	// GitHubWebhookSecret checks GitHub webhook signatures; "" turns the webhook off.
 	GitHubWebhookSecret string
+	// CLIDir is the folder of the signed CLI release to offer for download, or "" to offer none.
+	CLIDir string
 }
 
 type server struct {
@@ -56,8 +58,10 @@ type server struct {
 	cookieName     string
 	trustedProxies []netip.Prefix
 	perToken       *ratelimit.Limiter
+	perDownloadIP  *ratelimit.Limiter
 	stop           <-chan struct{}
 	mcp            *mcp.Server
+	cliDir         string
 	webhookSecret  string
 	mux            *http.ServeMux
 }
@@ -75,9 +79,11 @@ func New(opts Options) http.Handler {
 		cookieName:     "sparrow_session",
 		trustedProxies: opts.TrustedProxies,
 		perToken:       ratelimit.New(tokenRequestsPerMinute, time.Minute, opts.Now),
+		perDownloadIP:  ratelimit.New(tokenRequestsPerMinute, time.Minute, opts.Now),
 		stop:           opts.Stop,
 		mcp:            mcp.New(opts.Store, opts.PublicURL, opts.Logger, opts.Version),
 		webhookSecret:  opts.GitHubWebhookSecret,
+		cliDir:         opts.CLIDir,
 		mux:            http.NewServeMux(),
 	}
 	// Over HTTPS the __Host- prefix makes browsers refuse the cookie from any other host or path.
@@ -89,6 +95,7 @@ func New(opts Options) http.Handler {
 
 	s.route("POST /api/auth/code", public, s.requestCode)
 	s.route("POST /api/auth/verify", public, s.verifyCode)
+	s.route("POST /api/auth/cli/verify", public, s.verifyCLICode)
 	s.route("POST /api/auth/sign-out", humanOnly, s.signOut)
 	s.route("GET /api/me", signedIn, s.me)
 	s.route("PATCH /api/me", humanOnly, s.updateProfile)
@@ -101,6 +108,7 @@ func New(opts Options) http.Handler {
 	s.route("GET /api/people", signedIn, s.listPeople)
 	s.route("POST /api/people", ownerOnly, s.invitePerson)
 	s.route("POST /api/people/{id}/disable", ownerOnly, s.disablePerson)
+	s.route("PATCH /api/people/{id}/environments", ownerOnly, s.setEnvironmentsPermission)
 
 	s.route("GET /api/tokens", humanOnly, s.listTokens)
 	s.route("POST /api/tokens", humanOnly, s.createToken)
@@ -147,14 +155,32 @@ func New(opts Options) http.Handler {
 	s.route("POST /api/issues/{key}/reviews/{round}/findings/{finding}/comments", signedIn, s.addFindingComment)
 	s.route("PATCH /api/comments/{id}", signedIn, s.editComment)
 
+	s.route("POST /api/projects/{key}/secrets/enable", ownerOnly, s.enableSecrets)
+	s.route("GET /api/projects/{key}/secrets", signedIn, s.secretsOverview)
+	s.route("GET /api/projects/{key}/secrets/access-log", humanOnly, s.secretAccessLog)
+	s.route("PATCH /api/projects/{key}/secrets/{config}", humanOnly, s.changeSecrets)
+	s.route("GET /api/projects/{key}/secrets/{config}/values/{name}", signedIn, s.revealSecret)
+	s.route("GET /api/projects/{key}/secrets/{config}/download", signedIn, s.downloadSecrets)
+	s.route("GET /api/projects/{key}/secrets/{config}/history/{name}", signedIn, s.secretHistory)
+	s.route("POST /api/projects/{key}/secrets/{config}/history/{name}/restore", humanOnly, s.restoreSecret)
+	s.route("PUT /api/projects/{key}/secrets/{config}/required", humanOnly, s.setRequiredKeys)
+	s.route("GET /api/projects/{key}/service-tokens", humanOnly, s.listServiceTokens)
+	s.route("POST /api/projects/{key}/service-tokens", humanOnly, s.createServiceToken)
+	s.route("POST /api/service-tokens/{id}/renew", humanOnly, s.renewServiceToken)
+	s.route("DELETE /api/service-tokens/{id}", humanOnly, s.revokeServiceToken)
+	// CI reads secrets with a service token, which the route checks itself.
+	s.route("GET /api/secrets/download", public, s.downloadWithServiceToken)
+
 	s.route("GET /api/events", signedIn, s.listEvents)
 	s.route("GET /api/events/stream", signedIn, s.streamEvents)
 
-	// The MCP endpoint takes agent tokens only. It offers no server-to-client stream and keeps no
-	// sessions, so GET and DELETE are refused as the transport allows.
-	s.route("POST /mcp", agentOnly, s.serveMCP)
+	// The MCP endpoint takes agent tokens and signed-in CLIs. It offers no server-to-client stream
+	// and keeps no sessions, so GET and DELETE are refused as the transport allows.
+	s.route("POST /mcp", toolCaller, s.serveMCP)
 	s.mux.HandleFunc("GET /mcp", methodNotAllowed)
 	s.mux.HandleFunc("DELETE /mcp", methodNotAllowed)
+
+	s.route("GET /cli/{file}", public, s.serveCLIFile)
 
 	if s.webhookSecret != "" {
 		s.route("POST /api/webhooks/github", public, s.githubWebhook)

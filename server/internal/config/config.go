@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/shantodotdev/super-sparrow/server/internal/secretbox"
 	// The time zone database is built in, so BACKUP_TIME_ZONE works on servers without one.
 	_ "time/tzdata"
 )
@@ -59,12 +60,18 @@ type Config struct {
 	// SignInCodeKey is the secret sign-in codes are hashed with. It stays out of the database, so
 	// a copy of the database does not let anyone work out a code.
 	SignInCodeKey []byte
+	// SecretsKey encrypts the secrets the team stores. It stays out of the database and its
+	// backups, so a copy of either does not reveal them; the team keeps it in a password manager.
+	SecretsKey []byte
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header names the client's
 	// address. It is empty in development when the server is reached directly.
 	TrustedProxies []netip.Prefix
 	// WebDir is the folder of the built frontend the server serves. It is "" in development, where
 	// the web dev server serves the frontend.
 	WebDir string
+	// CLIDir is the folder of signed CLI releases the server offers for download. It is "" in
+	// development when no release is served.
+	CLIDir string
 	// GitHubWebhookSecret checks GitHub webhook signatures. It is "" when the webhook is off,
 	// which only development allows.
 	GitHubWebhookSecret string
@@ -176,6 +183,15 @@ func Load(getenv func(string) string) (Config, error) {
 	problems = append(problems, err)
 	cfg.SignInCodeKey = []byte(codeKey)
 
+	secretsKey, err := required(getenv, "SECRETS_ENCRYPTION_KEY")
+	if err == nil {
+		cfg.SecretsKey, err = secretbox.ParseKey(secretsKey)
+		if err != nil {
+			err = fmt.Errorf("SECRETS_ENCRYPTION_KEY %w", err)
+		}
+	}
+	problems = append(problems, err)
+
 	trustedProxies, err := optional("TRUSTED_PROXIES")
 	if err == nil && trustedProxies != "" {
 		cfg.TrustedProxies, err = parseTrustedProxies(trustedProxies)
@@ -185,6 +201,12 @@ func Load(getenv func(string) string) (Config, error) {
 	webDir, err := optional("WEB_DIR")
 	if err == nil && webDir != "" {
 		cfg.WebDir, err = parseWebDir(webDir)
+	}
+	problems = append(problems, err)
+
+	cliDir, err := optional("CLI_DIR")
+	if err == nil && cliDir != "" {
+		cfg.CLIDir, err = parseCLIDir(cliDir)
 	}
 	problems = append(problems, err)
 
@@ -292,6 +314,19 @@ func parseWebDir(value string) (string, error) {
 	}
 	if info, err := os.Stat(filepath.Join(dir, "_shell.html")); err != nil || info.IsDir() {
 		return "", fmt.Errorf("WEB_DIR must be the built frontend's folder, web/dist/client, with its _shell.html; %s has none (run make build-web)", dir)
+	}
+	return dir, nil
+}
+
+// parseCLIDir checks that the folder of CLI releases exists. It may be empty: the release folder
+// is filled from the latest signed release, and a server before the first one offers no CLI.
+func parseCLIDir(value string) (string, error) {
+	dir, err := filepath.Abs(value)
+	if err != nil {
+		return "", fmt.Errorf("CLI_DIR is not a usable path: %w", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("CLI_DIR must be a folder; %s is not one", dir)
 	}
 	return dir, nil
 }

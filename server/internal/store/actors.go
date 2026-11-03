@@ -8,7 +8,7 @@ import (
 	"slices"
 )
 
-const actorColumns = `id, kind, display_name, avatar_id, email, role, agent_name, owner_actor_id, disabled_at, created_at, updated_at`
+const actorColumns = `id, kind, display_name, avatar_id, email, role, agent_name, owner_actor_id, can_manage_environments, disabled_at, created_at, updated_at`
 
 // NewHuman describes a person to add to the team.
 type NewHuman struct {
@@ -97,8 +97,8 @@ func (s *Store) CreateAgent(ctx context.Context, by Caller, input NewAgent) (Act
 	if err != nil {
 		return Actor{}, err
 	}
-	if !agentNamePattern.MatchString(input.AgentName) {
-		return Actor{}, invalid("agent_name", "must be lowercase letters, digits, and dashes, such as claude-code")
+	if !KnownAgentName(input.AgentName) {
+		return Actor{}, invalid("agent_name", agentNameError)
 	}
 
 	actor := Actor{ID: newID(), Kind: ActorAgent, DisplayName: name, AgentName: input.AgentName}
@@ -204,6 +204,16 @@ func (s *Store) DisableActor(ctx context.Context, by Caller, actorID string) err
 			}
 		}
 
+		// CI tokens a person made stop working with them, since their authority is gone.
+		if err := revokeServiceTokensBy(w, target.ID); err != nil {
+			return err
+		}
+
+		// Nobody else may read a person's dev overrides, so they go with the person.
+		if _, err := w.exec(`DELETE FROM secrets WHERE config = 'dev_personal' AND owner_actor_id = ?`, target.ID); err != nil {
+			return fmt.Errorf("delete dev secrets: %w", err)
+		}
+
 		return w.event("", TargetActor, target.ID, "actor.disabled", map[string]any{"kind": target.Kind})
 	})
 }
@@ -276,7 +286,7 @@ func scanActor(row scanner) (Actor, error) {
 	var email, role, agentName, owner, disabled sql.NullString
 	var created, updated string
 
-	err := row.Scan(&actor.ID, &actor.Kind, &actor.DisplayName, &actor.AvatarID, &email, &role, &agentName, &owner, &disabled, &created, &updated)
+	err := row.Scan(&actor.ID, &actor.Kind, &actor.DisplayName, &actor.AvatarID, &email, &role, &agentName, &owner, &actor.CanManageEnvironments, &disabled, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Actor{}, notFound("actor")
 	}
