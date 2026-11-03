@@ -90,6 +90,13 @@ export function Sidebar() {
                       label="Milestones"
                       active={projectSlug === project.slug && section === "milestones"}
                     />
+                    <NavItem
+                      to="/$projectSlug/secrets"
+                      params={{ projectSlug: project.slug }}
+                      icon="key-round"
+                      label="Secrets"
+                      active={projectSlug === project.slug && section === "secrets"}
+                    />
                   </div>
                 )}
               </section>

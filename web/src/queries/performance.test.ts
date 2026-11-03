@@ -82,7 +82,9 @@ test("creation does not seed incomplete lists and repeated responses do not dupl
 
 test("live creation refreshes only affected lists and skips a creation already cached from the POST", () => {
   const cache = client();
-  cache.setQueryData(projectsQuery.queryKey, [{ id: "wp", key: "WP", name: "WP", slug: "wp" }]);
+  cache.setQueryData(projectsQuery.queryKey, [
+    { id: "wp", key: "WP", name: "WP", slug: "wp", secrets_enabled: false },
+  ]);
   for (const key of [
     ["issues"],
     ["issues", "WP"],
@@ -189,7 +191,9 @@ test("subissue events refresh both lists for the parent, including an initially 
 
 test("issue changes refresh calculated milestone statuses only in the affected project", () => {
   const cache = client();
-  cache.setQueryData(projectsQuery.queryKey, [{ id: "wp", key: "WP", name: "WP", slug: "wp" }]);
+  cache.setQueryData(projectsQuery.queryKey, [
+    { id: "wp", key: "WP", name: "WP", slug: "wp", secrets_enabled: false },
+  ]);
   for (const key of [["milestones"], ["milestones", "WP"], ["milestones", "SS"]])
     cache.setQueryData(key, []);
   refreshLiveEvents(cache, [{ ...creation(), kind: "issue.updated" }]);
@@ -207,5 +211,51 @@ test("committed issue creation refreshes calculated milestone statuses without a
   expect(cache.getQueryState(["milestones"])?.isInvalidated).toBe(true);
   expect(cache.getQueryState(["milestones", "WP"])?.isInvalidated).toBe(true);
   expect(cache.getQueryState(["milestones", "SS"])?.isInvalidated).toBe(false);
+  cache.clear();
+});
+
+test("secret and service token events refresh only that project's secrets queries", () => {
+  const cache = client();
+  cache.setQueryData(
+    ["projects"],
+    [
+      { id: "wp", key: "WP" },
+      { id: "ss", key: "SS" },
+    ],
+  );
+  for (const key of [
+    ["secrets", "WP"],
+    ["secrets", "WP", "access-log", "dev"],
+    ["secrets", "SS"],
+  ])
+    cache.setQueryData(key, []);
+
+  for (const kind of ["secret.changed", "secrets.enabled", "service_token.revoked"]) {
+    cache.setQueryData(["secrets", "WP"], []);
+    cache.setQueryData(["secrets", "SS"], []);
+    refreshLiveEvents(cache, [{ ...creation(), target_type: "project", kind, payload: {} }]);
+    expect(cache.getQueryState(["secrets", "WP"])?.isInvalidated).toBe(true);
+    expect(cache.getQueryState(["secrets", "SS"])?.isInvalidated).toBe(false);
+  }
+  cache.clear();
+});
+
+test("a changed environments permission refreshes every project's secrets queries", () => {
+  const cache = client();
+  cache.setQueryData(["projects"], []);
+  cache.setQueryData(["secrets", "WP"], []);
+  cache.setQueryData(["secrets", "SS"], []);
+
+  refreshLiveEvents(cache, [
+    {
+      ...creation(),
+      project_id: "",
+      target_type: "actor",
+      kind: "actor.environments_permission_changed",
+    },
+  ]);
+
+  expect(cache.getQueryState(["secrets", "WP"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["secrets", "SS"])?.isInvalidated).toBe(true);
   cache.clear();
 });
