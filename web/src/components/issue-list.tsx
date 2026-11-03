@@ -94,29 +94,44 @@ export function IssueList({
               inert={isCollapsed}
             >
               <div className="min-h-0 overflow-hidden">
-                {rows.map((issue) => (
-                  <Link
-                    className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
-                    key={issue.key}
-                    to="/$projectSlug/issues/$issue"
-                    params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
-                  >
-                    <Icon name={statusIcon[issue.status]} />
-                    <span className="flex items-center gap-4 text-[14px] text-[#aebed4]">
-                      {issue.key}
-                    </span>
-                    <span className="text-[15px] text-[#eef0f5]">{issue.title}</span>
-                    <LabelChips labelIds={issue.label_ids} projectKey={issue.project_key} />
-                    <span
-                      className="[&_.agent-icon]:h-[32px] [&_.agent-icon]:w-[32px] [&_.avatar]:h-[32px] [&_.avatar]:w-[32px] [&_.avatar]:text-[11px]"
-                      role="img"
-                      aria-label={`Assigned to ${actorTitle(actor(issue.assignee_actor_id))}`}
-                      title={actorTitle(actor(issue.assignee_actor_id))}
+                {rows.map((issue) => {
+                  const assigneeTitle = issue.assignee_actor_id
+                    ? `Assigned to ${actorTitle(actor(issue.assignee_actor_id))}`
+                    : "Unassigned";
+                  return (
+                    <Link
+                      className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
+                      key={issue.key}
+                      to="/$projectSlug/issues/$issue"
+                      params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
                     >
-                      <Avatar actor={actor(issue.assignee_actor_id)} />
-                    </span>
-                  </Link>
-                ))}
+                      <Icon name={statusIcon[issue.status]} />
+                      <span className="flex items-center gap-4 text-[14px] text-[#aebed4]">
+                        {issue.key}
+                      </span>
+                      <span className="text-[15px] text-[#eef0f5]">{issue.title}</span>
+                      <LabelChips labelIds={issue.label_ids} projectKey={issue.project_key} />
+                      <span className="flex items-center justify-end gap-[4px] [&_.agent-icon]:h-[26px] [&_.agent-icon]:w-[26px] [&_.avatar]:h-[26px] [&_.avatar]:w-[26px] [&_.avatar]:basis-[26px] [&_.avatar]:text-[9px] [&_.icon]:size-[26px] [&_.icon]:text-[#7d8899]">
+                        <span
+                          className="flex"
+                          role="img"
+                          aria-label={`Created by ${actorTitle(actor(issue.created_by_actor_id))}`}
+                          title={`Created by ${actorTitle(actor(issue.created_by_actor_id))}`}
+                        >
+                          <Avatar actor={actor(issue.created_by_actor_id)} />
+                        </span>
+                        <span
+                          className="flex"
+                          role="img"
+                          aria-label={assigneeTitle}
+                          title={assigneeTitle}
+                        >
+                          <Avatar actor={actor(issue.assignee_actor_id)} />
+                        </span>
+                      </span>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           </section>

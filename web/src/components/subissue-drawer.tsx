@@ -8,6 +8,7 @@ import { Input } from "./input";
 import { LabelChips } from "./label-chips";
 import { LabelSelector } from "./label-selector";
 import { Modal } from "./modal";
+import { Person } from "./person";
 import { Select } from "./select";
 import { SubissueDescription } from "./subissue-description";
 import { useToast } from "./toast";
@@ -150,6 +151,10 @@ function SubissueDetail({
         />
       </div>
       <div className="mt-5 grid shrink-0 grid-cols-[96px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 text-[13px] text-[#8fa0b7]">
+        <span>Created by</span>
+        <span className="text-[#c9d3e1]">
+          <Person actorId={subissue.created_by_actor_id} />
+        </span>
         <span className="self-start pt-[9px]">Labels</span>
         <div className="flex min-w-0 flex-col gap-2 [&_button[aria-expanded]]:min-h-[34px] [&_button[aria-expanded]]:text-[13px]">
           {subissue.label_ids.length > 0 && <LabelChips labelIds={subissue.label_ids} />}

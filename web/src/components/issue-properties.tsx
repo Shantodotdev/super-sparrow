@@ -1,5 +1,5 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { webUrl } from "../lib/format";
+import { formatDate, webUrl } from "../lib/format";
 import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
 import { usePatchIssue } from "../queries/issues";
@@ -15,6 +15,7 @@ import { Select } from "./select";
 import { Avatar } from "./avatar";
 import { IssueTextField } from "./issue-text-field";
 import { LabelSelector } from "./label-selector";
+import { Person } from "./person";
 
 type IssuePropertiesProps = {
   issue: Issue;
@@ -79,6 +80,13 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
             })),
         ]}
       />
+      <h3>Created by</h3>
+      <div className="flex min-w-0 items-center justify-between gap-3 text-[#c9d3e1]">
+        <Person actorId={issue.created_by_actor_id} />
+        <time className="shrink-0 text-[12px] text-[#8fa0b7]" dateTime={issue.created_at}>
+          {formatDate(issue.created_at)}
+        </time>
+      </div>
       <h3>Milestone</h3>
       <ResourceSelector
         label="Milestone"
