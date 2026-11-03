@@ -47,3 +47,19 @@ export const issuePriorityLabel: Record<IssuePriority, string> = {
   medium: "Medium",
   low: "Low",
 };
+
+export const issuePriorityIcon: Record<IssuePriority, IconName> = {
+  "": "circle-dashed",
+  urgent: "triangle-alert",
+  high: "triangle-alert",
+  medium: "circle-dot",
+  low: "circle",
+};
+
+export const issuePriorityColor: Record<IssuePriority, string> = {
+  "": "text-[#a9b6c8]",
+  urgent: "text-[#f2a9ae]",
+  high: "text-[#f2ad67]",
+  medium: "text-[#f2cf87]",
+  low: "text-[#a7c0ff]",
+};

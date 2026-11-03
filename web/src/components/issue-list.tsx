@@ -2,7 +2,14 @@ import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { slugify } from "../lib/format";
-import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
+import {
+  issuePriorityColor,
+  issuePriorityIcon,
+  issuePriorityLabel,
+  issueStatusLabel,
+  issueStatuses,
+  statusIcon,
+} from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
 import { useActor } from "../queries/project";
 import { Avatar } from "./avatar";
@@ -102,12 +109,27 @@ export function IssueList({
                     : `Created by ${creatorTitle}`;
                   return (
                     <Link
-                      className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
+                      className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
                       key={issue.key}
                       to="/$projectSlug/issues/$issue"
                       params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
                     >
                       <Icon name={statusIcon[issue.status]} />
+                      {issue.priority ? (
+                        <span
+                          className="flex"
+                          role="img"
+                          aria-label={`${issuePriorityLabel[issue.priority]} priority`}
+                          title={`${issuePriorityLabel[issue.priority]} priority`}
+                        >
+                          <Icon
+                            name={issuePriorityIcon[issue.priority]}
+                            className={issuePriorityColor[issue.priority]}
+                          />
+                        </span>
+                      ) : (
+                        <span aria-hidden="true" />
+                      )}
                       <span className="flex items-center gap-4 text-[14px] text-[#aebed4]">
                         {issue.key}
                       </span>
