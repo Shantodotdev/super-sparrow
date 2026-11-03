@@ -262,6 +262,11 @@
     const frame = document.querySelector("[data-page-cache]");
     if (!frame) return;
 
+    // While a navigation loads, the address bar is ahead of the frame; saving then would pair the
+    // new URL with the previous page.
+    const trim = (/** @type {string} */ path) => path.replace(/\/+$/, "");
+    if (trim(frame.getAttribute("data-page-path") ?? "") !== trim(location.pathname)) return;
+
     try {
       const root = captureNode(frame, { remaining: 50_000 });
       if (!root) return;
