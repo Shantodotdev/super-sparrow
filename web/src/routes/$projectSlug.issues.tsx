@@ -59,7 +59,7 @@ function IssuesPage() {
   const createIssue = useCreateIssue();
 
   const [collapsed, setCollapsed] = useState<IssueStatus[]>([]);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<IssueStatus | null>(null);
   const { ref: toolbarRef, height: toolbarHeight } = useElementHeight<HTMLDivElement>();
 
   const assignable = actors.filter((actor) => actor.kind !== "system" && !actor.disabled_at);
@@ -208,7 +208,7 @@ function IssuesPage() {
             <button
               disabled={!people.data || !projectLabels.data || !projectMilestones.data}
               className="rounded-full border border-[#5f7fff] bg-[#2455eb] px-[15px] py-[6px] font-[550] whitespace-nowrap text-white shadow-[0_4px_14px_#2455eb38,inset_0_1px_#ffffff24] transition-[background-color,border-color,box-shadow,transform] duration-160 ease-[ease] hover:-translate-y-px hover:border-[#89a0ff] hover:bg-[#3566f6] hover:shadow-[0_6px_18px_#2455eb55,inset_0_1px_#ffffff33] motion-reduce:transition-none"
-              onClick={() => setCreating(true)}
+              onClick={() => setCreating("backlog")}
             >
               <Icon name="plus" /> &nbsp; New issue
             </button>
@@ -238,18 +238,21 @@ function IssuesPage() {
           toolbarHeight={toolbarHeight}
           collapsed={collapsed}
           onToggleGroup={toggleGroup}
+          onCreateIssue={setCreating}
+          createDisabled={!people.data || !projectLabels.data || !projectMilestones.data}
         />
       )}
       <NewIssueModal
         key={project.id}
         project={project}
-        open={creating}
+        open={creating !== null}
+        initialStatus={creating ?? "backlog"}
         statuses={statusOptions}
         assignees={newIssueAssigneeOptions}
         milestones={milestoneOptions}
         labels={labels}
         onCreate={createIssue}
-        onClose={() => setCreating(false)}
+        onClose={() => setCreating(null)}
       />
     </>
   );

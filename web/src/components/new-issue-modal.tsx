@@ -36,6 +36,7 @@ type NewIssueModalProps = {
   onCreate: (values: NewIssueValues) => Promise<unknown>;
   onClose: () => void;
   open: boolean;
+  initialStatus?: IssueStatus;
 };
 
 /** Collects the fields for a new issue to persist through the Go API. */
@@ -48,10 +49,11 @@ export function NewIssueModal({
   onCreate,
   onClose,
   open,
+  initialStatus = "backlog",
 }: NewIssueModalProps) {
   const [title, setTitle] = useState("");
   const [plan, setPlan] = useState("");
-  const [status, setStatus] = useState<IssueStatus>("backlog");
+  const [status, setStatus] = useState<IssueStatus>(initialStatus);
   const projectKey = project.key;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -120,7 +122,7 @@ export function NewIssueModal({
     if (!open) return;
     setTitle("");
     setPlan("");
-    setStatus("backlog");
+    setStatus(initialStatus);
 
     setAssigneeId("");
     setMilestoneId("");
@@ -130,7 +132,7 @@ export function NewIssueModal({
     setLabelDraftName(null);
     createLabel.reset();
     setCreateMore(false);
-  }, [open]);
+  }, [open, initialStatus]);
 
   useEffect(() => {
     if (labelDraftName) colorPicker.current?.querySelector<HTMLButtonElement>("button")?.focus();
@@ -169,7 +171,7 @@ export function NewIssueModal({
       }
       setTitle("");
       setPlan("");
-      setStatus("backlog");
+      setStatus(initialStatus);
 
       setAssigneeId("");
       setMilestoneId("");

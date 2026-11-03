@@ -24,10 +24,19 @@ type IssueListProps = {
   toolbarHeight: number;
   collapsed: IssueStatus[];
   onToggleGroup: (status: IssueStatus) => void;
+  onCreateIssue?: (status: IssueStatus) => void;
+  createDisabled?: boolean;
 };
 
 /** Lists issues grouped by status. Each group can be collapsed under its sticky heading. */
-export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: IssueListProps) {
+export function IssueList({
+  issues,
+  toolbarHeight,
+  collapsed,
+  onToggleGroup,
+  onCreateIssue,
+  createDisabled,
+}: IssueListProps) {
   const projectSlug = useProjectSlugs();
   const actor = useActor();
   const actorTitle = useActorTitle();
@@ -45,23 +54,40 @@ export function IssueList({ issues, toolbarHeight, collapsed, onToggleGroup }: I
 
         return (
           <section key={status}>
-            <button
-              className={`group/heading sticky top-(--issues-toolbar-height,0px) z-1 flex w-full items-center gap-[10px] rounded-[8px] border-0 px-[12px] py-[8px] text-left ${groupBackground[status]}`}
-              aria-expanded={!isCollapsed}
-              onClick={() => onToggleGroup(status)}
+            <div
+              className={`group/heading sticky top-(--issues-toolbar-height,0px) z-1 flex w-full items-center rounded-[8px] ${groupBackground[status]}`}
             >
-              <Icon
-                name="chevron-down"
-                className="transition-transform duration-180 ease-[ease] group-aria-[expanded=false]/heading:-rotate-90 motion-reduce:transition-none"
-              />
-              <span
-                className={`text-[17px] text-[#98a9c3] [&.status-backlog]:text-[#a9b6c8] [&.status-done]:text-[#44ce91] [&.status-in-progress]:text-[#4c7aff] [&.status-in-review]:text-[#a574ff] status-${slugify(status)}`}
+              <button
+                type="button"
+                className="group/toggle flex min-w-0 flex-1 items-center gap-[10px] rounded-[8px] border-0 bg-transparent px-[12px] py-[8px] text-left"
+                aria-expanded={!isCollapsed}
+                onClick={() => onToggleGroup(status)}
               >
-                <Icon name={statusIcon[status]} />
-              </span>
-              <strong>{issueStatusLabel[status]}</strong>
-              <span className="text-[13px] font-medium text-[#9ba9bc]">{rows.length}</span>
-            </button>
+                <Icon
+                  name="chevron-down"
+                  className="transition-transform duration-180 ease-[ease] group-aria-[expanded=false]/toggle:-rotate-90 motion-reduce:transition-none"
+                />
+                <span
+                  className={`text-[17px] text-[#98a9c3] [&.status-backlog]:text-[#a9b6c8] [&.status-done]:text-[#44ce91] [&.status-in-progress]:text-[#4c7aff] [&.status-in-review]:text-[#a574ff] status-${slugify(status)}`}
+                >
+                  <Icon name={statusIcon[status]} />
+                </span>
+                <strong>{issueStatusLabel[status]}</strong>
+                <span className="text-[13px] font-medium text-[#9ba9bc]">{rows.length}</span>
+              </button>
+              {onCreateIssue && (
+                <button
+                  type="button"
+                  className="pointer-events-none mr-[8px] grid size-7 shrink-0 place-items-center rounded-[6px] border-0 bg-transparent text-[#9ba9bc] opacity-0 transition-opacity group-hover/heading:pointer-events-auto group-hover/heading:opacity-100 hover:bg-white/10 hover:text-white focus-visible:pointer-events-auto focus-visible:opacity-100 disabled:cursor-not-allowed disabled:text-[#657084] motion-reduce:transition-none"
+                  aria-label={`Create issue in ${issueStatusLabel[status]}`}
+                  title={`Create issue in ${issueStatusLabel[status]}`}
+                  disabled={createDisabled}
+                  onClick={() => onCreateIssue(status)}
+                >
+                  <Icon name="plus" />
+                </button>
+              )}
+            </div>
             <div
               className="grid grid-rows-[minmax(0,1fr)] opacity-100 [transition:grid-template-rows_220ms_ease,opacity_180ms_ease] aria-hidden:grid-rows-[minmax(0,0fr)] aria-hidden:opacity-0 motion-reduce:[transition:none]"
               aria-hidden={isCollapsed}
