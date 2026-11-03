@@ -95,9 +95,11 @@ export function IssueList({
             >
               <div className="min-h-0 overflow-hidden">
                 {rows.map((issue) => {
-                  const assigneeTitle = issue.assignee_actor_id
-                    ? `Assigned to ${actorTitle(actor(issue.assignee_actor_id))}`
-                    : "Unassigned";
+                  const creatorTitle = actorTitle(actor(issue.created_by_actor_id));
+                  const sameActor = issue.assignee_actor_id === issue.created_by_actor_id;
+                  const creatorLabel = sameActor
+                    ? `Created by and assigned to ${creatorTitle}`
+                    : `Created by ${creatorTitle}`;
                   return (
                     <Link
                       className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
@@ -115,19 +117,21 @@ export function IssueList({
                         <span
                           className="flex"
                           role="img"
-                          aria-label={`Created by ${actorTitle(actor(issue.created_by_actor_id))}`}
-                          title={`Created by ${actorTitle(actor(issue.created_by_actor_id))}`}
+                          aria-label={creatorLabel}
+                          title={creatorLabel}
                         >
                           <Avatar actor={actor(issue.created_by_actor_id)} />
                         </span>
-                        <span
-                          className="flex"
-                          role="img"
-                          aria-label={assigneeTitle}
-                          title={assigneeTitle}
-                        >
-                          <Avatar actor={actor(issue.assignee_actor_id)} />
-                        </span>
+                        {issue.assignee_actor_id && !sameActor && (
+                          <span
+                            className="flex"
+                            role="img"
+                            aria-label={`Assigned to ${actorTitle(actor(issue.assignee_actor_id))}`}
+                            title={`Assigned to ${actorTitle(actor(issue.assignee_actor_id))}`}
+                          >
+                            <Avatar actor={actor(issue.assignee_actor_id)} />
+                          </span>
+                        )}
                       </span>
                     </Link>
                   );
