@@ -52,6 +52,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                 <Link
                   className="flex w-full flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left hover:border-[#5873c7] hover:bg-[#171d28]"
                   key={issue.key}
+                  data-shortcut-row
                   to="/$projectSlug/issues/$issue"
                   params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
                 >

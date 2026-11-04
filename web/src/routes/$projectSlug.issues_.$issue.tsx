@@ -29,6 +29,7 @@ import {
   reviewRoundsQuery,
 } from "../queries/project";
 import { loadQuery } from "../queries/options";
+import { useShortcutKeys } from "../components/shortcuts";
 
 export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   staticData: { section: "issues" },
@@ -127,6 +128,15 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
     };
     void transition.finished.then(cleanup, cleanup);
   };
+
+  useShortcutKeys({
+    "1": () => switchTab("plan"),
+    "2": () => switchTab("rounds"),
+    "3": () => switchTab("findings"),
+    "4": () => switchTab("activity"),
+    "5": () => switchTab("comments"),
+    e: () => document.querySelector<HTMLInputElement>("h1 input, h1 textarea")?.focus(),
+  });
 
   return (
     <div

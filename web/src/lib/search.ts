@@ -9,6 +9,7 @@ export type IssuesSearch = {
   assignee?: string;
   label?: string;
   milestone?: string;
+  new?: true;
 };
 
 export type IssueTab = "plan" | "findings" | "rounds" | "activity" | "comments";
@@ -40,6 +41,7 @@ export function validateIssuesSearch(search: Record<string, unknown>): IssuesSea
     assignee: text(search.assignee),
     label: text(search.label),
     milestone: text(search.milestone),
+    new: search.new === true || search.new === "true" ? true : undefined,
   };
 }
 

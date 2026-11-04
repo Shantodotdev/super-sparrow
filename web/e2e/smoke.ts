@@ -250,6 +250,58 @@ try {
   checks++;
   await navigate(`/${projectSlug}/issues`);
   await waitText("Meta comments");
+  const press = async (key: string) => {
+    const shift = key === "?";
+    for (const type of ["keyDown", "keyUp"]) {
+      await call("Input.dispatchKeyEvent", {
+        type,
+        key,
+        text: type === "keyDown" && key.length === 1 ? key : undefined,
+        modifiers: shift ? 8 : 0,
+      });
+    }
+  };
+  const dialogOpen = (open: boolean) =>
+    until(
+      () => evaluate(`!!document.querySelector('[role=dialog]') === ${open}`),
+      open ? "dialog opens" : "dialog closes",
+    );
+  await press("?");
+  await dialogOpen(true);
+  await waitText("Keyboard shortcuts");
+  await press("Escape");
+  await dialogOpen(false);
+  await press("c");
+  await until(
+    () => evaluate(`!!document.querySelector('[role=dialog] input[aria-label="Issue title"]')`),
+    "create shortcut opens the issue dialog",
+  );
+  await until(() => evaluate(`location.search === ''`), "create flag leaves the URL");
+  await press("Escape");
+  await dialogOpen(false);
+  await press("g");
+  await press("m");
+  await until(
+    () => evaluate(`location.pathname === '/' + ${JSON.stringify(projectSlug)} + '/milestones'`),
+    "go to milestones",
+  );
+  await press("g");
+  await press("i");
+  await until(
+    () => evaluate(`location.pathname === '/' + ${JSON.stringify(projectSlug)} + '/issues'`),
+    "go to issues",
+  );
+  await waitText("Meta comments");
+  await press("j");
+  await until(
+    () => evaluate(`document.activeElement?.hasAttribute('data-shortcut-row') === true`),
+    "j focuses an issue row",
+  );
+  await press("v");
+  await until(() => evaluate(`location.search === '?view=board'`), "v switches to the board");
+  await press("v");
+  await until(() => evaluate(`location.search === ''`), "v switches back to the list");
+  checks++;
   await click("New issue");
   if (!(await evaluate(`!document.querySelector('[role=dialog] select')`)))
     throw new Error("Issue form must not offer a project selector");

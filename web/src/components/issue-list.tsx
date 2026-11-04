@@ -111,6 +111,7 @@ export function IssueList({
                     <Link
                       className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
                       key={issue.key}
+                      data-shortcut-row
                       to="/$projectSlug/issues/$issue"
                       params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
                     >

@@ -1,7 +1,7 @@
 import { Avatar } from "../components/avatar";
 import { Input } from "../components/input";
 import { useProject } from "../hooks/use-project";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Columns3 } from "lucide-react";
@@ -60,6 +60,16 @@ function IssuesPage() {
 
   const [collapsed, setCollapsed] = useState<IssueStatus[]>([]);
   const [creating, setCreating] = useState<IssueStatus | null>(null);
+  const dataReady = !!people.data && !!projectLabels.data && !!projectMilestones.data;
+
+  // The "new" search flag comes from the create shortcut; it opens the dialog once and is removed.
+  useEffect(() => {
+    if (!search.new || !dataReady) return;
+
+    setCreating("backlog");
+    void navigate({ search: (previous) => ({ ...previous, new: undefined }), replace: true });
+  }, [search.new, dataReady, navigate]);
+
   const { ref: toolbarRef, height: toolbarHeight } = useElementHeight<HTMLDivElement>();
 
   const assignable = actors.filter((actor) => actor.kind !== "system" && !actor.disabled_at);
@@ -96,7 +106,7 @@ function IssuesPage() {
   );
 
   /** Sets one filter in the URL; the "All" choice removes it. Filtering replaces the history entry. */
-  const setFilter = (name: Exclude<keyof IssuesSearch, "view">, value: string) =>
+  const setFilter = (name: Exclude<keyof IssuesSearch, "view" | "new">, value: string) =>
     void navigate({
       search: (previous) => ({
         ...previous,

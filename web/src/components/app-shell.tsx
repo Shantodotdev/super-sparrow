@@ -9,6 +9,7 @@ import { Outlet, useMatches } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
 import { AppFrame } from "./app-frame";
 import { clearQueryCache } from "../queries/persistence";
+import { ShortcutHelp, useGlobalShortcuts } from "./shortcuts";
 
 /**
  * The frame around every signed-in page: the sidebar, the page itself, and the command palette.
@@ -68,6 +69,8 @@ export function AppShell() {
     };
   }, [bare, client]);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  useGlobalShortcuts(() => setHelpOpen(true));
 
   useEffect(() => {
     const openOnShortcut = (event: KeyboardEvent) => {
@@ -98,6 +101,7 @@ export function AppShell() {
       {!!projects.data?.length && (
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       )}
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </AppFrame>
   );
 }
