@@ -53,6 +53,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Super Sparrow" },
     ],
     links: [
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "icon", href: "/favicon-48.png", type: "image/png", sizes: "48x48" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "preload", href: interFont, as: "font", type: "font/ttf", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: appCss },
       { rel: "preload", href: previewScript, as: "script" },
