@@ -163,6 +163,9 @@ function IssuesPage() {
               placeholder="Search issues..."
               value={search.q ?? ""}
               onChange={(event) => setFilter("q", event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") event.currentTarget.blur();
+              }}
               aria-label="Search issues"
             />
             <Filter

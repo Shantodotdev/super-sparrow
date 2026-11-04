@@ -50,7 +50,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
             >
               {rows.map((issue) => (
                 <Link
-                  className="flex w-full flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left hover:border-[#5873c7] hover:bg-[#171d28]"
+                  className="flex w-full flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left hover:border-[#5873c7] hover:bg-[#171d28] focus:outline-none focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]"
                   key={issue.key}
                   data-shortcut-row
                   to="/$projectSlug/issues/$issue"

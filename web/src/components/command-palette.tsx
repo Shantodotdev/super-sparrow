@@ -1,16 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
-import { projectsQuery } from "../queries/project";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { paletteLinks } from "../data/navigation";
 import { Modal } from "./modal";
+import { useCurrentProjectSlug } from "./shortcuts";
 
 type CommandPaletteProps = { open: boolean; onClose: () => void };
 
 /** A quick-navigation dialog; choosing a destination closes it. */
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { projectSlug } = useParams({ strict: false });
-  const { data: projects } = useQuery(projectsQuery);
-  const selectedSlug = projectSlug ?? projects?.[0]?.slug;
+  const selectedSlug = useCurrentProjectSlug();
   return (
     <Modal
       open={open}

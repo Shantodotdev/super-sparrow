@@ -6,6 +6,39 @@ import { isTypingTarget, nextGoStep, shortcutGroups, type GoDestination } from "
 import { projectsQuery } from "../queries/project";
 import { Modal } from "./modal";
 
+const lastProjectKey = "sparrow:last-project-slug";
+
+/**
+ * The project shortcuts and the palette act on: the one in the URL, else the last one visited in
+ * this browser, else the first. Visiting a project remembers it for pages outside any project.
+ */
+export function useCurrentProjectSlug(): string | undefined {
+  const { projectSlug: routeSlug } = useParams({ strict: false });
+  const { data: projects } = useQuery(projectsQuery);
+  const known = projects?.some((project) => project.slug === routeSlug) ?? false;
+
+  useEffect(() => {
+    if (!routeSlug || !known) return;
+
+    try {
+      window.localStorage.setItem(lastProjectKey, routeSlug);
+    } catch {
+      // Remembering the project is a convenience; blocked storage falls back to the first project.
+    }
+  }, [routeSlug, known]);
+
+  if (known) return routeSlug;
+
+  let remembered: string | null = null;
+  try {
+    remembered = window.localStorage.getItem(lastProjectKey);
+  } catch {
+    // Blocked storage leaves nothing remembered.
+  }
+
+  return projects?.find((project) => project.slug === remembered)?.slug ?? projects?.[0]?.slug;
+}
+
 /** How long the go prefix waits for its destination key. */
 const goTimeoutMs = 1200;
 
@@ -69,9 +102,7 @@ function moveRowFocus(step: 1 | -1): void {
 export function useGlobalShortcuts(onHelp: () => void): void {
   const navigate = useNavigate();
   const location = useLocation();
-  const { projectSlug: routeSlug } = useParams({ strict: false });
-  const { data: projects } = useQuery(projectsQuery);
-  const projectSlug = routeSlug ?? projects?.[0]?.slug;
+  const projectSlug = useCurrentProjectSlug();
   const goPending = useRef(false);
   const goTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const segments = location.pathname.split("/").filter(Boolean);
