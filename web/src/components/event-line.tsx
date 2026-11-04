@@ -4,7 +4,8 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { findingStatusLabel } from "../lib/finding-status";
 import { issueStatusLabel } from "../lib/issue-status";
 import { formatTime } from "../lib/format";
-import type { ActivityEvent, FindingStatus, IssueStatus } from "../lib/types";
+import { secretConfigLabel } from "../lib/secrets";
+import type { ActivityEvent, FindingStatus, IssueStatus, SecretConfigId } from "../lib/types";
 import { issuesQuery } from "../queries/issues";
 import { Person } from "./person";
 
@@ -16,6 +17,31 @@ export function eventIssueId(event: ActivityEvent): string {
 
 function finding(payload: Record<string, unknown>): string {
   return `round ${String(payload.round)} R${String(payload.number)}`;
+}
+
+function names(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function configName(value: unknown): string {
+  return secretConfigLabel[value as SecretConfigId] ?? String(value);
+}
+
+function joinNames(value: unknown): string {
+  return names(value).join(", ");
+}
+
+const changeLabel = { added: "Added", changed: "Changed", removed: "Removed" } as const;
+
+/** Lists the key names a secrets change touched, never values. */
+function secretChanges(p: Record<string, unknown>): string | undefined {
+  const parts = (["added", "changed", "removed"] as const)
+    .filter((kind) => names(p[kind]).length)
+    .map((kind) => `${changeLabel[kind]}: ${joinNames(p[kind])}`);
+
+  return parts.length ? parts.join(" · ") : undefined;
 }
 
 /** Says what an event did in words, such as "added a finding to", with a detail line if any. */
@@ -53,6 +79,36 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
       return { action: `marked ${finding(p)} a duplicate on` };
     case "comment.added":
       return { action: "commented on" };
+    case "secrets.enabled":
+      return { action: "turned on secrets for this project" };
+    case "secret.changed":
+      return { action: `changed secrets in ${configName(p.config)}`, detail: secretChanges(p) };
+    case "secret.restored":
+      return {
+        action: `restored ${String(p.name)} to version ${String(p.version)} in ${configName(p.config)}`,
+      };
+    case "dev_secret.changed":
+      return { action: "changed their dev secrets", detail: secretChanges(p) };
+    case "dev_secret.restored":
+      return { action: `restored ${String(p.name)} to version ${String(p.version)} in their dev` };
+    case "secret.required_keys_changed":
+      return {
+        action: `changed the required keys of ${configName(p.config)}`,
+        detail: joinNames(p.names) || "No required keys",
+      };
+    case "service_token.created":
+    case "service_token.renewed":
+    case "service_token.revoked":
+      return {
+        action: `${event.kind.slice("service_token.".length)} a ${configName(p.config).toLowerCase()} service token`,
+        detail: typeof p.label === "string" ? p.label : undefined,
+      };
+    case "actor.environments_permission_changed":
+      return {
+        action: p.can_manage_environments
+          ? "allowed a member to manage staging and production"
+          : "stopped a member from managing staging and production",
+      };
     default:
       return { action: event.kind.replace(/[._]/g, " ") };
   }

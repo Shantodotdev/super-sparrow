@@ -114,7 +114,24 @@ The importer is in `server/internal/linear` and the webhook in `server/internal/
 - [ ] Restore both the latest sync and a daily backup into a fresh machine, and document the steps. The steps are in [DEPLOYMENT.md](DEPLOYMENT.md#restoring); the restore on a fresh machine is not done yet.
 - [ ] Measure memory and response times against the SRS limits.
 
-## 10. Switch over
+## 10. Secrets and the signed-in CLI
+
+Built. The design is in [SRS.md](SRS.md) (FR-27 to FR-42). The CLI is in `server/internal/cli`, release signing in `server/internal/release`, encryption in `server/internal/secretbox`, and secrets in `server/internal/store` and `server/internal/httpserver`. Doppler is not cancelled yet: the Doppler import and the move of Super Sparrow's own settings to GitHub's `production` environment are the open items.
+
+- [x] Add CLI sessions: `sparrow login` and `logout`, `POST /api/auth/cli/verify`, `ssc_` bearer sessions with a `client` on every session, and storage in the operating system's keychain with an owner-only file as the fallback.
+- [x] Add the `Sparrow-Agent` header and the CLI's agent detection for Claude Code and Codex, limit agent names to `claude-code` and `codex`, and let a person's CLI session run the MCP tools.
+- [x] Add a CLI command for every MCP tool, `sparrow tools`, `--help`, `--json`, and `sparrow whoami`.
+- [x] Add the secrets tables, AES-GCM encryption with `SECRETS_ENCRYPTION_KEY`, versions, history, restore, required keys, and the access log.
+- [x] Add the four configs, secrets turned on per project by an owner, personal dev overrides, and the member permission `can_manage_environments`, all checked on the server.
+- [x] Add service tokens (`sst_`) and `GET /api/secrets/download` in `json`, `env`, and `shell` formats.
+- [x] Add the `list_secret_names` MCP tool, `sparrow secrets` commands, and `sparrow run`.
+- [x] Build the Secrets page: masked values, reveal and copy, paste a `.env`, a review before saving with a production confirmation, history, required keys, service tokens, and the access log.
+- [x] Sign CLI releases: the `cli` and `sign` jobs of the release workflow in the `release` environment, `sparrow release keygen` and `sign`, `sparrow update` with signature, version, and checksum checks, and `/cli/{file}` served from `CLI_DIR`.
+- [x] Download the latest signed CLI into the image during deploy, and set `CLI_DIR` in the Docker image and compose files.
+- [ ] Create the `release` environment and the signing keys, put the public keys in `server/internal/release`, and cut the first signed release. The steps are in [DEPLOYMENT.md](DEPLOYMENT.md#cli-releases).
+- [ ] Import the Doppler configs, switch WP Agent's `make env` and CI to Super Sparrow, and cancel Doppler after the first successful staging deploy from Super Sparrow.
+
+## 11. Switch over
 
 - [ ] Update WP Agent's `AGENTS.md`, `docs/REVIEW.md`, and its `plan`, `review`, and `address-review` skills to use the tool.
 - [ ] Invite each teammate, and have each one create tokens for their Claude Code and Codex.

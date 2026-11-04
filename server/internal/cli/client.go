@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,11 +16,12 @@ import (
 
 const requestTimeout = 30 * time.Second
 
-// client calls the Super Sparrow API with an agent token.
+// client calls the Super Sparrow API with an agent token or a CLI session token.
 type client struct {
 	baseURL *url.URL
 	token   string
 	model   string
+	agent   string
 	http    *http.Client
 }
 
@@ -39,36 +39,26 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("%s (HTTP %d)", e.Message, e.Status)
 }
 
-// newClient reads the client settings through getenv: SPARROW_URL and SPARROW_TOKEN are required,
-// and SPARROW_MODEL, when set, is reported as the model making the changes.
-func newClient(getenv func(string) string) (*client, error) {
-	var problems []error
-
-	rawURL := strings.TrimSpace(getenv("SPARROW_URL"))
-	baseURL, err := url.Parse(rawURL)
-	switch {
-	case rawURL == "":
-		problems = append(problems, errors.New("SPARROW_URL is required: the server's address, such as https://sparrow.example.com"))
-	case err != nil || (baseURL.Scheme != "http" && baseURL.Scheme != "https") || baseURL.Host == "":
-		problems = append(problems, errors.New("SPARROW_URL must be an http or https address"))
-	}
-
-	token := strings.TrimSpace(getenv("SPARROW_TOKEN"))
-	if !strings.HasPrefix(token, "ssp_") {
-		problems = append(problems, errors.New("SPARROW_TOKEN is required: an agent token from settings, starting with ssp_"))
-	}
-
-	if err := errors.Join(problems...); err != nil {
-		return nil, err
-	}
-	return &client{
-		baseURL: baseURL, token: token, model: strings.TrimSpace(getenv("SPARROW_MODEL")),
-		http: &http.Client{Timeout: requestTimeout},
-	}, nil
+// newClient makes a client for baseURL. An empty token sends no credentials (sign-in requests),
+// and an empty agent acts as the signed-in person.
+func newClient(baseURL *url.URL, token, model, agent string) *client {
+	return &client{baseURL: baseURL, token: token, model: model, agent: agent, http: &http.Client{Timeout: requestTimeout}}
 }
 
 // do sends a request with an optional JSON body and returns the raw JSON response.
 func (c *client) do(ctx context.Context, method, path string, query url.Values, body any) (json.RawMessage, error) {
+	data, err := c.request(ctx, method, path, query, body)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return json.RawMessage("{}"), nil
+	}
+	return data, nil
+}
+
+// request sends a request with an optional JSON body and returns the response body as it is.
+func (c *client) request(ctx context.Context, method, path string, query url.Values, body any) ([]byte, error) {
 	target := c.baseURL.JoinPath(path)
 	target.RawQuery = query.Encode()
 
@@ -85,13 +75,18 @@ func (c *client) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-	request.Header.Set("Authorization", "Bearer "+c.token)
-	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept", "application/json, text/plain")
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if c.model != "" {
 		request.Header.Set("Sparrow-Model", c.model)
+	}
+	if c.agent != "" {
+		request.Header.Set("Sparrow-Agent", c.agent)
 	}
 
 	response, err := c.http.Do(request)
@@ -114,9 +109,6 @@ func (c *client) do(ctx context.Context, method, path string, query url.Values, 
 			failure.Message, failure.Field = decoded.Error, decoded.Field
 		}
 		return nil, failure
-	}
-	if len(data) == 0 {
-		return json.RawMessage("{}"), nil
 	}
 	return data, nil
 }

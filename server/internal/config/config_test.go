@@ -20,6 +20,8 @@ func developmentEnv() map[string]string {
 		"RESEND_API_KEY":   "re_test_key",
 		"EMAIL_FROM":       "Super Sparrow <sparrow@example.com>",
 		"SIGN_IN_CODE_KEY": "0123456789abcdef0123456789abcdef",
+		// Thirty-two bytes in base64.
+		"SECRETS_ENCRYPTION_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 	}
 }
 
@@ -36,6 +38,7 @@ func productionEnv(t *testing.T) map[string]string {
 	env["PUBLIC_URL"] = "https://sparrow.example.com"
 	env["TRUSTED_PROXIES"] = "127.0.0.1, 10.0.0.0/8"
 	env["WEB_DIR"] = webDir
+	env["CLI_DIR"] = t.TempDir()
 	env["GITHUB_WEBHOOK_SECRET"] = "a-long-enough-webhook-secret"
 	env["BACKUP_AGE_RECIPIENT"] = "age1gsdyrs7gwehv0unafknt05d0kkl202qp4uazx4y7y5acp8n7uudq3p92hk"
 	env["BACKUP_DAILY_TIME"] = "03:00"
@@ -72,8 +75,11 @@ func TestProductionReadsEverySetting(t *testing.T) {
 		cfg.TrustedProxies[1].String() != "10.0.0.0/8" {
 		t.Errorf("TrustedProxies = %v", cfg.TrustedProxies)
 	}
-	if cfg.WebDir != env["WEB_DIR"] || cfg.GitHubWebhookSecret != "a-long-enough-webhook-secret" {
-		t.Errorf("web dir %q, webhook secret %q", cfg.WebDir, cfg.GitHubWebhookSecret)
+	if cfg.WebDir != env["WEB_DIR"] || cfg.CLIDir != env["CLI_DIR"] || cfg.GitHubWebhookSecret != "a-long-enough-webhook-secret" {
+		t.Errorf("web dir %q, CLI dir %q, webhook secret %q", cfg.WebDir, cfg.CLIDir, cfg.GitHubWebhookSecret)
+	}
+	if string(cfg.SecretsKey) != "0123456789abcdef0123456789abcdef" {
+		t.Errorf("secrets key %q", cfg.SecretsKey)
 	}
 	if cfg.Backups == nil || cfg.Backups.Recipient.String() != "age1gsdyrs7gwehv0unafknt05d0kkl202qp4uazx4y7y5acp8n7uudq3p92hk" ||
 		cfg.Backups.DailyAt != 3*time.Hour || cfg.Backups.TimeZone.String() != "Asia/Dhaka" || cfg.Backups.KeepDays != 30 || cfg.Backups.R2.Bucket != "sparrow-backups" {
@@ -110,8 +116,30 @@ func TestDevelopmentTurnsOffWhatIsAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned an error: %v", err)
 	}
-	if cfg.Environment != Development || cfg.WebDir != "" || cfg.GitHubWebhookSecret != "" || len(cfg.TrustedProxies) != 0 || cfg.Backups != nil {
+	if cfg.Environment != Development || cfg.WebDir != "" || cfg.CLIDir != "" || cfg.GitHubWebhookSecret != "" || len(cfg.TrustedProxies) != 0 || cfg.Backups != nil {
 		t.Errorf("development config %+v", cfg)
+	}
+}
+
+func TestSecretsKeyMustBeThirtyTwoBytes(t *testing.T) {
+	for _, value := range []string{"short", "MDEyMzQ1Njc4OWFiY2RlZg==", "not base64 at all!"} {
+		env := developmentEnv()
+		env["SECRETS_ENCRYPTION_KEY"] = value
+
+		_, err := Load(lookup(env))
+		if err == nil || !strings.Contains(err.Error(), "SECRETS_ENCRYPTION_KEY must be 32 random bytes") {
+			t.Errorf("Load with SECRETS_ENCRYPTION_KEY=%q: %v", value, err)
+		}
+	}
+}
+
+func TestCLIDirMustBeAFolder(t *testing.T) {
+	env := developmentEnv()
+	env["CLI_DIR"] = filepath.Join(t.TempDir(), "missing")
+
+	_, err := Load(lookup(env))
+	if err == nil || !strings.Contains(err.Error(), "CLI_DIR must be a folder") {
+		t.Fatalf("Load with a missing CLI_DIR: %v", err)
 	}
 }
 

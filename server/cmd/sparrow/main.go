@@ -26,6 +26,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/httpserver"
 	"github.com/shantodotdev/super-sparrow/server/internal/linear"
 	"github.com/shantodotdev/super-sparrow/server/internal/logging"
+	"github.com/shantodotdev/super-sparrow/server/internal/secretbox"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
@@ -50,7 +51,7 @@ Server commands (read the server settings from the environment):
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintln(os.Stderr, "sparrow: a command is required\nRun `sparrow help` for the commands.")
 		os.Exit(2)
 	}
 
@@ -72,14 +73,20 @@ func main() {
 		err = restore(ctx, args)
 	case command == "version" && len(args) == 0:
 		fmt.Println(version)
-	case cli.IsCommand(command):
-		err = cli.Run(ctx, os.Args[1:], os.Getenv, os.Stdin, os.Stdout)
+	case command == "help" || command == "--help" || command == "-h":
+		fmt.Println(usage)
+	case cli.IsCommand(command) || strings.HasPrefix(command, "--"):
+		err = cli.Run(ctx, os.Args[1:], cli.DefaultEnvironment(version))
 	default:
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintf(os.Stderr, "sparrow: unknown command %q\nRun `sparrow help` for the commands.\n", command)
 		os.Exit(2)
 	}
 
 	if err != nil {
+		var exit *cli.ExitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.Code)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -101,7 +108,15 @@ func openStore(ctx context.Context) (config.Config, *sql.DB, *store.Store, error
 		return config.Config{}, nil, nil, err
 	}
 
-	return cfg, db, store.New(db, time.Now), nil
+	box, err := secretbox.New(cfg.SecretsKey)
+	if err != nil {
+		db.Close()
+		return config.Config{}, nil, nil, err
+	}
+	st := store.New(db, time.Now)
+	st.UseSecretBox(box)
+
+	return cfg, db, st, nil
 }
 
 // createOwner adds the first owner to a team that has nobody yet. They then sign in with their
@@ -290,6 +305,7 @@ func serve(ctx context.Context) error {
 			Stop:                stopStreams,
 			Version:             version,
 			WebDir:              cfg.WebDir,
+			CLIDir:              cfg.CLIDir,
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,
 		}),
 		// Request bodies are at most a megabyte, so a slow sender is cut off after the read timeout.

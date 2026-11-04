@@ -45,3 +45,7 @@ CLAUDE.local.md
 *.log
 coverage.out
 output/
+
+# Signed CLI releases the deploy downloads into the image build
+deploy/cli/*
+!deploy/cli/.gitkeep

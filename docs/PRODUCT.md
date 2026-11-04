@@ -32,7 +32,7 @@ Our code is now written at agent speed, but our tracking tools still work at hum
 ## What it is not
 
 - Not a general project management suite. No cycles, estimates, roadmaps, time tracking, or custom fields.
-- Not a document store or a secrets manager.
+- Not a document store or a general secrets manager. It keeps only the team's dev, staging, and production settings.
 - Not a CI/CD system, but it is built so one can connect to it later.
 
 ## Success looks like

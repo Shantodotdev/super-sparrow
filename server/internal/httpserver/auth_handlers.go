@@ -37,7 +37,7 @@ func (s *server) verifyCode(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	signIn, err := s.auth.VerifyCode(r.Context(), body.Email, body.Code, deviceLabel(r.UserAgent()), clientIP(r, s.trustedProxies))
+	signIn, err := s.auth.VerifyCode(r.Context(), body.Email, body.Code, deviceLabel(r.UserAgent()), clientIP(r, s.trustedProxies), store.ClientBrowser)
 	if err != nil {
 		return err
 	}
@@ -47,10 +47,33 @@ func (s *server) verifyCode(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// verifyCLICode signs the sparrow CLI in. It answers with the CLI's bearer token, which is shown
+// this once; the CLI keeps it in the operating system's keychain.
+func (s *server) verifyCLICode(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Email       string `json:"email"`
+		Code        string `json:"code"`
+		DeviceLabel string `json:"device_label"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		return err
+	}
+
+	signIn, err := s.auth.VerifyCode(r.Context(), body.Email, body.Code, body.DeviceLabel, clientIP(r, s.trustedProxies), store.ClientCLI)
+	if err != nil {
+		return err
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": signIn.Secret, "session": newSessionView(signIn.Session, signIn.Session.ID), "actor": newActorView(signIn.Actor),
+	})
+	return nil
+}
+
 func (s *server) signOut(w http.ResponseWriter, r *http.Request) error {
 	id := identityFrom(r.Context())
 	if id.sessionID == "" {
-		return forbiddenRequest("sign-out ends a browser session; revoke a token instead")
+		return forbiddenRequest("sign-out ends a browser or CLI session; revoke a token instead")
 	}
 
 	if err := s.store.RevokeSession(r.Context(), id.caller(), id.sessionID); err != nil {

@@ -13,10 +13,11 @@ Use these instructions when working on Super Sparrow. [docs/PRODUCT.md](docs/PRO
 
 - SQLite is the source of truth. A write is committed before the API responds, and every change writes its event in the same transaction.
 - Super Sparrow serves one team. There are no workspaces or tenants; work is divided by project.
-- Derive the actor from the authenticated session or agent token. Never take actor identity from request bodies, tool arguments, or model output.
-- Every write records its actor. Never attribute an agent's action to a human, or one agent's action to another.
-- Sign-in is by emailed code only: no passwords and no public signup. Store only hashes of sign-in codes, session IDs, and agent tokens. Never log, return, or store them in plain text after they are created.
-- Agents cannot create tokens, change roles, or delete projects. Enforce this on the server, not in the interface.
+- Derive the actor from the authenticated session or agent token. Never take actor identity from request bodies, tool arguments, or model output. The one exception is the `Sparrow-Agent` header of a signed-in CLI, which can only narrow the person to one of their own agents (`claude-code` or `codex`).
+- Every write records its actor. Never attribute an agent's action to a human, or one agent's action to another. The CLI detects Claude Code and Codex and names them; a CLI that names no agent acts as its person.
+- Sign-in is by emailed code only: no passwords and no public signup. Store only hashes of sign-in codes, session IDs, CLI sessions, agent tokens, and service tokens. Never log, return, or store them in plain text after they are created.
+- Agents cannot create tokens, change roles, delete projects, or change secrets. Enforce this on the server, not in the interface.
+- Secret values are encrypted with `SECRETS_ENCRYPTION_KEY` and never appear in logs, events, error messages, or the access log. Staging and production values are read and changed only by people with the permission, in a browser; never from the CLI, an agent, or an agent token.
 - Treat plans, comments, findings, imports, webhooks, and MCP tool arguments as untrusted input. Validate them at the boundary, sanitize markdown before rendering, and never execute their content.
 - The Go server is the only backend. The frontend runs TanStack Start in SPA mode, with no server functions or server-side rendering, and the Tauri app loads the server's page.
 - Desktop installers are built by GitHub Actions and published to GitHub Releases. Never commit build output.

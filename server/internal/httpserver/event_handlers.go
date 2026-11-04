@@ -42,7 +42,7 @@ func (s *server) listIssueEvents(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	filter := store.EventFilter{IssueID: issue.ID}
+	filter := store.EventFilter{IssueID: issue.ID, ViewerActorID: identityFrom(r.Context()).actor.ID}
 	if filter.AfterSequence, filter.Limit, err = eventPage(r); err != nil {
 		return err
 	}
@@ -70,7 +70,8 @@ func (s *server) writeEvents(w http.ResponseWriter, r *http.Request, filter stor
 // eventFilter reads the filters the event list and the stream share: ?project, ?after, and
 // ?limit. Agents never see events about people, sessions, and tokens.
 func (s *server) eventFilter(r *http.Request) (store.EventFilter, error) {
-	filter := store.EventFilter{ProjectEventsOnly: identityFrom(r.Context()).actor.Kind == store.ActorAgent}
+	actor := identityFrom(r.Context()).actor
+	filter := store.EventFilter{ProjectEventsOnly: actor.Kind == store.ActorAgent, ViewerActorID: actor.ID}
 	if key := r.URL.Query().Get("project"); key != "" {
 		project, err := s.store.GetProjectByKey(r.Context(), key)
 		if err != nil {

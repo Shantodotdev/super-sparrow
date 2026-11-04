@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // callAgentTool forwards validated JSON arguments to any tool without duplicating its schema.
@@ -61,10 +62,7 @@ func (r *runner) agentTool(ctx context.Context, method string, params any) (json
 		return nil, fmt.Errorf("decode tool result: %w", err)
 	}
 	if result.IsError {
-		if len(result.Content) > 0 {
-			return nil, errors.New(result.Content[0].Text)
-		}
-		return nil, errors.New("tool failed")
+		return nil, toolFailure(result.Content, result.StructuredContent)
 	}
 	if len(result.StructuredContent) > 0 {
 		return result.StructuredContent, nil
@@ -73,4 +71,23 @@ func (r *runner) agentTool(ctx context.Context, method string, params any) (json
 		return json.RawMessage(result.Content[0].Text), nil
 	}
 	return nil, errors.New("tool returned no JSON result")
+}
+
+// toolFailure turns an MCP error result into an error that keeps the tool's error code visible,
+// whether the code is in the structured content or only in the message text.
+func toolFailure(content []struct {
+	Text string `json:"text"`
+}, structured json.RawMessage) error {
+	message := "tool failed"
+	if len(content) > 0 && content[0].Text != "" {
+		message = content[0].Text
+	}
+
+	var details struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(structured, &details) == nil && details.Code != "" && !strings.Contains(message, details.Code) {
+		message = details.Code + ": " + message
+	}
+	return errors.New(message)
 }

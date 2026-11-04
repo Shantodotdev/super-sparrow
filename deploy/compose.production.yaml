@@ -11,6 +11,7 @@ services:
       LISTEN_ADDR: 0.0.0.0:8090
       DATABASE_PATH: /data/sparrow.db
       WEB_DIR: /srv/web
+      CLI_DIR: /srv/cli
     volumes:
       - sparrow-data:/data
     networks:

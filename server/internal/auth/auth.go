@@ -29,6 +29,12 @@ import (
 const (
 	// TokenPrefix starts every agent token, so secret scanners can recognize them.
 	TokenPrefix = "ssp_"
+	// CLISessionPrefix starts the secret of every signed-in CLI, which the CLI sends as a bearer
+	// token. Browser session IDs have no prefix, since they only travel in a cookie.
+	CLISessionPrefix = "ssc_"
+	// ServiceTokenPrefix starts every CI token, which reads one project's staging or production
+	// secrets.
+	ServiceTokenPrefix = "sst_"
 
 	codeRequestsPerEmail = 5
 	codeRequestsPerIP    = 20
@@ -119,7 +125,8 @@ func (s *Service) RequestCode(ctx context.Context, address, clientIP string) err
 }
 
 // SignIn is the result of a correct sign-in code: the person and their new session. Secret is
-// the session ID for the cookie; it is not stored and cannot be read again.
+// the session ID for the cookie, or the CLI's bearer token; it is not stored and cannot be read
+// again.
 type SignIn struct {
 	Actor   store.Actor
 	Session store.Session
@@ -131,7 +138,10 @@ type SignIn struct {
 // a person's codes, so each client address may enter only a few wrong codes an hour; otherwise
 // anyone who knows teammates' emails could keep them all from signing in. Right codes do not
 // count, so people signing in from one shared address do not use up each other's tries.
-func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, clientIP string) (SignIn, error) {
+//
+// client says whether the session is for a browser cookie or a signed-in CLI. A CLI secret starts
+// with CLISessionPrefix.
+func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, clientIP string, client store.Client) (SignIn, error) {
 	normalized := strings.ToLower(strings.TrimSpace(address))
 	code = strings.ReplaceAll(strings.TrimSpace(code), " ", "")
 	if len(code) != 6 || strings.Trim(code, "0123456789") != "" {
@@ -145,9 +155,12 @@ func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, cl
 	if err != nil {
 		return SignIn{}, err
 	}
+	if client == store.ClientCLI {
+		secret = CLISessionPrefix + secret
+	}
 
 	actor, session, err := s.store.VerifySignInCode(ctx, normalized, s.hashCode(normalized, code),
-		store.NewSession{Hash: Hash(secret), DeviceLabel: deviceLabel})
+		store.NewSession{Hash: Hash(secret), DeviceLabel: deviceLabel, Client: client})
 	if errors.Is(err, store.ErrInvalidCode) {
 		s.wrongCodes.Record(clientIP)
 	}
@@ -158,12 +171,33 @@ func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, cl
 	return SignIn{Actor: actor, Session: session, Secret: secret}, nil
 }
 
-// AuthenticateSession checks a session ID from a cookie.
+// AuthenticateSession checks a session ID from a cookie. A CLI session is refused here, so its
+// secret cannot be used as a browser cookie.
 func (s *Service) AuthenticateSession(ctx context.Context, secret string) (store.AuthenticatedSession, error) {
 	if len(secret) != secretLength {
 		return store.AuthenticatedSession{}, store.ErrUnauthenticated
 	}
-	return s.store.AuthenticateSession(ctx, Hash(secret))
+	return s.authenticateSession(ctx, secret, store.ClientBrowser)
+}
+
+// AuthenticateCLISession checks a signed-in CLI's bearer token. A browser session is refused here.
+func (s *Service) AuthenticateCLISession(ctx context.Context, token string) (store.AuthenticatedSession, error) {
+	if !strings.HasPrefix(token, CLISessionPrefix) || len(token) != len(CLISessionPrefix)+secretLength {
+		return store.AuthenticatedSession{}, store.ErrUnauthenticated
+	}
+	return s.authenticateSession(ctx, token, store.ClientCLI)
+}
+
+// authenticateSession checks a session secret and that it was made for client.
+func (s *Service) authenticateSession(ctx context.Context, secret string, client store.Client) (store.AuthenticatedSession, error) {
+	checked, err := s.store.AuthenticateSession(ctx, Hash(secret))
+	if err != nil {
+		return store.AuthenticatedSession{}, err
+	}
+	if checked.Session.Client != client {
+		return store.AuthenticatedSession{}, store.ErrUnauthenticated
+	}
+	return checked, nil
 }
 
 // AuthenticateToken checks an agent token from an Authorization header.
@@ -196,6 +230,38 @@ func (s *Service) CreateToken(ctx context.Context, by store.Caller, agentName, l
 	}
 
 	return NewToken{Token: created, Secret: token}, nil
+}
+
+// NewServiceToken is a CI token just created. Secret is shown to its person once and never again.
+type NewServiceToken struct {
+	Token  store.ServiceToken
+	Secret string
+}
+
+// CreateServiceToken creates a CI token that reads one project's staging or production config.
+func (s *Service) CreateServiceToken(ctx context.Context, by store.Caller, projectID string, config store.SecretConfig, label string) (NewServiceToken, error) {
+	secret, err := newSecret()
+	if err != nil {
+		return NewServiceToken{}, err
+	}
+	token := ServiceTokenPrefix + secret
+
+	created, err := s.store.CreateServiceToken(ctx, by, projectID, store.NewServiceToken{
+		Config: config, Label: label, Hash: Hash(token), DisplayHint: ServiceTokenPrefix + "…" + token[len(token)-4:],
+	})
+	if err != nil {
+		return NewServiceToken{}, err
+	}
+
+	return NewServiceToken{Token: created, Secret: token}, nil
+}
+
+// DownloadWithServiceToken checks a CI token and returns the values of the config it reads.
+func (s *Service) DownloadWithServiceToken(ctx context.Context, token string) (store.ServiceToken, store.SecretValues, error) {
+	if !strings.HasPrefix(token, ServiceTokenPrefix) || len(token) != len(ServiceTokenPrefix)+secretLength {
+		return store.ServiceToken{}, store.SecretValues{}, store.ErrUnauthenticated
+	}
+	return s.store.DownloadWithServiceToken(ctx, Hash(token))
 }
 
 // ErrInvitationNotSent means the person was added but their invitation email failed. They can
