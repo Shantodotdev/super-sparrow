@@ -50,12 +50,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "theme-color", content: "#07080a" },
       { title: "Super Sparrow" },
     ],
     links: [
       { rel: "icon", href: "/favicon.ico", sizes: "any" },
       { rel: "icon", href: "/favicon-48.png", type: "image/png", sizes: "48x48" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "preload", href: interFont, as: "font", type: "font/ttf", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: appCss },
       { rel: "preload", href: previewScript, as: "script" },
@@ -100,6 +102,10 @@ function RootLayout() {
   const loading = useRouterState({ select: (state) => state.isLoading });
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (import.meta.env.PROD && "serviceWorker" in navigator)
+      void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+  }, []);
   useEffect(() => {
     if (mounted && !loading) return watchPagePreview(queryClient);
   }, [mounted, loading, queryClient]);
