@@ -295,7 +295,7 @@ try {
   if (process.env.SPARROW_E2E_SCREENSHOT_DIR) {
     if (
       !(await evaluate(
-        `(() => {const left = document.querySelector('section[aria-label="Navigation"]').getBoundingClientRect(); const right = document.querySelector('section[aria-label="Create and search"]').getBoundingClientRect(); return Math.abs(left.top - right.top) < 1 && right.left > left.right;})()`,
+        `(() => {const left = document.querySelector('section[aria-label="Navigation"]').getBoundingClientRect(); const right = document.querySelector('section[aria-label="Issue page"]').getBoundingClientRect(); return Math.abs(left.top - right.top) < 1 && right.left > left.right;})()`,
       ))
     )
       throw new Error("Shortcut groups must use two columns on desktop");
@@ -348,10 +348,13 @@ try {
     "persist personal shortcut",
   );
   await recordShortcut("goIssues", "g");
+  await until(
+    () => evaluate(`document.querySelector('#shortcut-goIssues')?.textContent.includes('then…')`),
+    "wait for the second step of the recording",
+  );
   await press("o");
   await until(
-    () =>
-      evaluate(`document.querySelector('#shortcut-goIssues')?.textContent.trim() === 'G then O'`),
+    () => evaluate(`document.querySelector('#shortcut-goIssues')?.textContent.trim() === 'GthenO'`),
     "save two-step navigation recording",
   );
   await press("g");
@@ -373,11 +376,11 @@ try {
   await navigate("/settings/shortcuts");
   await until(
     () =>
-      evaluate(`document.querySelector('#shortcut-newIssue')?.textContent.trim() === 'Ctrl+Alt+N'`),
+      evaluate(`document.querySelector('#shortcut-newIssue')?.textContent.trim() === 'CtrlAltN'`),
     "show saved personal binding",
   );
   await evaluate(
-    `document.querySelector('#shortcut-newIssue').closest('tr').querySelector('button:last-child').click()`,
+    `[...document.querySelector('#shortcut-newIssue').closest('li').querySelectorAll('button')].find((b) => b.textContent.trim() === 'Reset').click()`,
   );
   await until(
     () =>
@@ -389,12 +392,12 @@ try {
   await until(
     () =>
       evaluate(
-        `!document.querySelector('#shortcut-goIssues').closest('tr').querySelector('button:last-child').disabled`,
+        `![...document.querySelector('#shortcut-goIssues').closest('li').querySelectorAll('button')].find((b) => b.textContent.trim() === 'Reset').disabled`,
       ),
     "enable navigation reset",
   );
   await evaluate(
-    `document.querySelector('#shortcut-goIssues').closest('tr').querySelector('button:last-child').click()`,
+    `[...document.querySelector('#shortcut-goIssues').closest('li').querySelectorAll('button')].find((b) => b.textContent.trim() === 'Reset').click()`,
   );
   await until(
     () =>

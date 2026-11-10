@@ -269,7 +269,6 @@ export function NewIssueModal({
             placeholder="Add a description or plan…"
             value={plan}
             onChange={setPlan}
-            onFiles={addFiles}
             className="mt-4 [&_.tiptap]:max-h-[38dvh]! [&_.tiptap]:min-h-[120px]! [&_.tiptap]:overflow-y-auto! [&_.tiptap]:text-[#f1f2f4]!"
           />
           {uploads.jobs.length > 0 && (

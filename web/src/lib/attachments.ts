@@ -96,7 +96,7 @@ export function screenshotFilename(taken: Date): string {
   return `screenshot-${day}-${time}.png`;
 }
 
-/** The files in a paste or a drop, if there are any. */
+/** The files in a drop, if there are any. */
 export function transferredFiles(data: DataTransfer | null | undefined): File[] {
   return Array.from(data?.files ?? []);
 }
