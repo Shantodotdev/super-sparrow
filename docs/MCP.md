@@ -18,6 +18,18 @@ Connect with an agent token using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agent
 | `create_subissue`       | Create a lightweight task under an issue with a title, explicit status, and optional existing label names.                                                           |
 | `update_subissue`       | Edit supplied title, description, status, or labels using its key, such as `WP-142.1`. Description edits need `description_revision`; labels replace the set.        |
 
+## Contexts and images
+
+| Tool               | Purpose                                                                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_contexts`    | List a project's contexts, newest first, without their bodies. Filter by linked `issue_key` or by `search`.                                  |
+| `get_context`      | Read a context by key, such as `WP-C3`: its Markdown body, linked issue, and the images it shows. `include_images: false` returns text only. |
+| `create_context`   | Save notes as a new context, optionally linked to an issue of the same project.                                                              |
+| `update_context`   | Edit supplied fields. Body edits need `body_revision` from `get_context`; an empty `issue_key` unlinks the issue.                            |
+| `get_issue_images` | Show the images in an issue's plan and its subissues' descriptions.                                                                          |
+
+`get_context` and `get_issue_images` return the images themselves as MCP `image` content after the JSON text, so the agent sees the screenshots. A result shows at most 10 images and 8 MiB of them; every image is still listed in `images` with its absolute `url`, its size, and `included`. Only images of the same project are shown, whatever the Markdown links to. Agents cannot delete contexts.
+
 ## Labels
 
 | Tool           | Purpose                                                                                                          |
@@ -56,7 +68,7 @@ Links use the project's slug: `/{slug}/issues/{key}`, `/{slug}/issues/{key}/revi
 
 ## Pagination and compact responses
 
-`list_projects`, `list_issues`, `list_subissues`, `list_review_rounds`, `get_review_round`, `list_open_findings`, and `list_comments` accept `limit` (1–100, 50 when omitted) and an opaque `cursor`. Continue with `next_cursor`, retaining the original filters. An empty `next_cursor` ends the list. Cursors reflect current data, rather than a snapshot; restart after mutations. Changing the filters invalidates the cursor.
+`list_projects`, `list_issues`, `list_subissues`, `list_review_rounds`, `get_review_round`, `list_open_findings`, `list_comments`, and `list_contexts` accept `limit` (1–100, 50 when omitted) and an opaque `cursor`. Continue with `next_cursor`, retaining the original filters. An empty `next_cursor` ends the list. Cursors reflect current data, rather than a snapshot; restart after mutations. Changing the filters invalidates the cursor.
 
 Findings include their first 50 comments and `comments_included: true`. A nonempty `comments_next_cursor` continues through `list_comments` with the finding's issue key, round, and label. `get_finding`, `get_review_round`, and `list_open_findings` accept `include_comments: false` to omit discussion content (`comments_included: false`). Empty included discussions are `[]`.
 

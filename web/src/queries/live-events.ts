@@ -34,6 +34,12 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
         if (typeof event.payload.issue_id === "string") issueIDs.add(event.payload.issue_id);
         break;
       case "project":
+        if (event.kind.startsWith("attachment.")) break;
+        if (event.kind.startsWith("context.")) {
+          affected.add("contexts");
+          affected.add("context");
+          break;
+        }
         affected.add("projects");
         affected.add("issues");
         affected.add("labels");
@@ -77,6 +83,7 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
             ))
         );
       }
+      if (resource === "context") return affected.has("context");
       if (typeof resource !== "string" || !affected.has(resource)) return false;
       return key === undefined || typeof key !== "string" || projectKeys.has(key);
     },

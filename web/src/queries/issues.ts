@@ -76,6 +76,7 @@ export function useCreateIssue() {
           assignee_actor_id: v.assigneeId,
           milestone_id: v.milestoneId,
           label_ids: v.labelIds,
+          priority: v.priority ?? "",
         },
       ),
     onSuccess: ({ issue }) => cacheCreatedIssue(client, issue),

@@ -7,15 +7,8 @@
     "frontendDist": "../src"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Super Sparrow",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600
-      }
-    ],
+    "withGlobalTauri": true,
+    "windows": [],
     "security": {
       "csp": null
     }

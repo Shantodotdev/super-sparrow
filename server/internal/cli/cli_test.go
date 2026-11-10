@@ -206,7 +206,7 @@ func TestCLICallsAllAgentTools(t *testing.T) {
 		} `json:"tools"`
 	}
 	mustRun(t, env, "", &tools, "tool", "list")
-	if len(tools.Tools) != 27 {
+	if len(tools.Tools) != 32 {
 		t.Fatalf("listed %d tools", len(tools.Tools))
 	}
 	var issue struct {

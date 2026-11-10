@@ -1,3 +1,5 @@
+import type { Attachment } from "./types";
+
 /**
  * An API response with a status outside 2xx. Its message is the server's error message, which
  * says what went wrong in words a person can act on, and field names the input at fault when the
@@ -59,4 +61,24 @@ export async function apiWrite<T>(
   });
   if (!response.ok) throw await errorFrom(response, `${method} ${path}`);
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+}
+
+/** Uploads an image to a project and returns the stored attachment, whose URL Markdown can show. */
+export async function apiUploadImage(
+  projectKey: string,
+  image: Blob,
+  fetcher: typeof fetch = fetch,
+): Promise<Attachment> {
+  const path = `/api/projects/${encodeURIComponent(projectKey)}/attachments`;
+  const response = await fetcher(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": image.type || "application/octet-stream",
+    },
+    body: image,
+  });
+  if (!response.ok) throw await errorFrom(response, `POST ${path}`);
+  return ((await response.json()) as { attachment: Attachment }).attachment;
 }

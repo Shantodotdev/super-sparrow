@@ -1,4 +1,5 @@
 import { refreshLiveEvents } from "../queries/live-events";
+import { desktopNotifier } from "../queries/desktop-notifications";
 import type { ActivityEvent } from "../lib/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../lib/api";
@@ -10,6 +11,8 @@ import { CommandPalette } from "./command-palette";
 import { AppFrame } from "./app-frame";
 import { clearQueryCache } from "../queries/persistence";
 import { ShortcutHelp, useGlobalShortcuts } from "./shortcuts";
+import { QuickCapture } from "./quick-capture";
+import { isQuickCaptureKey } from "../lib/shortcuts";
 
 /**
  * The frame around every signed-in page: the sidebar, the page itself, and the command palette.
@@ -31,6 +34,7 @@ export function AppShell() {
     let stream: EventSource;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const changes: ActivityEvent[] = [];
+    const notifier = desktopNotifier(client);
     const connect = () => {
       stream = new EventSource("/api/events/stream");
       stream.addEventListener("change", (message: MessageEvent<string>) => {
@@ -38,6 +42,7 @@ export function AppShell() {
           const event = JSON.parse(message.data) as ActivityEvent;
           if (!event || typeof event.target_type !== "string" || !event.payload) return;
           changes.push(event);
+          notifier.push([event]);
           timer ??= setTimeout(() => {
             timer = undefined;
             refreshLiveEvents(client, changes.splice(0));
@@ -55,6 +60,7 @@ export function AppShell() {
       clearTimeout(timer);
       timer = undefined;
       changes.length = 0;
+      notifier.stop();
     };
     const resume = (event: PageTransitionEvent) => {
       if (event.persisted) connect();
@@ -70,7 +76,21 @@ export function AppShell() {
   }, [bare, client]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
   useGlobalShortcuts(() => setHelpOpen(true));
+
+  // Ctrl+Q toggles quick capture from anywhere on the page, even while typing. In the desktop app
+  // the system-wide shortcut takes the key first and opens the capture window instead.
+  useEffect(() => {
+    if (bare) return;
+    const toggle = (event: KeyboardEvent) => {
+      if (!isQuickCaptureKey(event)) return;
+      event.preventDefault();
+      setCaptureOpen((open) => !open);
+    };
+    window.addEventListener("keydown", toggle, true);
+    return () => window.removeEventListener("keydown", toggle, true);
+  }, [bare]);
 
   useEffect(() => {
     const openOnShortcut = (event: KeyboardEvent) => {
@@ -102,6 +122,9 @@ export function AppShell() {
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       )}
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      {!!projects.data?.length && (
+        <QuickCapture open={captureOpen} onClose={() => setCaptureOpen(false)} />
+      )}
     </AppFrame>
   );
 }
