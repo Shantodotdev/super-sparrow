@@ -9,7 +9,7 @@ export const Route = createFileRoute("/capture")({
 });
 
 /**
- * The page of the desktop app's capture window, which Ctrl+Q shows over any application. It holds
+ * The page of the desktop app's capture window, which the capture shortcut shows over any application. It holds
  * only the quick capture panel; saving or closing hides the window, keeping it ready for next time.
  */
 function CapturePage() {

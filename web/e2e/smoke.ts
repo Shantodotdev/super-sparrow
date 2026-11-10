@@ -250,20 +250,24 @@ try {
   checks++;
   await navigate(`/${projectSlug}/issues`);
   await waitText("Meta comments");
-  const press = async (key: string) => {
-    const shift = key === "?";
+  const press = async (key: string, modifiers = key === "?" ? 8 : 0) => {
+    const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key === "?" ? "Slash" : key;
     for (const type of ["keyDown", "keyUp"]) {
       await call("Input.dispatchKeyEvent", {
         type,
         key,
-        text: type === "keyDown" && key.length === 1 ? key : undefined,
-        modifiers: shift ? 8 : 0,
+        code,
+        text: type === "keyDown" && key.length === 1 && modifiers === 0 ? key : undefined,
+        modifiers,
       });
     }
   };
   const dialogOpen = (open: boolean) =>
     until(
-      () => evaluate(`!!document.querySelector('[role=dialog]') === ${open}`),
+      () =>
+        evaluate(
+          `(() => { const dialog = document.querySelector('[role=dialog]'); return ${open} ? !!dialog && dialog.contains(document.activeElement) : !dialog; })()`,
+        ),
       open ? "dialog opens" : "dialog closes",
     );
   await press("?");
@@ -271,6 +275,144 @@ try {
   await waitText("Keyboard shortcuts");
   await press("Escape");
   await dialogOpen(false);
+  await navigate("/settings/shortcuts");
+  await waitText("Navigation");
+  await until(
+    () =>
+      evaluate(
+        `document.querySelector('#shortcut-quickCapture')?.textContent.trim() === 'MetaShiftQ'`,
+      ),
+    "load personal capture default",
+  );
+  if (
+    !(await evaluate(
+      `document.querySelector('#shortcut-newIssue') instanceof HTMLButtonElement && !!document.querySelector('a[href="/settings/shortcuts"] svg')`,
+    ))
+  )
+    throw new Error("Shortcut settings need press capture controls and a keyboard tab icon");
+  checks++;
+  await screenshot("keyboard-shortcuts");
+  if (process.env.SPARROW_E2E_SCREENSHOT_DIR) {
+    if (
+      !(await evaluate(
+        `(() => {const left = document.querySelector('section[aria-label="Navigation"]').getBoundingClientRect(); const right = document.querySelector('section[aria-label="Create and search"]').getBoundingClientRect(); return Math.abs(left.top - right.top) < 1 && right.left > left.right;})()`,
+      ))
+    )
+      throw new Error("Shortcut groups must use two columns on desktop");
+    checks++;
+    await call("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    await screenshot("keyboard-shortcuts-mobile");
+    if (!(await evaluate(`document.documentElement.scrollWidth <= innerWidth`)))
+      throw new Error("Shortcut settings must fit the mobile viewport");
+    checks++;
+    await call("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 1000,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+  }
+  const recordShortcut = async (action: string, key: string, modifiers = 0) => {
+    await evaluate(`document.querySelector('#shortcut-${action}').click()`);
+    await until(
+      () =>
+        evaluate(`document.querySelector('#shortcut-${action}')?.dataset.recording === 'ready'`),
+      "prepare shortcut recording",
+    );
+    await press(key, modifiers);
+  };
+  await recordShortcut("goIssues", "Escape");
+  await until(
+    () => evaluate(`!document.querySelector('#shortcut-goIssues').dataset.recording`),
+    "Escape cancels recording",
+  );
+  await recordShortcut("goIssues", "Tab");
+  await until(
+    () => evaluate(`!document.querySelector('#shortcut-goIssues').dataset.recording`),
+    "Tab cancels recording and moves focus",
+  );
+  checks += 2;
+  await recordShortcut("newIssue", "j");
+  await waitText("conflicts with");
+  await recordShortcut("newIssue", "n", 3);
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/me/shortcuts').then(r=>r.json()).then(p=>p.overrides.newIssue === 'Ctrl+Alt+N')`,
+      ),
+    "persist personal shortcut",
+  );
+  await recordShortcut("goIssues", "g");
+  await press("o");
+  await until(
+    () =>
+      evaluate(`document.querySelector('#shortcut-goIssues')?.textContent.trim() === 'G then O'`),
+    "save two-step navigation recording",
+  );
+  await press("g");
+  await press("o");
+  await until(
+    () => evaluate(`location.pathname === '/' + ${JSON.stringify(projectSlug)} + '/issues'`),
+    "recorded navigation sequence runs",
+  );
+  checks++;
+  await waitText("Meta comments");
+  await press("n", 3);
+  await until(
+    () => evaluate(`!!document.querySelector('[role=dialog] input[aria-label="Issue title"]')`),
+    "custom shortcut survives reload and opens new issue",
+  );
+  checks++;
+  await press("Escape");
+  await dialogOpen(false);
+  await navigate("/settings/shortcuts");
+  await until(
+    () =>
+      evaluate(`document.querySelector('#shortcut-newIssue')?.textContent.trim() === 'Ctrl+Alt+N'`),
+    "show saved personal binding",
+  );
+  await evaluate(
+    `document.querySelector('#shortcut-newIssue').closest('tr').querySelector('button:last-child').click()`,
+  );
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/me/shortcuts').then(r=>r.json()).then(p=>!('newIssue' in p.overrides))`,
+      ),
+    "reset personal shortcut",
+  );
+  await until(
+    () =>
+      evaluate(
+        `!document.querySelector('#shortcut-goIssues').closest('tr').querySelector('button:last-child').disabled`,
+      ),
+    "enable navigation reset",
+  );
+  await evaluate(
+    `document.querySelector('#shortcut-goIssues').closest('tr').querySelector('button:last-child').click()`,
+  );
+  await until(
+    () =>
+      evaluate(
+        `fetch('/api/me/shortcuts').then(r=>r.json()).then(p=>!('goIssues' in p.overrides))`,
+      ),
+    "reset recorded navigation",
+  );
+  await navigate(`/${projectSlug}/issues`);
+  await waitText("Meta comments");
+  await press("q", 12);
+  await until(
+    () => evaluate(`!!document.querySelector('[role=dialog] #quick-capture-title')`),
+    "Meta+Shift+Q opens quick capture",
+  );
+  await press("q", 12);
+  await dialogOpen(false);
+  checks++;
   await press("c");
   await until(
     () => evaluate(`!!document.querySelector('[role=dialog] input[aria-label="Issue title"]')`),
@@ -1427,10 +1569,12 @@ try {
   await waitText("Assigned to you");
   if (
     !(await evaluate(
-      `(() => {const nav = document.querySelector('nav[aria-label="Main navigation"]'); const groups = nav.querySelectorAll('section'); return nav.querySelector('a[href="/issues"]').textContent.includes('My issues') && nav.querySelector('a[href="/activity"]').textContent.includes('Activity') && groups.length === 2 && [...groups].every(g => g.querySelectorAll('a').length === 2 && g.textContent.includes('Issues') && g.textContent.includes('Milestones') && !g.textContent.includes('Open findings'));})()`,
+      `(() => {const nav = document.querySelector('nav[aria-label="Main navigation"]'); const groups = nav.querySelectorAll('section'); return nav.querySelector('a[href="/issues"]').textContent.includes('My issues') && nav.querySelector('a[href="/activity"]').textContent.includes('Activity') && groups.length === 2 && [...groups].every(g => g.querySelectorAll('a').length === 3 && g.textContent.includes('Issues') && g.textContent.includes('Milestones') && g.textContent.includes('Context') && !g.textContent.includes('Open findings'));})()`,
     ))
   )
-    throw new Error("Sidebar must keep root links and two nested links per project");
+    throw new Error(
+      "Sidebar must keep root links and the issues, milestones, and context links per project",
+    );
   checks++;
   await navigate("/settings/sessions");
   await waitText("Current");

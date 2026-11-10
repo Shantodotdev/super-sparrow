@@ -6,4 +6,5 @@ export const paletteLinks = [
   { to: "/$projectSlug/milestones", label: "Milestones" },
   { to: "/$projectSlug/context", label: "Context" },
   { to: "/settings", label: "People and agents" },
+  { to: "/settings/shortcuts", label: "Keyboard shortcuts" },
 ] as const;

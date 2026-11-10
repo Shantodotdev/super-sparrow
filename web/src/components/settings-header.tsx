@@ -20,8 +20,8 @@ export function SettingsHeader() {
   });
 
   return (
-    <header className="flex items-center justify-between px-[32px] pt-[12px] max-[700px]:px-[20px]">
-      <Tabs>
+    <header className="flex flex-wrap items-center justify-between gap-x-4 px-[32px] pt-[12px] max-[700px]:px-[20px]">
+      <Tabs className="min-w-0 overflow-x-auto whitespace-nowrap">
         <Link
           to="/settings"
           activeOptions={{ exact: true }}
@@ -31,6 +31,9 @@ export function SettingsHeader() {
         </Link>
         <Link to="/settings/sessions" activeProps={{ className: "selected" }}>
           <Icon name="monitor" /> &nbsp; Signed-in devices
+        </Link>
+        <Link to="/settings/shortcuts" activeProps={{ className: "selected" }}>
+          <Icon name="keyboard" /> &nbsp; Keyboard shortcuts
         </Link>
       </Tabs>
       <button

@@ -12,13 +12,24 @@ import { AppFrame } from "./app-frame";
 import { clearQueryCache } from "../queries/persistence";
 import { ShortcutHelp, useGlobalShortcuts } from "./shortcuts";
 import { QuickCapture } from "./quick-capture";
-import { isQuickCaptureKey } from "../lib/shortcuts";
+import { matchesChord } from "../lib/shortcuts";
+import { KeyboardShortcutsProvider, useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 
 /**
  * The frame around every signed-in page: the sidebar, the page itself, and the command palette.
  * A route whose static data sets `bare` renders on its own, without the frame.
  */
 export function AppShell() {
+  return (
+    <KeyboardShortcutsProvider>
+      <Shell />
+    </KeyboardShortcutsProvider>
+  );
+}
+
+/** Renders the signed-in application and its shared keyboard surfaces. */
+function Shell() {
+  const { bindings, recording } = useKeyboardShortcuts();
   const bare = useMatches({ select: (matches) => matches.some((match) => match.staticData.bare) });
   const client = useQueryClient();
   const projects = useQuery({ ...projectsQuery, enabled: !bare });
@@ -79,22 +90,35 @@ export function AppShell() {
   const [captureOpen, setCaptureOpen] = useState(false);
   useGlobalShortcuts(() => setHelpOpen(true));
 
-  // Ctrl+Q toggles quick capture from anywhere on the page, even while typing. In the desktop app
+  // The personal capture binding works even while typing. In the desktop app
   // the system-wide shortcut takes the key first and opens the capture window instead.
   useEffect(() => {
     if (bare) return;
     const toggle = (event: KeyboardEvent) => {
-      if (!isQuickCaptureKey(event)) return;
+      if (
+        recording ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        !matchesChord(event, bindings.quickCapture)
+      )
+        return;
       event.preventDefault();
       setCaptureOpen((open) => !open);
     };
     window.addEventListener("keydown", toggle, true);
     return () => window.removeEventListener("keydown", toggle, true);
-  }, [bare]);
+  }, [bare, bindings.quickCapture, recording]);
 
   useEffect(() => {
     const openOnShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (
+        !recording &&
+        !event.defaultPrevented &&
+        !event.repeat &&
+        !event.isComposing &&
+        matchesChord(event, bindings.palette)
+      ) {
         event.preventDefault();
         setPaletteOpen(true);
       }
@@ -103,7 +127,7 @@ export function AppShell() {
     window.addEventListener("keydown", openOnShortcut);
 
     return () => window.removeEventListener("keydown", openOnShortcut);
-  }, []);
+  }, [bindings.palette, recording]);
 
   if (bare) return <Outlet />;
   if (!identity.data) return null;

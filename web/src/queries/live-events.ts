@@ -51,6 +51,7 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
         affected.add("issues");
         break;
       case "actor":
+        if (event.kind === "actor.shortcuts_updated") affected.add("keyboard-shortcuts");
         affected.add("actors");
         affected.add("me");
         affected.add("tokens");
@@ -83,6 +84,7 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
             ))
         );
       }
+      if (resource === "keyboard-shortcuts") return affected.has("keyboard-shortcuts");
       if (resource === "context") return affected.has("context");
       if (typeof resource !== "string" || !affected.has(resource)) return false;
       return key === undefined || typeof key !== "string" || projectKeys.has(key);
