@@ -1,102 +1,98 @@
-/** A keyboard shortcut as shown in the help dialog; `keys` are pressed one after another. */
-export type ShortcutHelp = { keys: string[]; description: string };
+import definitions from "../../../server/internal/keyboard/definitions.json";
 
-export type ShortcutGroup = { title: string; shortcuts: ShortcutHelp[] };
+export const shortcutDefinitions = definitions;
+export type ShortcutID = keyof typeof definitions;
+export type ShortcutBindings = Record<ShortcutID, string>;
+export const defaultBindings = Object.fromEntries(
+  Object.entries(definitions).map(([id, definition]) => [id, definition.binding]),
+) as ShortcutBindings;
 
-/** The key that starts every "go to" sequence, such as G then I. */
-export const goPrefix = "g";
-
-/** Where each key after the go prefix leads. */
-export const goDestinations = {
-  i: "issues",
-  y: "my-issues",
-  a: "activity",
-  m: "milestones",
-  s: "people",
-} as const;
-
-export type GoDestination = (typeof goDestinations)[keyof typeof goDestinations];
-
-export const shortcutGroups: ShortcutGroup[] = [
-  {
-    title: "Go to",
-    shortcuts: [
-      { keys: ["G", "I"], description: "Project issues" },
-      { keys: ["G", "Y"], description: "My issues" },
-      { keys: ["G", "A"], description: "Activity" },
-      { keys: ["G", "M"], description: "Milestones" },
-      { keys: ["G", "S"], description: "People and agents" },
-      { keys: ["U"], description: "Up to the issue list" },
-    ],
-  },
-  {
-    title: "Create and search",
-    shortcuts: [
-      { keys: ["C"], description: "New issue" },
-      { keys: ["/"], description: "Search issues" },
-      { keys: ["Ctrl", "K"], description: "Open the navigation palette" },
-      { keys: ["Ctrl", "Q"], description: "Quick capture an issue or context" },
-    ],
-  },
-  {
-    title: "Issue list",
-    shortcuts: [
-      { keys: ["J"], description: "Next issue" },
-      { keys: ["K"], description: "Previous issue" },
-      { keys: ["Enter"], description: "Open the focused issue" },
-      { keys: ["V"], description: "Switch between list and board" },
-    ],
-  },
-  {
-    title: "Issue page",
-    shortcuts: [
-      { keys: ["1"], description: "Plan tab" },
-      { keys: ["2"], description: "Review rounds tab" },
-      { keys: ["3"], description: "Findings tab" },
-      { keys: ["4"], description: "Activity tab" },
-      { keys: ["5"], description: "Comments tab" },
-      { keys: ["E"], description: "Edit the title" },
-    ],
-  },
-  {
-    title: "Anywhere",
-    shortcuts: [
-      { keys: ["?"], description: "Show this list" },
-      { keys: ["Esc"], description: "Close a dialog or drawer" },
-    ],
-  },
-];
-
-/** Whether typing into this element should keep plain keys from acting as shortcuts. */
-export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-
-  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+/** Resolves disabled and customized bindings without modifying the shared defaults. */
+export function resolveBindings(overrides: Record<string, string>): ShortcutBindings {
+  return {
+    ...defaultBindings,
+    ...Object.fromEntries(Object.entries(overrides).filter(([id]) => id in definitions)),
+  };
 }
 
-/** What a key press means after an optional pending go prefix. */
-export type GoStep =
-  { kind: "pending" } | { kind: "go"; destination: GoDestination } | { kind: "none" };
+export type ShortcutKeyEvent = Pick<
+  KeyboardEvent,
+  "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"
+>;
 
-/** Advances the go sequence: the prefix waits for a destination key, and anything else cancels. */
-export function nextGoStep(pending: boolean, key: string): GoStep {
-  const lower = key.toLowerCase();
-  if (!pending) return lower === goPrefix ? { kind: "pending" } : { kind: "none" };
-
-  const destination = goDestinations[lower as keyof typeof goDestinations];
-  return destination ? { kind: "go", destination } : { kind: "none" };
-}
-
-/** Whether a key press is Ctrl+Q (Cmd+Q is left alone, since it quits apps on macOS). */
-export function isQuickCaptureKey(
-  event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
-): boolean {
+/** Converts a physical key into the same canonical key name used by the native shortcut API. */
+export function shortcutKey(event: ShortcutKeyEvent): string {
+  if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3);
+  if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+  if (["Shift", "Control", "Alt", "Meta", "AltGraph", "Dead", "Unidentified"].includes(event.key))
+    return "";
+  const punctuation: Record<string, string> = {
+    "?": "Slash",
+    "/": "Slash",
+    ",": "Comma",
+    ".": "Period",
+    ";": "Semicolon",
+    '"': "Quote",
+    "\'": "Quote",
+    "`": "Backquote",
+    "[": "BracketLeft",
+    "]": "BracketRight",
+    "\\": "Backslash",
+    "-": "Minus",
+    "=": "Equal",
+    "+": "Equal",
+  };
   return (
-    event.ctrlKey &&
-    !event.metaKey &&
-    !event.altKey &&
-    !event.shiftKey &&
-    (event.code === "KeyQ" || event.key.toLowerCase() === "q")
+    event.code ||
+    punctuation[event.key] ||
+    (event.key === " " ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.key)
   );
+}
+
+/** Captures a physical key chord while leaving Escape and Tab for cancellation and focus. */
+export function recordChord(event: ShortcutKeyEvent): string | null {
+  const key = shortcutKey(event);
+  if (!key || ["Escape", "Tab"].includes(key)) return null;
+  return [
+    event.ctrlKey && "Ctrl",
+    event.altKey && "Alt",
+    event.metaKey && "Meta",
+    event.shiftKey && "Shift",
+    key,
+  ]
+    .filter(Boolean)
+    .join("+");
+}
+
+/** Matches exactly one chord, including modifiers; Mod accepts either Ctrl or Meta, but not both. */
+export function matchesChord(event: ShortcutKeyEvent, chord: string): boolean {
+  if (!chord || chord.includes(" ")) return false;
+  const parts = chord.split("+");
+  const key = parts.pop();
+  const modifiers = new Set(parts);
+  const mod = modifiers.has("Mod");
+  return (
+    shortcutKey(event) === key &&
+    (mod
+      ? event.ctrlKey !== event.metaKey
+      : event.ctrlKey === modifiers.has("Ctrl") && event.metaKey === modifiers.has("Meta")) &&
+    event.altKey === modifiers.has("Alt") &&
+    event.shiftKey === modifiers.has("Shift")
+  );
+}
+
+/** Whether a target is an editor or keyboard-operated input widget. */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      !!target.closest(
+        "input, textarea, select, [contenteditable=true], [role=combobox], [role=listbox]",
+      ))
+  );
+}
+
+/** Displays sequences distinctly from simultaneous chords. Meta is Command on macOS, Super on Linux, and Windows on Windows. */
+export function formatBinding(binding: string): string {
+  return binding ? binding.split(" ").join(" then ") : "Disabled";
 }

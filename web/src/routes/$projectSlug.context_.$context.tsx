@@ -1,3 +1,5 @@
+import { useKeyboardShortcuts } from "../components/keyboard-shortcuts-provider";
+import { matchesChord } from "../lib/shortcuts";
 import { useEffect, useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -40,10 +42,11 @@ function ContextPage() {
 }
 
 /**
- * Edits one context. The body is saved on request, with Ctrl+S or the Save button, and carries
+ * Edits one context. The body is saved on request, with the personal save shortcut or the Save button, and carries
  * the revision it started from, so an edit made elsewhere in the meantime is never overwritten.
  */
 function ContextEditor({ saved }: { saved: ContextNote }) {
+  const { bindings } = useKeyboardShortcuts();
   const project = useProject();
   const navigate = useNavigate();
   const { notify } = useToast();
@@ -89,7 +92,7 @@ function ContextEditor({ saved }: { saved: ContextNote }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      if (!event.defaultPrevented && matchesChord(event, bindings.saveContext)) {
         event.preventDefault();
         void save();
       }
@@ -227,7 +230,7 @@ function ContextEditor({ saved }: { saved: ContextNote }) {
           className="rounded-full border border-[#3264ff] bg-[#2455eb] px-4 py-1.5 text-[13px] font-[550] text-white hover:bg-[#3566f6] disabled:opacity-50"
           disabled={!dirty || update.isPending}
           onClick={() => void save()}
-          title="Ctrl+S"
+          title={bindings.saveContext}
         >
           Save
         </button>

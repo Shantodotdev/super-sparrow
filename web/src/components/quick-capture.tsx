@@ -1,3 +1,5 @@
+import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
+import { matchesChord } from "../lib/shortcuts";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { GripHorizontal } from "lucide-react";
@@ -69,7 +71,7 @@ const priorityOptions = [
  * A movable panel for writing down a problem or a note the moment it is noticed: an issue with
  * its status, priority, assignee, milestone, and labels, or a context. It stays open while the
  * person works elsewhere on the page and closes only when they create the record, press the close
- * button, or press Ctrl+Q again. Its draft survives being closed and reopened.
+ * button, or press the capture shortcut again. Its draft survives being closed and reopened.
  */
 export function QuickCapture({ open, onClose, standalone = false }: QuickCaptureProps) {
   const { notify } = useToast();
@@ -80,6 +82,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
   const projects = useQuery(projectsQuery);
   const people = useQuery({ ...actorsQuery, enabled: open });
 
+  const { bindings } = useKeyboardShortcuts();
   const [kind, setKind] = useState<CaptureKind>("issue");
   const [projectSlug, setProjectSlug] = useState<string | undefined>(undefined);
   const [title, setTitle] = useState("");
@@ -114,6 +117,19 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
   useEffect(() => {
     if (open) requestAnimationFrame(() => titleInput.current?.focus());
   }, [open]);
+
+  // The personal close binding closes the open panel, even while typing in it.
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || !matchesChord(event, bindings.closeCapture))
+        return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", close, true);
+    return () => window.removeEventListener("keydown", close, true);
+  }, [open, onClose, bindings.closeCapture]);
 
   // The panel opens where it was last left, or near the top right of the window.
   useEffect(() => {
@@ -220,7 +236,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     <div
       ref={panel}
       hidden={!open}
-      role="dialog"
+      role={open ? "dialog" : undefined}
       aria-modal="false"
       aria-labelledby="quick-capture-heading"
       className={
@@ -230,7 +246,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
       }
       style={standalone || !position ? undefined : { left: position.x, top: position.y }}
       onKeyDown={(event) => {
-        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        if (matchesChord(event, bindings.submit)) {
           event.preventDefault();
           void submit();
         }
@@ -434,7 +450,9 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
       </div>
 
       <footer className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
-        <span className="text-[11px] text-[#7d818c]">Ctrl+Enter to save</span>
+        <span className="text-[11px] text-[#7d818c]">
+          {bindings.submit ? `${bindings.submit} to save` : ""}
+        </span>
         <button
           type="button"
           className="rounded-full border border-[#3264ff] bg-[#2455eb] px-4 py-2 text-[13px] font-[550] text-white hover:bg-[#3566f6] disabled:opacity-50"

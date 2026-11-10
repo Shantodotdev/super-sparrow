@@ -1,3 +1,5 @@
+import { matchesChord } from "../lib/shortcuts";
+import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -14,7 +16,7 @@ import { Input } from "./input";
 import { reviewButton, reviewSecondaryButton } from "./review-forms";
 import { ReviewPerson } from "./review-person";
 
-const shortcuts: Record<string, Decision> = { f: "fix", w: "wontfix", l: "later" };
+const shortcuts = { findingFix: "fix", findingWontfix: "wontfix", findingLater: "later" } as const;
 const actionLabel: Record<FindingStatus, string> = {
   open: "Withdraw decision",
   fix: "Fix",
@@ -26,15 +28,7 @@ const actionLabel: Record<FindingStatus, string> = {
 
 /** Allows finding shortcuts only in the active surface, outside fields and other dialogs. */
 function isShortcut(event: KeyboardEvent, scope: HTMLElement | null): boolean {
-  if (
-    !scope ||
-    event.defaultPrevented ||
-    event.repeat ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey
-  )
-    return false;
+  if (!scope || event.defaultPrevented || event.repeat || event.isComposing) return false;
   const target = event.target instanceof HTMLElement ? event.target : null;
   if (
     target?.closest("input, textarea, select, [contenteditable], [role=combobox], [role=listbox]")
@@ -54,6 +48,7 @@ export function FindingDetail({
   variant?: "panel" | "drawer";
   onOpenFinding?: (finding: Finding) => void;
 }) {
+  const { bindings } = useKeyboardShortcuts();
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const projectSlug = useProjectSlugs();
@@ -89,7 +84,10 @@ export function FindingDetail({
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      const decision = shortcuts[event.key.toLowerCase()];
+      const id = (Object.keys(shortcuts) as (keyof typeof shortcuts)[]).find((id) =>
+        matchesChord(event, bindings[id]),
+      );
+      const decision: Decision | undefined = id ? shortcuts[id] : undefined;
       if (
         !decision ||
         !actions.includes(decision) ||

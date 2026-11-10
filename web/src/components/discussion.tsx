@@ -1,3 +1,5 @@
+import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
+import { matchesChord } from "../lib/shortcuts";
 import { Textarea } from "./input";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -29,6 +31,7 @@ function threaded(comments: Comment[]): { comment: Comment; reply: boolean }[] {
 
 /** The comments on an issue or a finding, oldest first, with a box for adding one. */
 export function Discussion({ issueId, findingId, variant = "default" }: DiscussionProps) {
+  const { bindings } = useKeyboardShortcuts();
   const { data: allComments } = useSuspenseQuery(commentsQuery);
   const actor = useActor();
   const addComment = useAddComment();
@@ -59,7 +62,7 @@ export function Discussion({ issueId, findingId, variant = "default" }: Discussi
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) return;
+    if (!matchesChord(event, bindings.submit)) return;
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
   };

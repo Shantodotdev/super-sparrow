@@ -23,6 +23,8 @@ Out of scope for version 1: documents, secrets, CI/CD, cycles, estimates, roadma
 
 The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app opens the server's URL in its window, so it always runs the current frontend and signs in exactly like the browser. Desktop builds require `PUBLIC_URL` and embed that origin; there is no address entry or saved server override. Development reads it from the repository `.env`, and release builds read the deployment's GitHub repository variable `PUBLIC_URL`. Tauri grants the tray, notification, and shortcut features to that URL only.
 
+The supported clients are the browser interface and Tauri desktop app; PWA installation and service workers are not supported.
+
 The frontend runs TanStack Start in SPA mode: it builds to static files that the Go server serves. It uses no server functions or server-side rendering. The Go API is the only backend, and TanStack Query handles data fetching and caching.
 
 ```
@@ -38,6 +40,7 @@ All tables have `id`, `created_at`, and `updated_at`, except events, which never
 The schema lives in `server/migrations/`, and `server/internal/store` is the only code that reads or writes it. CHECK constraints, foreign keys, and triggers enforce the rules below in the database as well as in Go.
 
 - **Actor:** kind (`human`, `agent`, or `system`), display name, disabled at. Humans also have an optional built-in avatar identifier, an email and a role (`owner` or `member`). Agents also have an agent name (`claude-code`, `codex`) and the human who owns them. A person has at most one agent per agent name, and all of their tokens for that tool act as it. One built-in system actor records actions no person or agent took, such as creating the first owner. Every write records its actor. Disabling a person also disables their agents and revokes their sessions and tokens. The team always keeps at least one active owner.
+- **Keyboard shortcuts:** one person’s account-scoped overrides for the shared action catalog, with a revision to reject stale edits. Changes and their authenticated human actor events commit together. Empty bindings disable actions; resetting removes an override. The desktop applies the same personal quick-capture binding globally.
 - **Session:** human actor, hashed session ID, device label, last seen, expires at, revoked at.
 - **Sign-in code:** email, hashed code, expires at, failed attempts, used at.
 - **Token:** agent actor, hashed secret, label, last used, expires at, revoked at. Only the hash is stored.
@@ -72,7 +75,7 @@ Reviews and findings do not store commit hashes or reviewed revision ranges. Sta
 - FR-3: Link an issue to a branch name and a pull request URL.
 - FR-4: Find an issue from a branch name that contains its key, such as `feat/wp-142-meta-comments`.
 - FR-27: Paste, drop, or capture images into plans, descriptions, and contexts. A screenshot button grabs the screen and lets the person drag out the region to keep; the desktop app captures the monitor natively, and a browser uses screen sharing.
-- FR-28: Ctrl+Q opens a movable quick capture panel for a new issue (with status, priority, assignee, milestone, and labels) or a new context. It stays open until the record is saved, its close button is pressed, or Ctrl+Q is pressed again, and keeps its draft while closed.
+- FR-28: Meta+Shift+Q opens a movable quick capture panel for a new issue (with status, priority, assignee, milestone, and labels) or a new context. It stays open until the record is saved, its close button is pressed, or the capture shortcut is pressed again, and keeps its draft while closed. Ctrl+Q, a separate personal shortcut, only closes the open panel.
 - FR-29: Keep contexts per project, readable and editable in the web interface and through the agent tools by key.
 - FR-26: Create, list, and edit lightweight subissues under an issue. Each exposes only a title, Markdown description, ID, and progress status. Reviews, findings, and discussions stay attached to full issues (including existing finding threads); subissues cannot receive them. Display subissues below the main issue description and in the right sidebar in place of review rounds. Clicking a subissue opens a right-side drawer with inline editing: title saves on blur, status saves immediately, and the Markdown description autosaves with revision checks and recoverable drafts. Creation uses the existing form. Review rounds remain available in their issue tab. Members and agents can manage subissues through the authenticated HTTP API.
 
@@ -109,8 +112,8 @@ The MCP endpoint uses the streamable HTTP transport without sessions: each reque
 
 - FR-19: Views: project issue list, issue page, review round page, activity feed, settings for actors and tokens.
 - FR-20: Views update live through the event stream.
-- FR-21: Command palette and keyboard shortcuts for navigation and finding decisions.
-- FR-22: The desktop app adds a tray icon, native notifications, and a global shortcut to open an issue by key. It starts at login and stays in the tray, and the system-wide Ctrl+Q opens an always-on-top quick capture window over any application.
+- FR-21: Command palette and keyboard shortcuts for navigation and finding decisions. A Keyboard shortcuts settings page lists application shortcuts and lets each person edit, disable, or reset their own bindings, including desktop global capture. Save overrides in SQLite and synchronize clients; refuse conflicting chords and ambiguous sequence prefixes. Escape and Tab retain standard cancellation and focus behavior.
+- FR-22: The desktop app adds a tray icon, native notifications, and a global shortcut to open an issue by key. It starts at login and stays in the tray, and the system-wide Meta+Shift+Q opens an always-on-top quick capture window over any application.
 
 ### Import and integration
 

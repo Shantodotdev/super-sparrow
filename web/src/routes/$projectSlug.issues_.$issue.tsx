@@ -130,12 +130,12 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
   };
 
   useShortcutKeys({
-    "1": () => switchTab("plan"),
-    "2": () => switchTab("rounds"),
-    "3": () => switchTab("findings"),
-    "4": () => switchTab("activity"),
-    "5": () => switchTab("comments"),
-    e: () => document.querySelector<HTMLInputElement>("h1 input, h1 textarea")?.focus(),
+    planTab: () => switchTab("plan"),
+    roundsTab: () => switchTab("rounds"),
+    findingsTab: () => switchTab("findings"),
+    activityTab: () => switchTab("activity"),
+    commentsTab: () => switchTab("comments"),
+    editTitle: () => document.querySelector<HTMLInputElement>("h1 input, h1 textarea")?.focus(),
   });
 
   return (
