@@ -84,16 +84,19 @@ People and agents use the same authenticated endpoints. Actor fields are rejecte
 
 ## Attachments
 
-Files are attached to an issue and shown below its description. They are stored on the server's attachments volume (`ATTACHMENTS_DIR`), not in the database, and the encrypted backups include them.
+Files are attached to an issue and shown below its description. They are stored in a dedicated, private Cloudflare R2 bucket (`ATTACHMENTS_R2_BUCKET`), not in the database, and the client uploads straight to R2. The bucket is not backed up, so an object that is lost leaves an attachment row with no file.
 
-| Method and path                      | Access | What it does                                                                                                                                                                                                |
-| ------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/issues/{key}/attachments` |        | The body is the file itself, not JSON, and `?filename=` names it. Any type up to 100 MB; a video up to 5 GB (413 when larger). The type is read from the bytes. Returns `{attachment}` with 201             |
-| `GET /api/issues/{key}/attachments`  |        | `{attachments}`, oldest first                                                                                                                                                                               |
-| `GET /api/attachments/{id}`          |        | The file, with Range support. Images, video, audio, and PDF show in the page; every other type, including HTML and SVG, downloads as `application/octet-stream`. Served with `nosniff` and a sandboxing CSP |
-| `DELETE /api/attachments/{id}`       | person | Deletes the attachment and its file                                                                                                                                                                         |
+| Method and path                       | Access  | What it does                                                                                                                                                                                                              |
+| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/issues/{key}/attachments`  |         | JSON `{filename, content_type, byte_size}`. Creates a pending attachment and returns 201 `{attachment, upload: {url, method: "PUT", headers}}`. Any type up to 100 MB; a video up to 5 GB (413 when larger)               |
+| `POST /api/attachments/{id}/complete` | creator | Call after the file is uploaded. The server reads the first bytes of the object to recognize its type and checks its size, then returns 200 `{attachment}`. An object that breaks the rules is deleted along with its row |
+| `GET /api/issues/{key}/attachments`   |         | `{attachments}`, oldest first. Pending attachments are not listed                                                                                                                                                         |
+| `GET /api/attachments/{id}`           |         | Session or agent token. Answers 302 to a short-lived signed R2 URL. Images, video, audio, and PDF show in the page; every other type, including HTML and SVG, is forced to download                                       |
+| `DELETE /api/attachments/{id}`        | person  | Deletes the attachment and its object. The creator can also delete an attachment that is still pending                                                                                                                    |
 
-Each attachment returns `id`, `project_key`, `issue_key`, `filename`, `content_type`, `byte_size`, `sha256`, `url`, `created_by_actor_id`, and `created_at`. Uploads write `attachment.created` and deletions write `attachment.deleted`, on the project.
+The client sends the file with the `method` and `headers` of `upload` (the `Content-Type` it declared) to `upload.url`. The upload goes to the bucket's origin, so the bucket needs a CORS rule for the app's origin; see [DEPLOYMENT.md](DEPLOYMENT.md).
+
+Each attachment returns `id`, `project_key`, `issue_key`, `filename`, `content_type`, `byte_size`, `url`, `created_by_actor_id`, and `created_at`. Completed uploads write `attachment.created` and deletions write `attachment.deleted`, on the project.
 
 ## Reviews and findings
 
