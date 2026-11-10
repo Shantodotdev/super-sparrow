@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -34,13 +33,6 @@ var (
 // scripts the build wrote into it, so markdown that slips past sanitizing cannot run scripts.
 type frontend struct {
 	files fs.FS
-}
-
-// init teaches the file server the web app manifest type, which the standard table lacks.
-func init() {
-	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
-		panic(fmt.Sprintf("register web manifest type: %v", err))
-	}
 }
 
 func newFrontend(dir string) *frontend {
