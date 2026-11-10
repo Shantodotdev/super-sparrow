@@ -13,14 +13,38 @@ export const Route = createFileRoute("/capture")({
  * only the quick capture panel; saving or closing hides the window, keeping it ready for next time.
  */
 function CapturePage() {
-  // Each time the window is shown again, the title takes the focus so typing can start at once.
+  // The title takes the focus as soon as the window opens and whenever it is shown again, so
+  // typing can start at once. A webview may not own the keyboard yet when the page loads, so the
+  // first attempts repeat for a moment.
   useEffect(() => {
     const focusTitle = () => {
-      if (document.activeElement && document.activeElement !== document.body) return;
-      document.querySelector<HTMLInputElement>("#quick-capture-title")?.focus();
+      const title = document.querySelector<HTMLInputElement>("#quick-capture-title");
+      if (!title || document.activeElement === title) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active.closest("[role=dialog]")) return;
+      title.focus();
     };
+    const timers = [0, 50, 150, 400].map((delay) => window.setTimeout(focusTitle, delay));
     window.addEventListener("focus", focusTitle);
-    return () => window.removeEventListener("focus", focusTitle);
+    document.addEventListener("visibilitychange", focusTitle);
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.removeEventListener("focus", focusTitle);
+      document.removeEventListener("visibilitychange", focusTitle);
+    };
+  }, []);
+
+  // The window is transparent so the panel's rounded corners show; the page must not paint behind it.
+  useEffect(() => {
+    const { documentElement, body } = document;
+    const previousRoot = documentElement.style.background;
+    const previousBody = body.style.background;
+    documentElement.style.background = "transparent";
+    body.style.background = "transparent";
+    return () => {
+      documentElement.style.background = previousRoot;
+      body.style.background = previousBody;
+    };
   }, []);
 
   const hide = () => {

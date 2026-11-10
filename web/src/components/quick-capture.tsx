@@ -2,7 +2,7 @@ import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 import { matchesChord } from "../lib/shortcuts";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { GripHorizontal } from "lucide-react";
+import { GripHorizontal, X } from "lucide-react";
 import {
   issuePriorities,
   issuePriorityLabel,
@@ -24,7 +24,6 @@ import { MarkdownEditor } from "./markdown-editor";
 import { Select } from "./select";
 import { useCurrentProjectSlug } from "./shortcuts";
 import { useToast } from "./toast";
-import { useCaptureShortcut } from "../hooks/use-capture-shortcut";
 
 type QuickCaptureProps = {
   open: boolean;
@@ -78,7 +77,6 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
   const createIssue = useCreateIssue();
   const uploads = useAttachmentUploads();
   const rememberedSlug = useCurrentProjectSlug();
-  const shortcut = useCaptureShortcut();
   const projects = useQuery(projectsQuery);
   const people = useQuery({ ...actorsQuery, enabled: open });
 
@@ -257,10 +255,10 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
       hidden={!open}
       role={open ? "dialog" : undefined}
       aria-modal="false"
-      aria-labelledby="quick-capture-heading"
+      aria-label="Quick capture"
       className={
         standalone
-          ? `flex h-dvh w-full flex-col bg-[#15171b] text-[#e7e8ec] ${dragging ? "ring-1 ring-[#426fff] ring-inset" : ""}`
+          ? `flex h-dvh w-full flex-col overflow-hidden rounded-2xl border border-[#262a32] bg-[#0d0e11] text-[#e7e8ec] ${dragging ? "ring-1 ring-[#426fff] ring-inset" : ""}`
           : `fixed z-60 flex max-h-[calc(100dvh-24px)] min-h-[300px] w-[min(560px,calc(100vw-24px))] min-w-[340px] resize flex-col overflow-hidden rounded-2xl border border-[#3a3e48] bg-[#15171b]/98 text-[#e7e8ec] shadow-[0_24px_80px_#000c,0_0_0_1px_#0006] backdrop-blur ${dragging ? "border-[#426fff]" : ""}`
       }
       style={standalone || !position ? undefined : { left: position.x, top: position.y }}
@@ -273,33 +271,21 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
       }}
     >
       <header
-        className={`flex shrink-0 items-center gap-2 border-b border-[#2a2d34] px-3 py-2 ${standalone ? "" : "cursor-grab active:cursor-grabbing"}`}
+        className={`flex h-11 shrink-0 items-center justify-between px-3 ${standalone ? "" : "cursor-grab active:cursor-grabbing"}`}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         data-tauri-drag-region={standalone ? "" : undefined}
       >
-        <GripHorizontal aria-hidden="true" className="pointer-events-none size-4 text-[#6f7380]" />
-        <h2
-          id="quick-capture-heading"
-          className="pointer-events-none m-0 text-[13px] font-semibold"
-        >
-          Quick capture
-        </h2>
-        <span className="ml-auto" />
-        {shortcut && (
-          <kbd className="pointer-events-none rounded border border-[#30333b] px-1.5 text-[11px] text-[#7d818c]">
-            {shortcut}
-          </kbd>
-        )}
+        <GripHorizontal aria-hidden="true" className="pointer-events-none size-4 text-[#4a4d57]" />
         <button
           type="button"
           aria-label="Close quick capture"
-          className="grid place-items-center rounded-lg border-0 bg-transparent p-1.5 text-[#9a9da6] hover:bg-[#2b2e35] hover:text-white"
+          className="grid size-7 place-items-center rounded-full border-0 bg-[#1a1c21] text-[#9a9da6] transition-colors hover:bg-[#2c3038] hover:text-white"
           onClick={onClose}
         >
-          <Icon name="circle-x" />
+          <X aria-hidden="true" className="size-3.5" strokeWidth={2.25} />
         </button>
       </header>
 
@@ -311,48 +297,49 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
 
       <div
         hidden={!!createdKey}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-2"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pt-2 pb-3"
       >
         {error && (
           <p role="alert" className="m-0 text-[13px] text-[#f2a9ae]">
             {error}
           </p>
         )}
-        <div className="flex items-center gap-2 text-[12px] text-[#a5a8b1]">
-          <Select
-            variant="chip"
-            icon="folder"
-            label="Project"
-            value={project?.slug ?? ""}
-            onChange={switchProject}
-            options={(projects.data ?? []).map((item) => ({ value: item.slug, label: item.name }))}
-          />
-          <Icon name="chevron-right" />
-          <span>New issue</span>
-        </div>
         <input
           ref={titleInput}
           id="quick-capture-title"
           aria-label="Issue title"
-          className="w-full border-0 border-b border-[#33363e] bg-transparent pb-2 text-[17px] font-semibold text-[#f1f2f4] outline-none placeholder:text-[#6f7380] focus:border-[#4f6fe0]"
-          placeholder="What went wrong?"
+          className="h-10 w-full rounded-none border-0 bg-transparent p-0 text-[20px] leading-10 font-semibold text-[#f1f2f4] caret-[#7896ff] outline-none placeholder:text-[#5f6370] focus-visible:outline-none"
+          placeholder="Issue title"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
         />
         <MarkdownEditor
           label="Issue description"
-          placeholder="Steps, what you expected, what happened…"
+          placeholder="Add a description…"
           value={body}
           onChange={setBody}
           className="[&_.tiptap]:min-h-[110px]! [&_.tiptap]:text-[14px]! [&_.tiptap]:text-[#e4e6ea]!"
         />
-        <UploadList jobs={uploads.jobs} onRemove={(job) => uploads.remove(job.id)} showDone />
       </div>
+
+      {uploads.jobs.length > 0 && (
+        <div hidden={!!createdKey} className="max-h-[132px] shrink-0 overflow-y-auto px-4 pt-2">
+          <UploadList jobs={uploads.jobs} onRemove={(job) => uploads.remove(job.id)} showDone />
+        </div>
+      )}
 
       <div
         hidden={!!createdKey}
-        className="flex shrink-0 flex-wrap items-center gap-[6px] border-t border-[#2a2d34] px-3 pt-2.5 [&_button]:min-h-8 [&_button]:text-[12px]"
+        className="flex shrink-0 flex-wrap items-center gap-[6px] px-4 pt-2 [&_button]:min-h-9 [&_button]:text-[13px]"
       >
+        <Select
+          variant="chip"
+          icon="folder"
+          label="Project"
+          value={project?.slug ?? ""}
+          onChange={switchProject}
+          options={(projects.data ?? []).map((item) => ({ value: item.slug, label: item.name }))}
+        />
         <Select
           variant="chip"
           label="Status"
@@ -379,7 +366,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
           value={assigneeId}
           onChange={setAssigneeId}
           options={[
-            { value: "", label: "No assignee" },
+            { value: "", label: "Assignee" },
             ...assignable.map((actor) => ({ value: actor.id, label: actor.display_name })),
           ]}
         />
@@ -390,7 +377,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
           value={milestoneId}
           onChange={setMilestoneId}
           options={[
-            { value: "", label: "No milestone" },
+            { value: "", label: "Milestone" },
             ...(milestones.data ?? []).map((milestone) => ({
               value: milestone.id,
               label: milestone.name,
@@ -445,16 +432,15 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
             })}
           </FloatingMenu>
         )}
-        <AttachmentButtons onFiles={addFiles} onError={setError} disabled={pending} />
       </div>
 
       <footer
         hidden={!!createdKey}
-        className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5"
+        className="flex shrink-0 items-center justify-between gap-3 px-4 pt-2 pb-4 [&_button]:min-h-9 [&_button]:text-[13px]"
       >
-        <span className="text-[11px] text-[#7d818c]">
-          {bindings.submit ? `${bindings.submit} to save` : ""}
-        </span>
+        <div className="flex items-center gap-[6px]">
+          <AttachmentButtons onFiles={addFiles} onError={setError} disabled={pending} />
+        </div>
         <button
           type="button"
           className="rounded-full border border-[#3264ff] bg-[#2455eb] px-4 py-2 text-[13px] font-[550] text-white hover:bg-[#3566f6] disabled:opacity-50"
