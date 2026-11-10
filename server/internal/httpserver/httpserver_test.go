@@ -77,7 +77,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	st := store.New(db, time.Now)
+	st := store.New(db, time.Now, t.TempDir())
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatalf("CreateFirstOwner: %v", err)

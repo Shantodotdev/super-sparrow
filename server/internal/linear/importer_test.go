@@ -80,7 +80,7 @@ func TestImportBringsInTheProjectOnce(t *testing.T) {
 	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
 		t.Fatal(err)
 	}
-	st := store.New(db, time.Now)
+	st := store.New(db, time.Now, t.TempDir())
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatal(err)

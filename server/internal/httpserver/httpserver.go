@@ -149,13 +149,10 @@ func New(opts Options) http.Handler {
 	s.route("POST /api/issues/{key}/reviews/{round}/findings/{finding}/comments", signedIn, s.addFindingComment)
 	s.route("PATCH /api/comments/{id}", signedIn, s.editComment)
 
-	s.route("POST /api/projects/{key}/attachments", signedIn, s.createAttachment)
-	s.route("GET /api/attachments/{id}", signedIn, s.getAttachment)
-	s.route("GET /api/projects/{key}/contexts", signedIn, s.listContexts)
-	s.route("POST /api/projects/{key}/contexts", signedIn, s.createContext)
-	s.route("GET /api/contexts/{key}", signedIn, s.getContext)
-	s.route("PATCH /api/contexts/{key}", signedIn, s.updateContext)
-	s.route("DELETE /api/contexts/{key}", humanOnly, s.deleteContext)
+	s.route("POST /api/issues/{key}/attachments", signedIn, s.uploadAttachment)
+	s.route("GET /api/issues/{key}/attachments", signedIn, s.listAttachments)
+	s.route("GET /api/attachments/{id}", signedIn, s.downloadAttachment)
+	s.route("DELETE /api/attachments/{id}", humanOnly, s.deleteAttachment)
 
 	s.route("GET /api/events", signedIn, s.listEvents)
 	s.route("GET /api/events/stream", signedIn, s.streamEvents)

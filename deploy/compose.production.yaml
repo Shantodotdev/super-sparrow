@@ -10,9 +10,11 @@ services:
       APP_ENV: production
       LISTEN_ADDR: 0.0.0.0:8090
       DATABASE_PATH: /data/sparrow.db
+      ATTACHMENTS_DIR: /attachments
       WEB_DIR: /srv/web
     volumes:
       - sparrow-data:/data
+      - sparrow-attachments:/attachments
     networks:
       proxy:
         ipv4_address: 172.30.90.3
@@ -38,3 +40,5 @@ volumes:
   sparrow-data:
     external: true
     name: sparrow-data
+  sparrow-attachments:
+    name: sparrow-attachments

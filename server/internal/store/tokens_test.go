@@ -141,7 +141,7 @@ func TestCreateFirstOwner(t *testing.T) {
 	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	st := New(db, time.Now)
+	st := New(db, time.Now, t.TempDir())
 
 	owner, err := st.CreateFirstOwner(ctx, "Shanto", "Shanto@Example.com")
 	if err != nil {

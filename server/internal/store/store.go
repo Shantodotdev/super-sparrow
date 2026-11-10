@@ -16,14 +16,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shantodotdev/super-sparrow/server/internal/files"
 )
 
 const timeLayout = "2006-01-02T15:04:05.000Z"
 
 // Store is the data access layer. It is safe for concurrent use.
 type Store struct {
-	db  storeDatabase
-	now func() time.Time
+	db    storeDatabase
+	now   func() time.Time
+	files *files.Dir
 
 	changeMu    sync.Mutex
 	changed     chan struct{}
@@ -31,9 +33,10 @@ type Store struct {
 }
 
 // New returns a Store over db, which must already be migrated. now supplies the current time;
-// pass time.Now outside tests.
-func New(db *sql.DB, now func() time.Time) *Store {
-	return &Store{db: db, now: now, changed: make(chan struct{})}
+// pass time.Now outside tests. attachmentsDir is the existing, writable folder that holds
+// attached files; the server's settings check it at startup.
+func New(db *sql.DB, now func() time.Time, attachmentsDir string) *Store {
+	return &Store{db: db, now: now, files: files.New(attachmentsDir), changed: make(chan struct{})}
 }
 
 // Changed returns a channel that is closed after the next committed change. Live views take it

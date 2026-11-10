@@ -10,8 +10,10 @@ import (
 )
 
 // developmentEnv holds only the settings development requires.
-func developmentEnv() map[string]string {
+func developmentEnv(t *testing.T) map[string]string {
+	t.Helper()
 	return map[string]string{
+		"ATTACHMENTS_DIR":  t.TempDir(),
 		"APP_ENV":          "development",
 		"LISTEN_ADDR":      "127.0.0.1:8090",
 		"DATABASE_PATH":    "data/sparrow.db",
@@ -31,7 +33,7 @@ func productionEnv(t *testing.T) map[string]string {
 		t.Fatal(err)
 	}
 
-	env := developmentEnv()
+	env := developmentEnv(t)
 	env["APP_ENV"] = "production"
 	env["PUBLIC_URL"] = "https://sparrow.example.com"
 	env["TRUSTED_PROXIES"] = "127.0.0.1, 10.0.0.0/8"
@@ -106,7 +108,7 @@ func TestProductionRequiresHTTPS(t *testing.T) {
 }
 
 func TestDevelopmentTurnsOffWhatIsAbsent(t *testing.T) {
-	cfg, err := Load(lookup(developmentEnv()))
+	cfg, err := Load(lookup(developmentEnv(t)))
 	if err != nil {
 		t.Fatalf("Load returned an error: %v", err)
 	}
@@ -116,7 +118,7 @@ func TestDevelopmentTurnsOffWhatIsAbsent(t *testing.T) {
 }
 
 func TestDevelopmentNeedsAllBackupSettingsOrNone(t *testing.T) {
-	env := developmentEnv()
+	env := developmentEnv(t)
 	env["R2_BUCKET"] = "sparrow-backups-test"
 
 	_, err := Load(lookup(env))
@@ -136,7 +138,7 @@ func TestLoadNamesEveryMissingSetting(t *testing.T) {
 		t.Fatal("Load accepted an empty environment")
 	}
 
-	for name := range developmentEnv() {
+	for name := range developmentEnv(t) {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error does not name %s: %v", name, err)
 		}
@@ -160,6 +162,7 @@ func TestLoadRejectsMalformedSettings(t *testing.T) {
 		"BACKUP_TIME_ZONE":      "Mars/Olympus",
 		"BACKUP_KEEP_DAYS":      "0",
 		"R2_ACCOUNT_ID":         "not-an-account",
+		"ATTACHMENTS_DIR":       "no/such/relative/folder",
 	}
 
 	for name, value := range cases {
@@ -172,5 +175,39 @@ func TestLoadRejectsMalformedSettings(t *testing.T) {
 				t.Fatalf("Load did not reject %s=%q: %v", name, value, err)
 			}
 		})
+	}
+}
+
+func TestAttachmentsDirMustExistAndBeWritable(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	readOnly := t.TempDir()
+	if err := os.Chmod(readOnly, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(readOnly, 0o700) })
+
+	cases := map[string]string{"missing": filepath.Join(t.TempDir(), "absent"), "a file": file}
+	if os.Geteuid() != 0 {
+		cases["read-only"] = readOnly
+	}
+	for name, dir := range cases {
+		t.Run(name, func(t *testing.T) {
+			env := developmentEnv(t)
+			env["ATTACHMENTS_DIR"] = dir
+
+			_, err := Load(lookup(env))
+			if err == nil || !strings.Contains(err.Error(), "ATTACHMENTS_DIR") {
+				t.Fatalf("Load accepted %s as the attachments folder: %v", name, err)
+			}
+		})
+	}
+
+	env := developmentEnv(t)
+	cfg, err := Load(lookup(env))
+	if err != nil || cfg.AttachmentsDir != env["ATTACHMENTS_DIR"] {
+		t.Fatalf("attachments dir %q, error %v", cfg.AttachmentsDir, err)
 	}
 }

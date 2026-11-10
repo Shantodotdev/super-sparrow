@@ -50,8 +50,11 @@ type Config struct {
 	Environment  Environment
 	ListenAddr   string
 	DatabasePath string
-	PublicURL    *url.URL
-	LogLevel     slog.Level
+	// AttachmentsDir is the absolute path of the existing, writable folder that holds attached
+	// files, normally on a volume.
+	AttachmentsDir string
+	PublicURL      *url.URL
+	LogLevel       slog.Level
 	// ResendAPIKey authenticates the server to Resend, which sends sign-in codes and invitations.
 	ResendAPIKey string
 	// EmailFrom is the sender of every email, such as "Super Sparrow <sparrow@example.com>".
@@ -133,6 +136,13 @@ func Load(getenv func(string) string) (Config, error) {
 	databasePath, err := required(getenv, "DATABASE_PATH")
 	problems = append(problems, err)
 	cfg.DatabasePath = databasePath
+
+	attachmentsDir, err := required(getenv, "ATTACHMENTS_DIR")
+	if err == nil {
+		attachmentsDir, err = checkAttachmentsDir(attachmentsDir)
+	}
+	problems = append(problems, err)
+	cfg.AttachmentsDir = attachmentsDir
 
 	publicURL, err := required(getenv, "PUBLIC_URL")
 	if err == nil {
@@ -281,6 +291,28 @@ func LoadR2(getenv func(string) string) (R2, error) {
 	problems = append(problems, err)
 
 	return r2, errors.Join(problems...)
+}
+
+// checkAttachmentsDir resolves the path to an absolute one and checks that it names an existing
+// folder the server can write files to.
+func checkAttachmentsDir(value string) (string, error) {
+	dir, err := filepath.Abs(value)
+	if err != nil {
+		return "", fmt.Errorf("ATTACHMENTS_DIR is not a usable path: %w", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("ATTACHMENTS_DIR must be an existing folder; %s is not one", dir)
+	}
+
+	probe, err := os.CreateTemp(dir, ".write-check-*")
+	if err != nil {
+		return "", fmt.Errorf("ATTACHMENTS_DIR must be writable by the server: %w", err)
+	}
+	probe.Close()
+	if err := os.Remove(probe.Name()); err != nil {
+		return "", fmt.Errorf("ATTACHMENTS_DIR must be writable by the server: %w", err)
+	}
+	return dir, nil
 }
 
 // parseWebDir checks that the folder holds a built frontend: the _shell.html page that TanStack

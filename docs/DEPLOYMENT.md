@@ -9,6 +9,7 @@ Set `APP_ENV=production` on a server. Production requires every setting in `.env
 - `PUBLIC_URL` is the HTTPS address people open, such as `https://sparrow.example.com`. Over HTTPS the session cookie is `Secure` and `__Host-` prefixed.
 - `SIGN_IN_CODE_KEY` is a random secret of at least 32 characters, such as the output of `openssl rand -hex 32`. Sign-in codes are hashed with it, so keep it out of the database's backups.
 - `TRUSTED_PROXIES` lists the reverse proxy's address, so per-IP rate limits see the client's address from `X-Forwarded-For`.
+- `ATTACHMENTS_DIR` is the folder, on a persistent volume, where attached files are kept. The Docker deployment mounts the `sparrow-attachments` volume at `/attachments`.
 - `WEB_DIR` is the built frontend's folder: `web/dist/client` after `make build-web`, or `/srv/web` in the Docker image.
 - The backup settings below.
 - `GITHUB_WEBHOOK_SECRET` is the webhook's secret.
@@ -155,7 +156,7 @@ and network attachment manually.
 ## Run it with systemd
 
 1. Download `sparrow-<version>-linux-amd64` and `sparrow-<version>-web.tar.gz` from the GitHub Release, or build both with `make build`. Install the binary at `/usr/local/bin/sparrow`, and unpack the frontend into `/srv/sparrow/web` (from a build, copy `web/dist/client` there).
-2. Put the settings in `/etc/sparrow/sparrow.env`, readable by root only, with `APP_ENV=production`, `DATABASE_PATH=/var/lib/sparrow/sparrow.db`, and `WEB_DIR=/srv/sparrow/web`.
+2. Put the settings in `/etc/sparrow/sparrow.env`, readable by root only, with `APP_ENV=production`, `DATABASE_PATH=/var/lib/sparrow/sparrow.db`, `ATTACHMENTS_DIR=/var/lib/sparrow/attachments` (create the folder, owned by the service user), and `WEB_DIR=/srv/sparrow/web`.
 3. Copy `deploy/sparrow.service` to `/etc/systemd/system/`, then run `systemctl enable --now sparrow`.
 4. Run `create-owner` once with the same settings: `sudo systemd-run --pty -p DynamicUser=yes -p StateDirectory=sparrow -p EnvironmentFile=/etc/sparrow/sparrow.env /usr/local/bin/sparrow create-owner --name "Your Name" --email you@example.com`.
 
@@ -180,6 +181,11 @@ Two jobs run inside the server, always in production and in development when the
 
 Each run is recorded in the database, and failures are logged.
 
+Attached files are backed up with the database. Each file is its own object, `attachments/<attachment id>.age`, encrypted with age to the same public key and not compressed, because media is already compressed. Before it uploads a database copy, each job uploads the files that copy refers to and that the bucket does not hold yet, found with one listing of `attachments/`. A file is uploaded once and never changed, so after the first run only new files are uploaded. If a file cannot be uploaded, the job fails, is logged with the attachment ID, and is retried by the next hourly sync; the database copy in the bucket is not replaced until every file it refers to is there, so a copy never refers to a missing object. The recorded size of a run is the database copy alone; the log line `attachments backed up` gives the number and size of the files uploaded.
+
+- **Disk:** each file is encrypted to a temporary file in the folder that holds the database, and the temporary file is removed right after its upload, so that folder needs room for the encrypted database copy plus the encrypted copy of the largest attachment, up to about 5 GB for a video. A single upload covers a whole file, which R2 accepts up to 5 GiB.
+- **Bucket size:** the bucket holds every attachment once, plus the database copies. Deleting an attachment does not remove its object right away: the daily backup deletes an `attachments/` object once no attachment refers to it and it is older than `BACKUP_KEEP_DAYS`, so the older database copies that are still kept can be restored with their files. Objects that attachments still refer to are never deleted.
+
 To set them up:
 
 1. Run `sparrow backup-keygen`. It prints a key pair: save the three lines it prints in the team's password manager, because a backup cannot be restored without the private key. Never put them on the server.
@@ -188,11 +194,14 @@ To set them up:
 
 ## Restoring
 
-`sparrow restore` needs only the four `R2_` settings and the private key, so it runs on a fresh machine before the server is set up there.
+`sparrow restore` needs only the four `R2_` settings, the private key, and an empty folder for the attached files, so it runs on a fresh machine before the server is set up there.
 
 1. Export the four R2 settings in the shell, and copy the private key from the password manager.
 2. `sparrow restore --list` shows the copies.
-3. `sparrow restore --copy sync --identity - --database /var/lib/sparrow/sparrow.db` restores the hourly copy, reading the private key from standard input, so paste it and press Ctrl-D. `--identity` also takes a file, such as one saved by `backup-keygen`; delete that file afterwards. Use `--copy daily/2026-03-01` for a dated copy. The command decrypts the copy, runs `PRAGMA integrity_check`, and only then writes the database file. It refuses to overwrite an existing database, so move a damaged one aside first. The copies are standard age files, so `age -d -i key.txt copy.db.gz.age | gunzip > sparrow.db` also works.
+3. `sparrow restore --copy sync --identity - --database /var/lib/sparrow/sparrow.db --attachments /var/lib/sparrow/attachments` restores the hourly copy, reading the private key from standard input, so paste it and press Ctrl-D. `--identity` also takes a file, such as one saved by `backup-keygen`; delete that file afterwards. Use `--copy daily/2026-03-01` for a dated copy. The command decrypts the copy, runs `PRAGMA integrity_check`, and only then writes the database file. It refuses to overwrite an existing database, so move a damaged one aside first. The copies are standard age files, so `age -d -i key.txt copy.db.gz.age | gunzip > sparrow.db` also works.
+
+   After the database is in place, the command restores the attached files it refers to into the existing `--attachments` folder, which must be the server's `ATTACHMENTS_DIR`. Each file is downloaded, decrypted, and checked against the size and SHA-256 in the restored database before it is moved into place, so a damaged or wrong object never leaves a file behind. A file already in the folder with the right hash is skipped. The command prints how many files were restored, skipped, missing from the bucket, and failed, lists the missing and failed ones, and exits with an error if there are any, after processing the rest. To retry the files alone, for example once a missing object is back, run it again with `--files-only` in place of `--copy`; it then reads the existing database at `--database` and does not touch it. An attachment file is also a standard age file: `age -d -i key.txt attachments/<id>.age > file`.
+
 4. Start the server. It applies any newer migrations at startup.
 
 A sync loses at most the last hour of changes. Restore a daily copy to undo a mistake that the sync has already copied, such as a bad delete.
