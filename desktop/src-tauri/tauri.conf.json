@@ -11,7 +11,8 @@
     "windows": [],
     "security": {
       "csp": null
-    }
+    },
+    "enableGTKAppId": true
   },
   "bundle": {
     "active": true,
@@ -22,6 +23,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/super-sparrow.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/super-sparrow.desktop"
+      }
+    }
   }
 }

@@ -37,6 +37,10 @@ struct ActiveShortcut(Mutex<(String, bool)>);
 
 /// Starts the desktop app.
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(target_os = "linux")]
+    glib::set_prgname(Some(context.config().identifier.as_str()));
+
     let server = server_url::parse(env!("SPARROW_SERVER_URL"))
         .expect("the build must contain a valid PUBLIC_URL");
 
@@ -101,7 +105,7 @@ pub fn run() {
             build_tray(&handle)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("failed to start the Super Sparrow desktop app");
 }
 
