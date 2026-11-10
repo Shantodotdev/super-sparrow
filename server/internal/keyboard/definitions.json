@@ -1,0 +1,138 @@
+{
+  "goIssues": {
+    "label": "Project issues",
+    "group": "Navigation",
+    "binding": "G I"
+  },
+  "goMine": {
+    "label": "My issues",
+    "group": "Navigation",
+    "binding": "G Y"
+  },
+  "goActivity": {
+    "label": "Activity",
+    "group": "Navigation",
+    "binding": "G A"
+  },
+  "goMilestones": {
+    "label": "Milestones",
+    "group": "Navigation",
+    "binding": "G M"
+  },
+  "goPeople": {
+    "label": "People and agents",
+    "group": "Navigation",
+    "binding": "G S"
+  },
+  "up": {
+    "label": "Up to the issue list",
+    "group": "Navigation",
+    "binding": "U"
+  },
+  "newIssue": {
+    "label": "New issue",
+    "group": "Create and search",
+    "binding": "C"
+  },
+  "search": {
+    "label": "Search issues",
+    "group": "Create and search",
+    "binding": "Slash"
+  },
+  "palette": {
+    "label": "Navigation palette",
+    "group": "Create and search",
+    "binding": "Mod+K",
+    "typing": true
+  },
+  "quickCapture": {
+    "label": "Quick capture (also system-wide in desktop)",
+    "group": "Create and search",
+    "binding": "Meta+Shift+Q",
+    "global": true,
+    "typing": true
+  },
+  "closeCapture": {
+    "label": "Close quick capture",
+    "group": "Create and search",
+    "binding": "Ctrl+Q",
+    "typing": true
+  },
+  "nextIssue": {
+    "label": "Next issue",
+    "group": "Issue list",
+    "binding": "J"
+  },
+  "previousIssue": {
+    "label": "Previous issue",
+    "group": "Issue list",
+    "binding": "K"
+  },
+  "toggleView": {
+    "label": "Switch list and board",
+    "group": "Issue list",
+    "binding": "V"
+  },
+  "planTab": {
+    "label": "Plan tab",
+    "group": "Issue page",
+    "binding": "1"
+  },
+  "roundsTab": {
+    "label": "Review rounds tab",
+    "group": "Issue page",
+    "binding": "2"
+  },
+  "findingsTab": {
+    "label": "Findings tab",
+    "group": "Issue page",
+    "binding": "3"
+  },
+  "activityTab": {
+    "label": "Issue activity tab",
+    "group": "Issue page",
+    "binding": "4"
+  },
+  "commentsTab": {
+    "label": "Comments tab",
+    "group": "Issue page",
+    "binding": "5"
+  },
+  "editTitle": {
+    "label": "Edit issue title",
+    "group": "Issue page",
+    "binding": "E"
+  },
+  "findingFix": {
+    "label": "Decide Fix",
+    "group": "Findings",
+    "binding": "F"
+  },
+  "findingWontfix": {
+    "label": "Decide Won\u2019t fix",
+    "group": "Findings",
+    "binding": "W"
+  },
+  "findingLater": {
+    "label": "Decide Later",
+    "group": "Findings",
+    "binding": "L"
+  },
+  "help": {
+    "label": "Show keyboard shortcuts",
+    "group": "General",
+    "binding": "Shift+Slash"
+  },
+  "submit": {
+    "label": "Save quick capture or send comment",
+    "group": "General",
+    "binding": "Mod+Enter",
+    "typing": true
+  },
+  "saveContext": {
+    "label": "Save context",
+    "group": "General",
+    "binding": "Mod+S",
+    "typing": true
+  }
+}

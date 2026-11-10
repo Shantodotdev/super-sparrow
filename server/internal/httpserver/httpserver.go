@@ -92,6 +92,8 @@ func New(opts Options) http.Handler {
 	s.route("POST /api/auth/sign-out", humanOnly, s.signOut)
 	s.route("GET /api/me", signedIn, s.me)
 	s.route("PATCH /api/me", humanOnly, s.updateProfile)
+	s.route("GET /api/me/shortcuts", humanOnly, s.keyboardShortcuts)
+	s.route("PATCH /api/me/shortcuts", humanOnly, s.updateKeyboardShortcut)
 	s.route("GET /api/avatars", humanOnly, s.listProfileAvatars)
 
 	s.route("GET /api/sessions", humanOnly, s.listSessions)

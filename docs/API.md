@@ -148,3 +148,11 @@ The browser's `EventSource` reconnects by itself and sends `Last-Event-ID`, and 
 ## Agents
 
 `POST /mcp` is the MCP endpoint for agent tokens. See [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). `POST /api/webhooks/github` receives GitHub webhooks when the webhook is set up. It answers deliveries without a well-formed signature, and events other than `ping` and `pull_request`, before reading their body, and takes bodies up to 1 MiB.
+
+## Personal keyboard shortcuts
+
+`GET /api/me/shortcuts` returns the signed-in person’s `{ revision, overrides }`. An account with no edits returns revision `0` and an empty overrides object. Agents cannot read or edit personal shortcuts.
+
+`PATCH /api/me/shortcuts` accepts `revision`, `action`, and `binding`. It changes only the authenticated session owner. `binding` is a canonical chord, such as `Meta+Shift+Q`; navigation actions also accept two chords separated by a space, such as `G I`. An empty string disables an action, and `null` restores its built-in binding. The response has the same shape as GET.
+
+Actions and built-in bindings are defined in `server/internal/keyboard/definitions.json`, shared by the server and frontend. `Mod` accepts Ctrl or Meta for in-app accelerators; a global binding requires explicit Ctrl, Alt, or Meta. Modifiers are ordered Ctrl, Alt, Meta (or Mod), Shift. Escape and Tab are reserved. Invalid actions, chords, conflicts, and ambiguous prefixes return 400. Stale revisions return 409. Each successful edit records `actor.shortcuts_updated` in the same transaction.
