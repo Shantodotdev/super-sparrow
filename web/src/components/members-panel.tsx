@@ -3,6 +3,7 @@ import { Modal } from "./modal";
 import { ProfileModal } from "./profile-modal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
+import { useSetEnvironmentsPermission } from "../queries/secrets";
 import { meQuery } from "../queries/project";
 import { useToast } from "./toast";
 import { formatDate } from "../lib/format";
@@ -28,6 +29,7 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
     },
     onError: (error) => notify(error.message),
   });
+  const setEnvironments = useSetEnvironmentsPermission();
   const members = actors.filter((actor) => actor.kind === "human");
   const agents = actors.filter((actor) => actor.kind === "agent");
 
@@ -56,6 +58,7 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
                 <th>Member</th>
                 <th>Agents</th>
                 <th>Role</th>
+                <th>Staging and production</th>
                 <th>Joined</th>
                 <th>Actions</th>
               </tr>
@@ -97,6 +100,41 @@ export function MembersPanel({ actors, onAdd }: MembersPanelProps) {
                     <span className="inline-block rounded-full border border-[#2b313a] bg-[#191c22] px-2 py-[4px] text-[12px] text-[#adb9c9] capitalize">
                       {member.disabled_at ? "disabled" : member.role}
                     </span>
+                  </td>
+                  <td>
+                    {member.role === "owner" ? (
+                      <span className="muted text-[#a2aec2]">Always can manage</span>
+                    ) : me?.role === "owner" ? (
+                      <label className="m-0 flex cursor-pointer items-center gap-[8px] font-normal text-[#a2aec2] focus-within:text-[#d2d9e6]">
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          className="peer sr-only"
+                          aria-label={`Can manage staging and production: ${member.display_name}`}
+                          checked={member.can_manage_environments ?? false}
+                          disabled={setEnvironments.isPending}
+                          onChange={(event) =>
+                            setEnvironments.mutate(
+                              { id: member.id, canManage: event.target.checked },
+                              { onError: (error) => notify(error.message) },
+                            )
+                          }
+                        />
+                        <span
+                          aria-hidden="true"
+                          className={`relative inline-flex h-[18px] w-[32px] shrink-0 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-[#4f73f0]/60 ${member.can_manage_environments ? "bg-[#2455eb]" : "bg-[#3a404b]"}`}
+                        >
+                          <span
+                            className={`absolute top-[2px] left-[2px] size-4 rounded-full bg-white shadow transition-transform ${member.can_manage_environments ? "translate-x-4" : ""}`}
+                          />
+                        </span>
+                        <span>Can manage</span>
+                      </label>
+                    ) : (
+                      <span className="muted text-[#a2aec2]">
+                        {member.can_manage_environments ? "Can manage" : "Key names only"}
+                      </span>
+                    )}
                   </td>
                   <td className="muted text-[#a2aec2]">{formatDate(member.created_at)}</td>
                   <td>

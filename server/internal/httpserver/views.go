@@ -12,28 +12,35 @@ import (
 // secret that createToken returns once.
 
 type actorView struct {
-	ID           string     `json:"id"`
-	Kind         string     `json:"kind"`
-	DisplayName  string     `json:"display_name"`
-	AvatarID     string     `json:"avatar_id"`
-	Email        string     `json:"email,omitempty"`
-	Role         string     `json:"role,omitempty"`
-	AgentName    string     `json:"agent_name,omitempty"`
-	OwnerActorID string     `json:"owner_actor_id,omitempty"`
-	DisabledAt   *time.Time `json:"disabled_at"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	DisplayName  string `json:"display_name"`
+	AvatarID     string `json:"avatar_id"`
+	Email        string `json:"email,omitempty"`
+	Role         string `json:"role,omitempty"`
+	AgentName    string `json:"agent_name,omitempty"`
+	OwnerActorID string `json:"owner_actor_id,omitempty"`
+	// CanManageEnvironments is shown for people only; agents never manage environments.
+	CanManageEnvironments *bool      `json:"can_manage_environments,omitempty"`
+	DisabledAt            *time.Time `json:"disabled_at"`
+	CreatedAt             time.Time  `json:"created_at"`
 }
 
 func newActorView(actor store.Actor) actorView {
-	return actorView{
+	view := actorView{
 		ID: actor.ID, Kind: string(actor.Kind), DisplayName: actor.DisplayName, AvatarID: actor.AvatarID, Email: actor.Email,
 		Role: string(actor.Role), AgentName: actor.AgentName, OwnerActorID: actor.OwnerActorID,
 		DisabledAt: actor.DisabledAt, CreatedAt: actor.CreatedAt,
 	}
+	if actor.Kind == store.ActorHuman {
+		view.CanManageEnvironments = &actor.CanManageEnvironments
+	}
+	return view
 }
 
 type sessionView struct {
 	ID          string    `json:"id"`
+	Client      string    `json:"client"`
 	DeviceLabel string    `json:"device_label"`
 	Current     bool      `json:"current"`
 	LastSeenAt  time.Time `json:"last_seen_at"`
@@ -43,7 +50,7 @@ type sessionView struct {
 
 func newSessionView(session store.Session, currentID string) sessionView {
 	return sessionView{
-		ID: session.ID, DeviceLabel: session.DeviceLabel, Current: session.ID == currentID,
+		ID: session.ID, Client: string(session.Client), DeviceLabel: session.DeviceLabel, Current: session.ID == currentID,
 		LastSeenAt: session.LastSeenAt, ExpiresAt: session.ExpiresAt, CreatedAt: session.CreatedAt,
 	}
 }
@@ -69,16 +76,20 @@ func newTokenView(token store.AgentToken) tokenView {
 }
 
 type projectView struct {
-	Slug      string    `json:"slug"`
-	ID        string    `json:"id"`
-	Key       string    `json:"key"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Slug           string    `json:"slug"`
+	ID             string    `json:"id"`
+	Key            string    `json:"key"`
+	Name           string    `json:"name"`
+	SecretsEnabled bool      `json:"secrets_enabled"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func newProjectView(project store.Project) projectView {
-	return projectView{Slug: project.Slug, ID: project.ID, Key: project.Key, Name: project.Name, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt}
+	return projectView{
+		Slug: project.Slug, ID: project.ID, Key: project.Key, Name: project.Name, SecretsEnabled: project.SecretsEnabled,
+		CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt,
+	}
 }
 
 type milestoneView struct {

@@ -2,13 +2,23 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { ActivityEvent, Issue } from "../lib/types";
 import type { Project } from "./resources";
 
+const secretKinds = ["secret.", "secrets.", "dev_secret.", "service_token."];
+
 /** Refreshes affected cached resources once per event batch, retaining unrelated project data. */
 export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]): void {
   const projects = client.getQueryData<Project[]>(["projects"]) ?? [];
   const affected = new Set<string>(["activity"]);
   const projectKeys = new Set<string>();
   const issueIDs = new Set<string>();
+  const secretProjectKeys = new Set<string>();
+  let allSecrets = false;
   for (const event of events) {
+    if (secretKinds.some((prefix) => event.kind.startsWith(prefix))) {
+      const project = projects.find((p) => p.id === event.project_id);
+      if (project) secretProjectKeys.add(project.key);
+      else allSecrets = true;
+    }
+    if (event.kind === "actor.environments_permission_changed") allSecrets = true;
     const project = projects.find((p) => p.id === event.project_id);
     if (project) projectKeys.add(project.key);
     switch (event.target_type) {
@@ -55,6 +65,9 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
   void client.invalidateQueries({
     predicate: (query) => {
       const [resource, key] = query.queryKey;
+      if (resource === "secrets") {
+        return allSecrets || (typeof key === "string" && secretProjectKeys.has(key));
+      }
       if (resource === "subissues") {
         return events.some(
           (event) =>

@@ -38,9 +38,12 @@ type Actor struct {
 	Role         Role
 	AgentName    string
 	OwnerActorID string
-	DisabledAt   *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// CanManageEnvironments lets a member read and edit staging, production, and the team dev
+	// defaults. Owners can whether or not it is set.
+	CanManageEnvironments bool
+	DisabledAt            *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // Active reports whether the actor can still make changes.
@@ -49,6 +52,23 @@ func (a Actor) Active() bool { return a.DisabledAt == nil }
 // IsOwner reports whether the actor is an active owner.
 func (a Actor) IsOwner() bool { return a.Kind == ActorHuman && a.Role == RoleOwner && a.Active() }
 
+// CanManage reports whether the actor is an active person who may read and edit staging,
+// production, and the team dev defaults: an owner, or a member with the permission.
+func (a Actor) CanManage() bool {
+	return a.IsOwner() || (a.Kind == ActorHuman && a.Active() && a.CanManageEnvironments)
+}
+
+// Client is how a caller reached the server. Secrets depend on it: staging and production values
+// are only read and written from a browser session, never from the CLI or with a token.
+type Client string
+
+const (
+	ClientBrowser      Client = "browser"
+	ClientCLI          Client = "cli"
+	ClientAgentToken   Client = "agent_token"
+	ClientServiceToken Client = "service_token"
+)
+
 // Caller identifies who is making a change. The server builds it from the authenticated session
 // or agent token, never from request input.
 type Caller struct {
@@ -56,6 +76,9 @@ type Caller struct {
 	// ReportedModel is the model an agent says it runs. It is recorded on events as reported,
 	// because the server cannot verify it.
 	ReportedModel string
+	// Client is how the caller reached the server. The zero value is no client, which is never
+	// allowed to read secret values.
+	Client Client
 }
 
 // Project groups issues under a key such as WP.
@@ -65,6 +88,7 @@ type Project struct {
 	Key             string
 	Name            string
 	NextIssueNumber int
+	SecretsEnabled  bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -301,6 +325,7 @@ func Change[T any](value T) Field[T] { return Field[T]{Set: true, Value: value} 
 type Session struct {
 	ID          string
 	ActorID     string
+	Client      Client
 	DeviceLabel string
 	LastSeenAt  time.Time
 	ExpiresAt   time.Time

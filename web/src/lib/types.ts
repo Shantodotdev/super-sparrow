@@ -1,7 +1,7 @@
 // The Go API's JSON shapes, as server/internal/httpserver/views.go writes them. Timestamps are
 // RFC 3339 strings, and an empty string means "none" for optional IDs, as the API sends them.
 
-export type NavSection = "issues" | "activity" | "milestones" | "settings";
+export type NavSection = "issues" | "activity" | "milestones" | "secrets" | "settings";
 
 export type ActorKind = "human" | "agent" | "system";
 
@@ -16,6 +16,7 @@ export type Actor = {
   role?: Role;
   agent_name?: string;
   owner_actor_id?: string;
+  can_manage_environments?: boolean;
   disabled_at: string | null;
   created_at: string;
 };
@@ -180,3 +181,58 @@ export type AgentToken = {
 
 /** What creating a token returns: the token and its secret, which the API never sends again. */
 export type NewAgentToken = { token: AgentToken; secret: string };
+
+export type SecretConfigId = "dev" | "dev-defaults" | "staging" | "production";
+
+/** A key in a config listing. The API never sends values here. */
+export type SecretEntry = {
+  name: string;
+  /** Only on the caller's dev: whether the value is the team default or the caller's override. */
+  source?: "default" | "override";
+  version: number;
+  updated_at: string;
+  updated_by: string;
+};
+
+export type SecretConfigListing = { secrets: SecretEntry[]; required: string[]; missing: string[] };
+
+export type SecretsOverview = {
+  enabled: boolean;
+  can_manage: boolean;
+  is_owner: boolean;
+  configs: Record<SecretConfigId, SecretConfigListing> | null;
+};
+
+export type SecretValue = { name: string; value: string; version: number; source?: string };
+
+export type SecretVersion = {
+  version: number;
+  deleted: boolean;
+  actor_id: string;
+  created_at: string;
+};
+
+export type SecretAccessEntry = {
+  id: string;
+  config: SecretConfigId;
+  action: "reveal" | "download";
+  names: string[];
+  actor_id: string | null;
+  service_token_id: string | null;
+  created_at: string;
+};
+
+export type ServiceToken = {
+  id: string;
+  config: "staging" | "production";
+  label: string;
+  display_hint: string;
+  created_by: string;
+  last_used_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+/** What creating a service token returns: the token and its secret, which the API never sends again. */
+export type NewServiceToken = { token: ServiceToken; secret: string };

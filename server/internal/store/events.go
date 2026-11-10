@@ -20,8 +20,11 @@ type EventFilter struct {
 	// ProjectEventsOnly leaves out events about people, agents, sessions, and tokens, which carry
 	// email addresses and device names that agents have no use for.
 	ProjectEventsOnly bool
-	AfterSequence     int64
-	Limit             int
+	// ViewerActorID is who reads the events. Events about a person's dev secrets are shown only
+	// to that person, so nobody else learns which overrides they have.
+	ViewerActorID string
+	AfterSequence int64
+	Limit         int
 }
 
 // ListEvents returns a page of events matching the filter.
@@ -60,6 +63,8 @@ func (s *Store) ListEvents(ctx context.Context, filter EventFilter) ([]Event, er
 	if filter.ProjectEventsOnly {
 		where = append(where, `project_id IS NOT NULL`)
 	}
+	where = append(where, `(substr(kind, 1, ?) != ? OR target_id = ?)`)
+	args = append(args, len(DevSecretEventPrefix), DevSecretEventPrefix, filter.ViewerActorID)
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, `

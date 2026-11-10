@@ -1,6 +1,6 @@
 # Agent tools
 
-Connect with an agent token using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). The endpoint is `POST /mcp`, using stateless streamable HTTP. It negotiates protocol versions `2025-11-25`, `2025-06-18`, and `2025-03-26`. Requests have a 1 MiB body limit. The server derives the actor from the token; arguments cannot override identity.
+Agents in cloud sessions connect with an agent token, using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). A person's local agents use the `sparrow` CLI, which sends the tools to the same endpoint with the person's CLI sign-in (see [CLI and connection verification](#cli-and-connection-verification)). The endpoint is `POST /mcp`, using stateless streamable HTTP. It negotiates protocol versions `2025-11-25`, `2025-06-18`, and `2025-03-26`. Requests have a 1 MiB body limit. The endpoint accepts an agent token (`ssp_`) and a signed-in CLI session (`ssc_`), never a browser cookie. The server derives the actor from the token or the session; arguments cannot override identity. A CLI session acts as its person, or as that person's `claude-code` or `codex` agent when the request carries a `Sparrow-Agent` header. Tools run as that actor, so every check on the actor applies.
 
 ## Discover and plan work
 
@@ -32,6 +32,14 @@ Tools refer to labels by name, ignoring case; an unknown name is refused with `f
 Each project from `list_projects` includes `milestones` in position order, each with `id`, `name`, `position`, and read-only `status`. Status uses the same issue-derived calculation as the HTTP API: `planned` for no issues or only Backlog/Todo, `done` for all Done/Canceled, and `active` for any started or finished issue otherwise. Issue changes, including reopening and reassignment, are reflected on the next read. Reading milestones creates no events; the issue write retains its authenticated actor.
 
 Use subissues for a work breakdown. They share their parent issue's reviews and discussions. A parent full issue passed to `create_issue` represents a separate linked issue.
+
+## Secrets
+
+| Tool                | Purpose                                                                                                                                                                                                                                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_secret_names` | Read the key names of a project's secrets, never a value. Takes `project_key`. Returns `enabled`, and when secrets are on: `dev` (names with `source`, `default` or `override`), `dev_defaults`, `staging`, `production`, and `missing`, the required keys with no value for `dev`, `staging`, and `production`. |
+
+`dev` is the caller's own dev; for an agent it is its owner's. With secrets off the result is only `{"enabled": false}`. No tool returns a value, and agents never read or change staging and production values. They read their owner's dev values with `sparrow secrets download --project KEY` or `sparrow run`, and use `list_secret_names` to say which setting is missing.
 
 ## Reviews and discussions
 
@@ -72,11 +80,13 @@ Successful calls return the same JSON object through `structuredContent` and the
 
 The CLI exposes every tool, including new tools, without needing a separate command for each:
 
+- `sparrow tools` lists every tool with a one-line description.
+- Every tool is also a command named after it, with one flag per argument: `sparrow get-issue --key WP-142`, or `sparrow list-projects`. Names may use dashes or underscores. List arguments take comma-separated values, and `sparrow TOOL --help` lists the flags and marks the required ones. `--json` before the command prints raw JSON instead of readable text.
 - `sparrow tool list` lists tool descriptions and input schemas.
 - `sparrow tool call list_projects --arguments '{}'` verifies authenticated discovery.
 - `sparrow tool call update_plan --arguments-file plan-edit.json` sends a structured request from a file.
 - `sparrow tool call create_issue --arguments-file -` reads JSON from standard input, including an optional retry key.
 
-The CLI requires `SPARROW_URL` and `SPARROW_TOKEN`. It returns structured JSON on success and exits unsuccessfully for protocol or tool errors. Existing issue, plan, review, finding, comment, and fix-summary commands remain available.
+The CLI signs in with `sparrow login` and keeps that session in the operating system's keychain. In a cloud session, set `SPARROW_URL` and `SPARROW_TOKEN` (an `ssp_` agent token) instead; the token wins when both exist. Inside Claude Code or Codex the CLI sends `Sparrow-Agent`, so tools run as that person's agent; elsewhere they run as the person. `--agent claude-code|codex` or `SPARROW_AGENT` names the agent when detection cannot, and `sparrow whoami` shows who the CLI acts as. It returns structured JSON on success and exits unsuccessfully for protocol or tool errors. Existing issue, plan, review, finding, comment, and fix-summary commands remain available.
 
 For a new agent connection, first list tools and projects, read an existing issue and its plan, and confirm a project-scoped link. Then create a clearly labeled evaluation issue and a comment with a retry key; repeat the comment call and verify that its ID is unchanged. Check the issue's activity to confirm it records the intended agent rather than the human owner. In Codex or Claude, refresh the MCP connection after the server gains tools. The CLI verifies the endpoint and credentials; also perform discovery in the actual agent client to verify that client's configuration.

@@ -288,7 +288,7 @@ A small Makefile may remain for temporary compatibility or a few simple entry po
 - Sparrow coordinates execution; execution boundaries enforce isolation and resource limits.
 - Keep recovery possible when Sparrow is unavailable, especially for production and administrator access.
 - Preserve separation between development, previews, staging, and production, even when infrastructure is shared.
-- Do not turn Sparrow into a general secrets manager, a second WP Agent backend, or an unrestricted remote shell.
+- Sparrow holds the team's dev, staging, and production settings for each project and nothing more: it is not a general secrets manager. Do not turn it into a second WP Agent backend or an unrestricted remote shell.
 - Choose features around the team's actual needs before attempting a general-purpose infrastructure platform.
 
 ## Decisions for later

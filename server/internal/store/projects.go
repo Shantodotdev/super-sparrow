@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const projectColumns = `id, key, name, slug, next_issue_number, created_at, updated_at`
+const projectColumns = `id, key, name, slug, next_issue_number, secrets_enabled_at IS NOT NULL, created_at, updated_at`
 
 // NewProject describes a project to create.
 type NewProject struct {
@@ -150,7 +150,8 @@ func scanProject(row scanner) (Project, error) {
 	var project Project
 	var created, updated string
 
-	err := row.Scan(&project.ID, &project.Key, &project.Name, &project.Slug, &project.NextIssueNumber, &created, &updated)
+	err := row.Scan(&project.ID, &project.Key, &project.Name, &project.Slug, &project.NextIssueNumber, &project.SecretsEnabled,
+		&created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Project{}, notFound("project")
 	}

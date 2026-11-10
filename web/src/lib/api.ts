@@ -60,3 +60,12 @@ export async function apiWrite<T>(
   if (!response.ok) throw await errorFrom(response, `${method} ${path}`);
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
 }
+
+/** Fetches `path` and returns its body as text, for downloads that are not JSON. */
+export async function apiGetText(path: string, fetcher: typeof fetch = fetch): Promise<string> {
+  const response = await fetcher(path, { credentials: "same-origin" });
+
+  if (!response.ok) throw await errorFrom(response, `GET ${path}`);
+
+  return await response.text();
+}

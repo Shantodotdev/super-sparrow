@@ -9,6 +9,7 @@ import { clearQueryCache } from "../queries/persistence";
 type Session = {
   id: string;
   device_label: string;
+  client: "browser" | "cli";
   current: boolean;
   last_seen_at: string;
   expires_at: string;
@@ -50,6 +51,7 @@ function SessionsPage() {
           >
             <div>
               <strong>{session.device_label}</strong>
+              {` · ${session.client === "cli" ? "CLI" : "Browser"}`}
               {session.current && " · Current"}
               <p>
                 Last seen {formatDate(session.last_seen_at)} · Expires{" "}

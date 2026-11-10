@@ -8,7 +8,8 @@ import (
 	"fmt"
 )
 
-// RunAgentTool commits a tool's writes, events, and optional retry receipt together. A repeated
+// RunAgentTool commits a tool's writes, events, and optional retry receipt together. Agents run
+// tools, and so do people through their signed-in CLI. A repeated
 // key returns the original result for this actor; using it with different arguments is refused.
 // fn must use the scoped store exclusively and must not retain it after returning.
 func (s *Store) RunAgentTool(ctx context.Context, by Caller, key, hash string, fn func(*Store) (any, error)) (json.RawMessage, error) {
@@ -17,8 +18,9 @@ func (s *Store) RunAgentTool(ctx context.Context, by Caller, key, hash string, f
 	}
 	var result json.RawMessage
 	err := s.write(ctx, by, func(w *writeTx) error {
-		if w.caller.Kind != ActorAgent {
-			return forbidden("only an agent can run agent tools")
+		// A person runs the tools through their signed-in CLI, never with a browser cookie.
+		if w.caller.Kind != ActorAgent && (w.caller.Kind != ActorHuman || w.client != ClientCLI) {
+			return forbidden("only an agent or a signed-in CLI can run agent tools")
 		}
 		// Reuse the committed result before running any mutation.
 		if key != "" {
@@ -36,7 +38,7 @@ func (s *Store) RunAgentTool(ctx context.Context, by Caller, key, hash string, f
 			}
 		}
 		// Keep reads and writes on the same transaction until the result is encoded.
-		scoped := &Store{db: transactionDatabase{w.tx}, now: s.now, transaction: w}
+		scoped := &Store{db: transactionDatabase{w.tx}, now: s.now, secrets: s.secrets, transaction: w}
 		output, err := fn(scoped)
 		if err != nil {
 			return err

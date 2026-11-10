@@ -100,7 +100,7 @@ func TestMCPHandshakeAndToolList(t *testing.T) {
 		names = append(names, tool["name"].(string))
 	}
 	want := "get_issue_for_branch,get_issue,get_plan,update_plan_checklist,start_review_round,add_finding," +
-		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue,list_projects,list_issues,update_plan,list_subissues,create_subissue,update_subissue,get_review_round,get_finding,list_review_rounds,list_labels,create_label,update_label,set_labels"
+		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue,list_projects,list_issues,update_plan,list_subissues,create_subissue,update_subissue,get_review_round,get_finding,list_review_rounds,list_labels,create_label,update_label,set_labels,list_secret_names"
 	if strings.Join(names, ",") != want {
 		t.Fatalf("tools %v", names)
 	}

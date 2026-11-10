@@ -22,8 +22,18 @@ const tokenColumns = `t.id, t.actor_id, a.owner_actor_id, a.agent_name, t.label,
 
 const tokenFrom = ` FROM agent_tokens t JOIN actors a ON a.id = t.actor_id`
 
-// toolNames are the display names of the agents the team uses. Other agents show their agent name.
+// toolNames are the agents the team uses, with their display names. They are the only agent
+// names allowed; another agent is added here when the team needs it.
 var toolNames = map[string]string{"claude-code": "Claude Code", "codex": "Codex"}
+
+// agentNameError says which agent names are allowed.
+const agentNameError = "must be claude-code or codex"
+
+// KnownAgentName reports whether name is an agent the team uses, such as claude-code.
+func KnownAgentName(name string) bool {
+	_, known := toolNames[name]
+	return known
+}
 
 // NewAgentToken describes a token a person creates for one of their agents. The caller makes the
 // secret and passes only its hash and a hint for telling tokens apart.
@@ -45,8 +55,8 @@ type AuthenticatedToken struct {
 // the first time, named after the tool, such as "Claude Code", with the caller as its owner. Only
 // a person can create tokens, and only for their own agents.
 func (s *Store) CreateAgentToken(ctx context.Context, by Caller, input NewAgentToken) (AgentToken, error) {
-	if !agentNamePattern.MatchString(input.AgentName) {
-		return AgentToken{}, invalid("agent_name", "must be lowercase letters, digits, and dashes, such as claude-code")
+	if !KnownAgentName(input.AgentName) {
+		return AgentToken{}, invalid("agent_name", agentNameError)
 	}
 	label, err := singleLineText("label", input.Label, maxTokenLabel)
 	if err != nil {
@@ -87,6 +97,40 @@ func (s *Store) CreateAgentToken(ctx context.Context, by Caller, input NewAgentT
 	return token, err
 }
 
+// AgentForOwner returns the agent named agentName that works for the person ownerID, adding it the
+// first time, as when a signed-in CLI says it runs inside Claude Code. The agent is added by its
+// owner, who must be an active person.
+func (s *Store) AgentForOwner(ctx context.Context, ownerID, agentName string) (Actor, error) {
+	if !KnownAgentName(agentName) {
+		return Actor{}, invalid("agent_name", agentNameError)
+	}
+
+	// Most requests find the agent. Only the first one adds it, in a write transaction that holds
+	// SQLite's write lock and looks again, so two first requests cannot both add it.
+	agent, err := scanActor(s.db.QueryRowContext(ctx, `
+		SELECT `+actorColumns+` FROM actors WHERE kind = 'agent' AND owner_actor_id = ? AND agent_name = ?`,
+		ownerID, agentName))
+	if err == nil {
+		if !agent.Active() {
+			return Actor{}, forbidden("this agent is disabled")
+		}
+		return agent, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Actor{}, err
+	}
+
+	err = s.write(ctx, Caller{ActorID: ownerID}, func(w *writeTx) error {
+		if err := w.requireHuman("add agents"); err != nil {
+			return err
+		}
+		var err error
+		agent, err = agentFor(w, agentName)
+		return err
+	})
+	return agent, err
+}
+
 // agentFor returns the caller's agent for agentName, creating it when the caller has none yet.
 func agentFor(w *writeTx, agentName string) (Actor, error) {
 	agent, err := scanActor(w.tx.QueryRowContext(w.ctx, `
@@ -113,10 +157,7 @@ func agentFor(w *writeTx, agentName string) (Actor, error) {
 // agentDisplayName names an agent after its tool, such as "Claude Code". The owner is not part of
 // the name; the agent's owner_actor_id says whose agent it is, and each view shows the two apart.
 func agentDisplayName(agentName string) string {
-	if tool, known := toolNames[agentName]; known {
-		return tool
-	}
-	return agentName
+	return toolNames[agentName]
 }
 
 // RenewAgentToken extends one of the caller's own tokens for another TokenLifetime from now,
