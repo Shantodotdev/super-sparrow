@@ -226,7 +226,7 @@ func (s *Server) toolList() []tool {
 			}),
 			run: bind(s.createIssue),
 		},
-	}, slices.Concat(s.extraTools(), s.labelTools(), s.contextTools())...)
+	}, slices.Concat(s.extraTools(), s.labelTools(), s.attachmentTools())...)
 }
 
 // Schemas, kept small so each tool's input reads clearly.

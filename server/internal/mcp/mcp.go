@@ -45,7 +45,7 @@ Start from the current git branch: get_issue_for_branch finds the issue, and get
 
 To review: start_review_round, then add_finding for each problem, then finish_review_round with a summary. When a finding you added repeats one from an earlier round, mark it with mark_duplicate so the problem is decided and fixed once, through the original. To address a review: list_open_findings shows what the developer decided to fix, with each finding's discussion, which may say how to fix it; after fixing, post_fix_summary marks those findings fixed and explains the fix. list_comments shows an issue's or a finding's discussion and the comment IDs to reply to with add_comment. Only a person chooses fix, wontfix, or later; agents report fixed and verified.
 
-People keep notes, inspiration, and screenshots as contexts with keys such as WP-C3. When someone points you to a context, read it with get_context, which also shows its images; list_contexts finds them, and create_context and update_context save your own. When a plan links screenshots, get_issue_images shows them.
+Files attached to an issue, such as screenshots, are listed by list_attachments and read with get_attachment, which shows images and text files.
 
 get_review_round and get_finding retrieve completed reviews, resolved findings, and duplicates. Lists return next_cursor; repeat with the same filters to continue. Discussions include their first page and comments_next_cursor for list_comments. Pass include_comments: false for compact finding lists. Cursors reflect live data, so restart after mutations.
 
@@ -73,7 +73,7 @@ func New(st *store.Store, publicURL *url.URL, logger *slog.Logger, version strin
 		if !t.readOnly {
 			properties["idempotency_key"] = text("Unique retry key, up to 200 bytes. Reuse with identical arguments after a lost response; a changed request is refused. Scoped to your authenticated agent.")
 		}
-		if slices.Contains([]string{"list_projects", "list_issues", "list_subissues", "list_review_rounds", "get_review_round", "list_open_findings", "list_comments", "list_contexts"}, t.name) {
+		if slices.Contains([]string{"list_projects", "list_issues", "list_subissues", "list_review_rounds", "get_review_round", "list_open_findings", "list_comments"}, t.name) {
 			properties["limit"] = integer("Page size from 1 to 100; 50 when omitted.", 1)
 			properties["limit"].(map[string]any)["maximum"] = 100
 			properties["cursor"] = text("next_cursor from the previous page using the same filters. Restart after mutations; pages reflect live data.")
@@ -295,16 +295,16 @@ func (s *Server) callTool(ctx context.Context, caller store.Caller, params json.
 	if err != nil {
 		return s.toolFailure(ctx, call.Name, err), nil
 	}
-	var images []store.Attachment
-	if withImages, ok := output.(imageResult); ok {
-		output, images = withImages.output, withImages.images
+	var extra []map[string]any
+	if withBlocks, ok := output.(contentResult); ok {
+		output, extra = withBlocks.output, withBlocks.blocks
 	}
 	encoded, err := json.Marshal(output)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "encode tool result", "tool", call.Name, "error", err)
 		return nil, &rpcError{Code: codeInternalError, Message: "internal error"}
 	}
-	content := append([]map[string]any{{"type": "text", "text": string(encoded)}}, imageContent(images)...)
+	content := append([]map[string]any{{"type": "text", "text": string(encoded)}}, extra...)
 	return map[string]any{"content": content, "structuredContent": json.RawMessage(encoded), "isError": false}, nil
 
 }

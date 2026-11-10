@@ -40,7 +40,7 @@ func cliServer(t *testing.T) (map[string]string, *store.Store, store.Caller) {
 		t.Fatal(err)
 	}
 
-	st := store.New(db, time.Now)
+	st := store.New(db, time.Now, t.TempDir())
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestCLICallsAllAgentTools(t *testing.T) {
 		} `json:"tools"`
 	}
 	mustRun(t, env, "", &tools, "tool", "list")
-	if len(tools.Tools) != 32 {
+	if len(tools.Tools) != 29 {
 		t.Fatalf("listed %d tools", len(tools.Tools))
 	}
 	var issue struct {
