@@ -83,9 +83,17 @@ export function queueFiles<T extends FileInfo & { lastModified?: number }>(
   return { accepted, rejected };
 }
 
-/** The API path that takes the raw bytes of one file for an issue. */
-export function attachmentUploadPath(issueKey: string, filename: string): string {
-  return `/api/issues/${encodeURIComponent(issueKey)}/attachments?filename=${encodeURIComponent(filename)}`;
+/** The JSON body that starts an upload: what the server needs to sign a direct upload. */
+export function attachmentUploadRequest(file: FileInfo): {
+  filename: string;
+  content_type: string;
+  byte_size: number;
+} {
+  return {
+    filename: file.name,
+    content_type: file.type || "application/octet-stream",
+    byte_size: file.size,
+  };
 }
 
 /** Names a screenshot by when it was taken, such as "screenshot-20261110-142530.png". */

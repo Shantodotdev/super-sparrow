@@ -73,42 +73,41 @@ export type UploadOptions = {
   onProgress?: (fraction: number) => void;
 };
 
+/** Where and how to send a file's bytes: a signed URL, its method, and the headers it was signed for. */
+export type UploadTarget = { url: string; method: string; headers: Record<string, string> };
+
 /**
- * Sends a file as the raw request body and returns the JSON response. The file is handed to the
- * browser as it is, never read into memory. XMLHttpRequest reports upload progress, which fetch
- * does not. Aborting through the signal rejects with an AbortError.
+ * Sends a file as the raw request body to a signed URL, such as one on object storage. The file
+ * is handed to the browser as it is, never read into memory, and no cookies are sent.
+ * XMLHttpRequest reports upload progress, which fetch does not. Aborting through the signal
+ * rejects with an AbortError.
  */
-export function apiUploadFile<T>(
-  path: string,
+export function apiPutFile(
+  target: UploadTarget,
   file: Blob,
   { signal, onProgress }: UploadOptions = {},
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException("The upload was canceled", "AbortError"));
       return;
     }
 
     const request = new XMLHttpRequest();
-    const description = `POST ${path.split("?")[0]}`;
-    request.open("POST", path);
-    request.responseType = "text";
-    request.setRequestHeader("Accept", "application/json");
-    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.open(target.method, target.url);
+    request.withCredentials = false;
+    for (const [name, value] of Object.entries(target.headers))
+      request.setRequestHeader(name, value);
 
     request.upload.onprogress = (event) => {
       if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded / event.total);
     };
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) {
-        try {
-          resolve(JSON.parse(request.responseText) as T);
-        } catch {
-          reject(new Error("The server sent an unreadable response"));
-        }
+        resolve();
         return;
       }
-      reject(apiErrorFromText(request.status, request.responseText, description));
+      reject(new Error(`The file upload failed with status ${request.status}`));
     };
     request.onerror = () => reject(new Error("The connection failed during the upload"));
     request.ontimeout = () => reject(new Error("The upload timed out"));
