@@ -1,5 +1,5 @@
 //! The Super Sparrow desktop app. Its main window shows the team's Super Sparrow server, and it
-//! stays in the tray when that window is closed, so its shortcut, Ctrl+Q unless the person picks
+//! stays in the tray when that window is closed, so its shortcut, Meta+Shift+Q unless the person picks
 //! another, opens the quick capture window over any application.
 
 mod capture;
@@ -10,7 +10,7 @@ mod shortcut;
 use std::sync::Mutex;
 
 use tauri::ipc::CapabilityBuilder;
-use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
@@ -25,7 +25,6 @@ const MAIN_WINDOW: &str = "main";
 const CAPTURE_WINDOW: &str = "capture";
 /// The argument the login item starts the app with, so it starts in the tray without a window.
 const HIDDEN_ARGUMENT: &str = "--hidden";
-const PAUSE_ID: &str = "shortcut-pause";
 const MAX_NOTIFICATION_TITLE: usize = 120;
 const MAX_NOTIFICATION_BODY: usize = 400;
 
@@ -34,6 +33,9 @@ struct Server(url::Url);
 
 /// The capture shortcut's label and whether it is paused.
 struct ActiveShortcut(Mutex<(String, bool)>);
+
+/// The tray capture item, kept in sync with the active personal binding.
+struct CaptureMenu(Mutex<Option<MenuItem<Wry>>>);
 
 /// Starts the desktop app.
 pub fn run() {
@@ -69,10 +71,12 @@ pub fn run() {
             shortcut::DEFAULT_SHORTCUT.to_string(),
             true,
         ))))
+        .manage(CaptureMenu(Mutex::new(None)))
         .manage(capture::CaptureState::default())
         .invoke_handler(tauri::generate_handler![
             hide_capture,
             current_shortcut,
+            configure_shortcut,
             notify,
             capture::capture_screen,
             capture::end_capture,
@@ -117,7 +121,7 @@ fn hide_capture(app: AppHandle) {
     }
 }
 
-/// Returns the capture shortcut's label, such as "Ctrl+Q", or "" while it is paused, so the page
+/// Returns the capture shortcut's label, such as "Meta+Shift+Q", or "" while it is paused, so the page
 /// can show the key that opens and closes quick capture.
 #[tauri::command]
 fn current_shortcut(active: State<'_, ActiveShortcut>) -> String {
@@ -139,33 +143,71 @@ fn notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-/// Registers the capture shortcut named by label, or none while paused, in place of the current
-/// one. When the new shortcut cannot be registered, such as when another application holds it,
-/// the previous one is registered again and the error is returned.
-fn apply_shortcut(app: &AppHandle, label: &str, paused: bool) -> Result<(), String> {
-    let next = shortcut::parse(label).ok_or_else(|| format!("unknown shortcut {label}"))?;
-    let previous = active_shortcut(app);
+/// Applies the account's capture binding, preserving the previous accelerator if registration fails.
+/// Temporary changes suspend capture during key recording without changing the saved binding.
+#[tauri::command]
+fn configure_shortcut(app: AppHandle, binding: String, temporary: bool) -> Result<(), String> {
+    let paused = binding.is_empty();
+    let label = if paused {
+        shortcut::DEFAULT_SHORTCUT
+    } else {
+        &binding
+    };
+    apply_shortcut(&app, label, paused)?;
+    if temporary {
+        return Ok(());
+    }
+    let mut settings = Settings::load_or_empty(&app);
+    settings.set_shortcut(label, paused);
+    settings
+        .save(&app)
+        .map_err(|error| format!("save capture shortcut: {error}"))?;
+    Ok(())
+}
 
+/// Registers one personal accelerator or disables it, rolling back a failed replacement.
+fn apply_shortcut(app: &AppHandle, label: &str, paused: bool) -> Result<(), String> {
+    let next = shortcut::parse(label).ok_or_else(|| format!("invalid global shortcut {label}"))?;
+    let state = app.state::<ActiveShortcut>();
+    let mut previous = state
+        .0
+        .lock()
+        .map_err(|_| "capture shortcut state is unavailable")?;
+    if previous.0 == label && previous.1 == paused {
+        return Ok(());
+    }
     let shortcuts = app.global_shortcut();
     shortcuts
         .unregister_all()
-        .map_err(|error| format!("release the capture shortcut: {error}"))?;
+        .map_err(|error| format!("release capture shortcut: {error}"))?;
     if !paused && let Err(error) = shortcuts.register(next) {
         if !previous.1
             && let Some(old) = shortcut::parse(&previous.0)
+            && let Err(restore) = shortcuts.register(old)
         {
-            let _ = shortcuts.register(old);
+            previous.1 = true;
+            return Err(format!(
+                "could not register {label}: {error}; restore previous shortcut: {restore}"
+            ));
         }
         return Err(format!("could not register {label}: {error}"));
     }
-
-    if let Ok(mut current) = app.state::<ActiveShortcut>().0.lock() {
-        *current = (label.to_string(), paused);
+    *previous = (label.to_string(), paused);
+    if let Ok(item) = app.state::<CaptureMenu>().0.lock()
+        && let Some(item) = item.as_ref()
+    {
+        let accelerator = label.replace("Meta+", "Super+");
+        item.set_accelerator((!paused).then_some(accelerator.as_str()))
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_tooltip(Some(tooltip(label, paused)))
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
 
-/// Returns the capture shortcut's label and whether it is paused.
+/// Returns the active capture label and whether it is disabled.
 fn active_shortcut(app: &AppHandle) -> (String, bool) {
     app.state::<ActiveShortcut>()
         .0
@@ -193,7 +235,13 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             .window(MAIN_WINDOW)
             .window(CAPTURE_WINDOW)
             .permission("core:default")
-            .permission("core:window:allow-start-dragging"),
+            .permission("core:window:allow-start-dragging")
+            .permission("allow-hide-capture")
+            .permission("allow-current-shortcut")
+            .permission("allow-configure-shortcut")
+            .permission("allow-notify")
+            .permission("allow-capture-screen")
+            .permission("allow-end-capture"),
     )?;
     let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(server.clone()))
         .title("Super Sparrow")
@@ -264,77 +312,19 @@ fn hide_on_close(window: &WebviewWindow) {
     });
 }
 
-/// The tray menu items that show the capture shortcut, kept to update them after a change.
-struct ShortcutItems {
-    capture: MenuItem<Wry>,
-    choices: Vec<CheckMenuItem<Wry>>,
-    pause: CheckMenuItem<Wry>,
-}
-
-impl ShortcutItems {
-    /// Shows the shortcut that applies. Clicking a check item toggles it, so every item is set
-    /// again, including after a change that failed.
-    fn refresh(&self, app: &AppHandle) {
-        let (label, paused) = active_shortcut(app);
-        for (choice, item) in shortcut::CHOICES.iter().zip(&self.choices) {
-            let _ = item.set_checked(*choice == label);
-        }
-        let _ = self.pause.set_checked(paused);
-        let _ = self
-            .capture
-            .set_accelerator((!paused).then_some(label.as_str()));
-        if let Some(tray) = app.tray_by_id("main") {
-            let _ = tray.set_tooltip(Some(tooltip(&label, paused)));
-        }
-    }
-}
-
-/// Applies a shortcut chosen in the tray menu and saves it when it could be registered.
-fn choose_shortcut(app: &AppHandle, label: &str, paused: bool) {
-    if let Err(error) = apply_shortcut(app, label, paused) {
-        eprintln!("{error}");
-        return;
-    }
-    let mut settings = Settings::load_or_empty(app);
-    settings.set_shortcut(label, paused);
-    if let Err(error) = settings.save(app) {
-        eprintln!("could not save the capture shortcut: {error}");
-    }
-}
-
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let (label, paused) = active_shortcut(app);
+    let native_label = label.replace("Meta+", "Super+");
     let open = MenuItem::with_id(app, "open", "Open Super Sparrow", true, None::<&str>)?;
     let capture = MenuItem::with_id(
         app,
         "capture",
         "Quick capture",
         true,
-        (!paused).then_some(label.as_str()),
+        (!paused).then_some(native_label.as_str()),
     )?;
-    let choices = shortcut::CHOICES
-        .iter()
-        .map(|choice| {
-            CheckMenuItem::with_id(
-                app,
-                shortcut::menu_id(choice),
-                *choice,
-                true,
-                *choice == label,
-                None::<&str>,
-            )
-        })
-        .collect::<tauri::Result<Vec<_>>>()?;
-    let pause =
-        CheckMenuItem::with_id(app, PAUSE_ID, "Pause shortcut", true, paused, None::<&str>)?;
-    let shortcut_separator = PredefinedMenuItem::separator(app)?;
-    let mut shortcut_entries: Vec<&dyn IsMenuItem<Wry>> = choices
-        .iter()
-        .map(|item| item as &dyn IsMenuItem<Wry>)
-        .collect();
-    shortcut_entries.push(&shortcut_separator);
-    shortcut_entries.push(&pause);
-    let shortcut_menu = Submenu::with_items(app, "Capture shortcut", true, &shortcut_entries)?;
+    let shortcut_settings =
+        MenuItem::with_id(app, "shortcuts", "Keyboard shortcuts…", true, None::<&str>)?;
 
     let start_at_login = CheckMenuItem::with_id(
         app,
@@ -351,17 +341,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &open,
             &capture,
             &PredefinedMenuItem::separator(app)?,
-            &shortcut_menu,
+            &shortcut_settings,
             &start_at_login,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
     )?;
-    let items = ShortcutItems {
-        capture,
-        choices,
-        pause,
-    };
+    *app.state::<CaptureMenu>().0.lock().map_err(|_| {
+        tauri::Error::Anyhow(std::io::Error::other("capture menu is unavailable").into())
+    })? = Some(capture);
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip(tooltip(&label, paused))
@@ -381,18 +369,20 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = start_at_login.set_checked(launcher.is_enabled().unwrap_or(false));
             }
             "quit" => app.exit(0),
-            PAUSE_ID => {
-                let (label, paused) = active_shortcut(app);
-                choose_shortcut(app, &label, !paused);
-                items.refresh(app);
-            }
-            id => {
-                if let Some(choice) = id.strip_prefix("shortcut:") {
-                    let (_, paused) = active_shortcut(app);
-                    choose_shortcut(app, choice, paused);
-                    items.refresh(app);
+            "shortcuts" => {
+                show_main(app);
+                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                    match app.state::<Server>().0.join("settings/shortcuts") {
+                        Ok(url) => {
+                            if let Err(error) = window.navigate(url) {
+                                eprintln!("open keyboard shortcuts: {error}");
+                            }
+                        }
+                        Err(error) => eprintln!("open keyboard shortcuts: {error}"),
+                    }
                 }
             }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
