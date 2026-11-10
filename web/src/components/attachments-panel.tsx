@@ -1,8 +1,8 @@
-import { useRef, useState, type ClipboardEvent } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, File as FileIcon, FileText, Trash2 } from "lucide-react";
 import { useFileDrop } from "../hooks/use-file-drop";
-import { attachmentKind, formatBytes, transferredFiles } from "../lib/attachments";
+import { attachmentKind, formatBytes } from "../lib/attachments";
 import { formatRelative } from "../lib/format";
 import type { Attachment, Issue } from "../lib/types";
 import {
@@ -19,8 +19,8 @@ const iconButton =
   "grid place-items-center rounded-md border-0 bg-transparent p-1.5 text-[#9ba9bc] hover:bg-[#1b2027] hover:text-[#d7dfeb]";
 
 /**
- * An issue's files, listed below its description. Files are added with the button, by dropping
- * them on the panel, or by pasting while the panel has focus, and upload straight away.
+ * An issue's files, listed below its description. Files are added with the button,
+ * or by dropping them on the panel, and upload straight away.
  */
 export function AttachmentsPanel({ issue }: { issue: Issue }) {
   const attachments = useQuery(issueAttachmentsQuery(issue.key));
@@ -52,19 +52,11 @@ export function AttachmentsPanel({ issue }: { issue: Issue }) {
   const canDelete = me.data?.kind === "human";
   const items = attachments.data ?? [];
 
-  const paste = (event: ClipboardEvent) => {
-    const files = transferredFiles(event.clipboardData);
-    if (files.length === 0) return;
-    event.preventDefault();
-    addFiles(files);
-  };
-
   return (
     <section
       aria-label="Attachments"
       tabIndex={0}
       className={`mt-6 max-w-[850px] rounded-xl border bg-[#0d0f12] p-3 outline-none focus-visible:border-[#3a4a78] ${dragging ? "border-[#426fff] bg-[#10141c]" : "border-[#222730]"}`}
-      onPaste={paste}
       {...handlers}
     >
       <div className="flex flex-wrap items-center gap-2">

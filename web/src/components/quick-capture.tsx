@@ -344,7 +344,6 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
           placeholder="Steps, what you expected, what happened…"
           value={body}
           onChange={setBody}
-          onFiles={addFiles}
           className="[&_.tiptap]:min-h-[110px]! [&_.tiptap]:text-[14px]! [&_.tiptap]:text-[#e4e6ea]!"
         />
         <UploadList jobs={uploads.jobs} onRemove={(job) => uploads.remove(job.id)} showDone />
