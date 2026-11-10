@@ -21,7 +21,7 @@ Out of scope for version 1: documents, secrets, CI/CD, cycles, estimates, roadma
 | Live views | Server-Sent Events                             | One-way updates are all the interface needs                      |
 | Desktop    | Tauri v2 window that loads the server's page   | Native app with low resource use; never out of date              |
 
-The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app opens the server's URL in its window, so it always runs the current frontend and signs in exactly like the browser. Tauri grants the tray, notification, and shortcut features to that URL only.
+The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app opens the server's URL in its window, so it always runs the current frontend and signs in exactly like the browser. Desktop builds require `PUBLIC_URL` and embed that origin; there is no address entry or saved server override. Development reads it from the repository `.env`, and release builds read the deployment's GitHub repository variable `PUBLIC_URL`. Tauri grants the tray, notification, and shortcut features to that URL only.
 
 The frontend runs TanStack Start in SPA mode: it builds to static files that the Go server serves. It uses no server functions or server-side rendering. The Go API is the only backend, and TanStack Query handles data fetching and caching.
 

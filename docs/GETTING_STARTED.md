@@ -78,7 +78,9 @@ The same `sparrow` binary is also the command-line client. With `SPARROW_URL` an
 
 Ctrl+Q opens the quick capture panel on any page of the web app: a movable panel for a new issue or a new context, with a screenshot button that grabs the screen and lets you drag out the part to keep. In a browser the screenshot asks which screen, window, or tab to share.
 
-The desktop app makes Ctrl+Q work over every application. `make dev-desktop` starts it; on first run it asks for the server address, such as `http://localhost:3000` with `make dev` running, and then starts at login and stays in the tray when its window is closed. Ctrl+Q shows an always-on-top capture window, and its screenshot button captures the monitor natively. While the app runs, its shortcut is taken from other applications: choose another one (Ctrl+Shift+Q, Ctrl+Alt+Q, or Ctrl+Shift+Space) or pause it from the tray, which remembers the choice. The app also shows native notifications for new findings, finding decisions, and new contexts made by others. On Linux, Wayland sessions do not allow global shortcuts, and macOS asks for the screen recording permission on the first screenshot.
+The desktop app makes Ctrl+Q work over every application. `make dev-desktop` reads `PUBLIC_URL` from the root `.env` and opens that address directly, such as `http://localhost:3000` with `make dev` running. No address entry is needed. The app starts at login and stays in the tray when its window is closed. Ctrl+Q shows an always-on-top capture window, and its screenshot button captures the monitor natively. While the app runs, its shortcut is taken from other applications: choose another one (Ctrl+Shift+Q, Ctrl+Alt+Q, or Ctrl+Shift+Space) or pause it from the tray, which remembers the choice. The app also shows native notifications for new findings, finding decisions, and new contexts made by others. On Linux, Wayland sessions do not allow global shortcuts, and macOS asks for the screen recording permission on the first screenshot.
+
+Desktop builds embed `PUBLIC_URL` and fail when it is missing or invalid. Only HTTPS origins are accepted, except HTTP on loopback for development; credentials, paths, queries, and fragments are rejected. Changing the deployment address requires rebuilding the desktop app. Previously saved server addresses are ignored. For direct Cargo or Bun builds, export `PUBLIC_URL` first.
 
 ## Continuous integration
 
@@ -86,8 +88,9 @@ The desktop app makes Ctrl+Q work over every application. `make dev-desktop` sta
 
 ## Releases
 
-1. Set the new version in `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`.
-2. Commit, then push a matching tag, such as `v0.2.0`.
+1. Set the GitHub repository variable `PUBLIC_URL` to the deployed server origin (the same value as the server's `PUBLIC_URL`). The release workflow embeds it in every desktop installer.
+2. Set the new version in `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`.
+3. Commit, then push a matching tag, such as `v0.2.0`.
 
 `.github/workflows/release.yml` then creates the GitHub Release with Linux server binaries for amd64 and arm64 and the built frontend they serve, and adds desktop installers for Linux, macOS (universal), and Windows. The repository is private, so only teammates with access can download them.
 

@@ -3,6 +3,7 @@
 //! another, opens the quick capture window over any application.
 
 mod capture;
+mod server_url;
 mod settings;
 mod shortcut;
 
@@ -28,14 +29,17 @@ const PAUSE_ID: &str = "shortcut-pause";
 const MAX_NOTIFICATION_TITLE: usize = 120;
 const MAX_NOTIFICATION_BODY: usize = 400;
 
-/// The server the app was set up with, if any. Native features are granted to its address only.
-struct Server(Mutex<Option<url::Url>>);
+/// The server embedded at build time. Native features are granted to its address only.
+struct Server(url::Url);
 
 /// The capture shortcut's label and whether it is paused.
 struct ActiveShortcut(Mutex<(String, bool)>);
 
 /// Starts the desktop app.
 pub fn run() {
+    let server = server_url::parse(env!("SPARROW_SERVER_URL"))
+        .expect("the build must contain a valid PUBLIC_URL");
+
     tauri::Builder::default()
         // A second launch, such as clicking the app again, shows the running app instead.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -55,7 +59,7 @@ pub fn run() {
                 })
                 .build(),
         )
-        .manage(Server(Mutex::new(None)))
+        .manage(Server(server))
         // Nothing is registered yet; setup registers the saved shortcut.
         .manage(ActiveShortcut(Mutex::new((
             shortcut::DEFAULT_SHORTCUT.to_string(),
@@ -63,8 +67,6 @@ pub fn run() {
         ))))
         .manage(capture::CaptureState::default())
         .invoke_handler(tauri::generate_handler![
-            save_server,
-            current_server,
             hide_capture,
             current_shortcut,
             notify,
@@ -75,10 +77,19 @@ pub fn run() {
             let handle = app.handle().clone();
             let started_hidden = std::env::args().any(|argument| argument == HIDDEN_ARGUMENT);
 
-            let settings = Settings::load_or_empty(&handle);
-            match settings.server_url() {
-                Some(server) => connect(&handle, server, !started_hidden)?,
-                None => open_setup(&handle)?,
+            let (settings, first_launch) = match Settings::load(&handle) {
+                Ok(settings) => (settings, false),
+                Err(_) => (Settings::default(), true),
+            };
+            connect(&handle, handle.state::<Server>().0.clone(), !started_hidden)?;
+
+            if first_launch {
+                if let Err(error) = handle.autolaunch().enable() {
+                    eprintln!("could not start at login: {error}");
+                }
+                settings.save(&handle).map_err(|error| {
+                    std::io::Error::other(format!("save desktop settings: {error}"))
+                })?;
             }
 
             // Another app may already own the shortcut; the app still works from the tray.
@@ -92,34 +103,6 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to start the Super Sparrow desktop app");
-}
-
-/// Saves the server address from the setup page and opens it. Called by the local setup page.
-#[tauri::command]
-fn save_server(app: AppHandle, address: String) -> Result<(), String> {
-    let server = settings::parse_server_url(&address)?;
-    let mut saved = Settings::load_or_empty(&app);
-    saved.set_server(&server);
-    saved.save(&app).map_err(|error| error.to_string())?;
-
-    // Starting at login is what lets the shortcut work before the app is opened by hand.
-    if let Err(error) = app.autolaunch().enable() {
-        eprintln!("could not start at login: {error}");
-    }
-
-    // Both windows show the old server; the capture window is made again on the next shortcut.
-    for label in [MAIN_WINDOW, CAPTURE_WINDOW] {
-        if let Some(window) = app.get_webview_window(label) {
-            window.destroy().map_err(|error| error.to_string())?;
-        }
-    }
-    connect(&app, server, true).map_err(|error| error.to_string())
-}
-
-/// Returns the configured server address, so the setup page can show it when changing servers.
-#[tauri::command]
-fn current_server(server: State<'_, Server>) -> Option<String> {
-    server.0.lock().ok()?.as_ref().map(|url| url.to_string())
 }
 
 /// Hides the capture window after a save or when the person closes it.
@@ -197,8 +180,7 @@ fn truncate(text: &str, max: usize) -> String {
     cut
 }
 
-/// Grants the server's page the app's commands, then opens the main window and prepares the hidden
-/// capture window on the server.
+/// Grants the configured server's page native features and opens the main window.
 fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
     let origin = server.origin().ascii_serialization();
     app.add_capability(
@@ -209,10 +191,6 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             .permission("core:default")
             .permission("core:window:allow-start-dragging"),
     )?;
-    if let Ok(mut current) = app.state::<Server>().0.lock() {
-        *current = Some(server.clone());
-    }
-
     let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(server.clone()))
         .title("Super Sparrow")
         .inner_size(1280.0, 800.0)
@@ -244,33 +222,12 @@ fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWind
     Ok(window)
 }
 
-/// Opens the local setup page, which asks for the server address.
-fn open_setup(app: &AppHandle) -> tauri::Result<()> {
-    let window = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::App("index.html".into()))
-        .title("Super Sparrow")
-        .inner_size(720.0, 560.0)
-        .build()?;
-    hide_on_close(&window);
-    Ok(())
-}
-
 /// Shows the capture window over everything, or hides it when it is already showing.
 fn toggle_capture(app: &AppHandle) {
     let Some(window) = app.get_webview_window(CAPTURE_WINDOW) else {
-        let server = app
-            .state::<Server>()
-            .0
-            .lock()
-            .ok()
-            .and_then(|current| current.clone());
-        match server {
-            Some(server) => {
-                if let Err(error) = open_capture(app, &server) {
-                    eprintln!("could not open the capture window: {error}");
-                }
-            }
-            // Without a server there is nothing to capture to yet; show the setup page.
-            None => show_main(app),
+        let server = app.state::<Server>();
+        if let Err(error) = open_capture(app, &server.0) {
+            eprintln!("could not open the capture window: {error}");
         }
         return;
     };
@@ -383,7 +340,6 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         app.autolaunch().is_enabled().unwrap_or(false),
         None::<&str>,
     )?;
-    let change_server = MenuItem::with_id(app, "server", "Change server…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Super Sparrow", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -393,7 +349,6 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &shortcut_menu,
             &start_at_login,
-            &change_server,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -420,12 +375,6 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     launcher.enable()
                 };
                 let _ = start_at_login.set_checked(launcher.is_enabled().unwrap_or(false));
-            }
-            "server" => {
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                    let _ = window.destroy();
-                }
-                let _ = open_setup(app);
             }
             "quit" => app.exit(0),
             PAUSE_ID => {

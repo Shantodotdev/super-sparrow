@@ -44,6 +44,8 @@ jobs:
           generate_release_notes: true
 
   desktop:
+    env:
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
     name: Desktop (${{ matrix.platform }})
     needs: server
     strategy:
