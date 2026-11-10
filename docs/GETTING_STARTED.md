@@ -74,6 +74,12 @@ curl -b /tmp/sparrow-cookie http://127.0.0.1:8090/api/me
 
 The same `sparrow` binary is also the command-line client. With `SPARROW_URL` and `SPARROW_TOKEN` set, `server/bin/sparrow issue for-branch` finds the issue for the current git branch, and `server/bin/sparrow help` lists every command.
 
+## Quick capture and the desktop app
+
+Ctrl+Q opens the quick capture panel on any page of the web app: a movable panel for a new issue or a new context, with a screenshot button that grabs the screen and lets you drag out the part to keep. In a browser the screenshot asks which screen, window, or tab to share.
+
+The desktop app makes Ctrl+Q work over every application. `make dev-desktop` starts it; on first run it asks for the server address, such as `http://localhost:3000` with `make dev` running, and then starts at login and stays in the tray when its window is closed. Ctrl+Q shows an always-on-top capture window, and its screenshot button captures the monitor natively. While the app runs, its shortcut is taken from other applications: choose another one (Ctrl+Shift+Q, Ctrl+Alt+Q, or Ctrl+Shift+Space) or pause it from the tray, which remembers the choice. The app also shows native notifications for new findings, finding decisions, and new contexts made by others. On Linux, Wayland sessions do not allow global shortcuts, and macOS asks for the screen recording permission on the first screenshot.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request. It runs the Go checks, tests, and build; the web checks, tests, and build; the repository-wide format check; and the desktop `cargo check`. Deployment checks also cover secret filtering and failure recovery. After every check succeeds on `main`, the workflow publishes an immutable image to GHCR and deploys production with settings from Doppler. The manual **Apply production settings** workflow refreshes configuration without rebuilding the image. [DEPLOYMENT.md](DEPLOYMENT.md#production-on-wpstaging) describes the setup and recovery behavior.

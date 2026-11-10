@@ -35,6 +35,7 @@ export const shortcutGroups: ShortcutGroup[] = [
       { keys: ["C"], description: "New issue" },
       { keys: ["/"], description: "Search issues" },
       { keys: ["Ctrl", "K"], description: "Open the navigation palette" },
+      { keys: ["Ctrl", "Q"], description: "Quick capture an issue or context" },
     ],
   },
   {
@@ -85,4 +86,17 @@ export function nextGoStep(pending: boolean, key: string): GoStep {
 
   const destination = goDestinations[lower as keyof typeof goDestinations];
   return destination ? { kind: "go", destination } : { kind: "none" };
+}
+
+/** Whether a key press is Ctrl+Q (Cmd+Q is left alone, since it quits apps on macOS). */
+export function isQuickCaptureKey(
+  event: Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+): boolean {
+  return (
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (event.code === "KeyQ" || event.key.toLowerCase() === "q")
+  );
 }

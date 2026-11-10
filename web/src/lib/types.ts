@@ -1,7 +1,7 @@
 // The Go API's JSON shapes, as server/internal/httpserver/views.go writes them. Timestamps are
 // RFC 3339 strings, and an empty string means "none" for optional IDs, as the API sends them.
 
-export type NavSection = "issues" | "activity" | "milestones" | "settings";
+export type NavSection = "issues" | "activity" | "milestones" | "context" | "settings";
 
 export type ActorKind = "human" | "agent" | "system";
 
@@ -180,3 +180,31 @@ export type AgentToken = {
 
 /** What creating a token returns: the token and its secret, which the API never sends again. */
 export type NewAgentToken = { token: AgentToken; secret: string };
+
+/** An image stored on the server; Markdown shows it through its URL. */
+export type Attachment = {
+  id: string;
+  url: string;
+  content_type: string;
+  byte_size: number;
+  created_by_actor_id: string;
+  created_at: string;
+};
+
+/** A context: notes, inspiration, and screenshots kept outside the issue tracker under a key such as WP-C3. */
+export type ContextNote = {
+  id: string;
+  key: string;
+  project_id: string;
+  project_key: string;
+  project_slug: string;
+  number: number;
+  title: string;
+  body: string;
+  body_revision: number;
+  issue_id: string;
+  issue_key: string;
+  created_by_actor_id: string;
+  created_at: string;
+  updated_at: string;
+};

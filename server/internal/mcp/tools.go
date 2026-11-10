@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -225,7 +226,7 @@ func (s *Server) toolList() []tool {
 			}),
 			run: bind(s.createIssue),
 		},
-	}, append(s.extraTools(), s.labelTools()...)...)
+	}, slices.Concat(s.extraTools(), s.labelTools(), s.contextTools())...)
 }
 
 // Schemas, kept small so each tool's input reads clearly.

@@ -12,7 +12,7 @@ import { Select } from "./select";
 import { Modal } from "./modal";
 import { FloatingMenu } from "./floating-menu";
 import type { Project } from "../queries/resources";
-import type { IssueStatus, Label } from "../lib/types";
+import type { IssuePriority, IssueStatus, Label } from "../lib/types";
 
 /** A new issue's fields; assigneeId and milestoneId are "" for none, as the API takes them. */
 export type NewIssueValues = {
@@ -23,6 +23,7 @@ export type NewIssueValues = {
   assigneeId: string;
   milestoneId: string;
   labelIds: string[];
+  priority?: IssuePriority;
 };
 
 type Option = { value: string; label: string; projectId?: string; leading?: ReactNode };
