@@ -23,7 +23,7 @@ Out of scope for version 1: documents, secrets, CI/CD, cycles, estimates, roadma
 
 The Go server serves the HTTP API, the MCP endpoint, the event stream, and the built frontend. The desktop app opens the server's URL in its window, so it always runs the current frontend and signs in exactly like the browser. Desktop builds require `PUBLIC_URL` and embed that origin; there is no address entry or saved server override. Development reads it from the repository `.env`, and release builds read the deployment's GitHub repository variable `PUBLIC_URL`. Tauri grants the tray, notification, and shortcut features to that URL only.
 
-The supported clients are the browser interface and Tauri desktop app; PWA installation and service workers are not supported.
+The supported client is the Tauri desktop app. The server serves the web interface only to the desktop app, which identifies itself with a `SuperSparrowDesktop/` User-Agent token, and to browsers on `localhost`, `127.0.0.1`, or `::1` for development; any other browser gets a 403 page that points to the desktop app. The token is not a secret, so this keeps browsers away from the pages but does not protect the API, which still requires a session or agent token. PWA installation and service workers are not supported.
 
 The frontend runs TanStack Start in SPA mode: it builds to static files that the Go server serves. It uses no server functions or server-side rendering. The Go API is the only backend, and TanStack Query handles data fetching and caching.
 

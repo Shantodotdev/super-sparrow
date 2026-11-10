@@ -57,7 +57,7 @@ func TestFrontendServesFilesAndFallsBackToIndex(t *testing.T) {
 		{"/.env", "<title>app</title>", "no-cache", http.StatusOK},
 		{"/missing.js", "", "", http.StatusNotFound},
 	} {
-		response := a.request(http.MethodGet, check.path, "", nil)
+		response := a.page(check.path)
 		if response.Code != check.status || !strings.Contains(response.Body.String(), check.want) ||
 			!strings.Contains(response.Header().Get("Cache-Control"), check.cache) {
 			t.Errorf("GET %s: status %d, cache %q, body %q", check.path, response.Code, response.Header().Get("Cache-Control"), response.Body)
@@ -81,7 +81,7 @@ func TestShellPageAllowsOnlyItsOwnInlineScripts(t *testing.T) {
 	}
 	a.withOptions(dir)
 
-	response := a.request(http.MethodGet, "/WP-1", "", nil)
+	response := a.page("/WP-1")
 	policy := response.Header().Get("Content-Security-Policy")
 	sum := sha256.Sum256([]byte(inline))
 	want := "script-src 'self' 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "';"
