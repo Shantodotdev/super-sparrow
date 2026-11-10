@@ -12,20 +12,19 @@ import {
 import { statusIcon, statusIconColor } from "../lib/issue-status";
 import type { IssuePriority, IssueStatus } from "../lib/types";
 import { useCreateIssue } from "../queries/issues";
-import { useCreateContext } from "../queries/contexts";
+import { useAttachmentUploads } from "../queries/attachments";
+import { useFileDrop } from "../hooks/use-file-drop";
 import { actorsQuery, projectsQuery } from "../queries/project";
 import { projectLabelsQuery, projectMilestonesQuery } from "../queries/project-resources";
 import { FloatingMenu } from "./floating-menu";
 import { Icon } from "./icon";
 import { LabelDot } from "./label-dot";
-import { MarkdownEditor, appendImage } from "./markdown-editor";
-import { ScreenshotButton } from "./screenshot-button";
+import { AttachmentButtons, UploadFailures, UploadList } from "./attachment-queue";
+import { MarkdownEditor } from "./markdown-editor";
 import { Select } from "./select";
 import { useCurrentProjectSlug } from "./shortcuts";
 import { useToast } from "./toast";
 import { useCaptureShortcut } from "../hooks/use-capture-shortcut";
-
-type CaptureKind = "issue" | "context";
 
 type QuickCaptureProps = {
   open: boolean;
@@ -68,22 +67,23 @@ const priorityOptions = [
 ];
 
 /**
- * A movable panel for writing down a problem or a note the moment it is noticed: an issue with
- * its status, priority, assignee, milestone, and labels, or a context. It stays open while the
- * person works elsewhere on the page and closes only when they create the record, press the close
- * button, or press the capture shortcut again. Its draft survives being closed and reopened.
+ * A movable panel for writing down a problem the moment it is noticed: an issue with its status,
+ * priority, assignee, milestone, labels, and files. It stays open while the person works
+ * elsewhere on the page and closes only when they create the issue, press the close button, or
+ * press the capture shortcut again. Its draft survives being closed and reopened. Files upload
+ * once the issue exists; if some fail, the issue stays and they can be retried.
  */
 export function QuickCapture({ open, onClose, standalone = false }: QuickCaptureProps) {
   const { notify } = useToast();
   const createIssue = useCreateIssue();
-  const createContext = useCreateContext();
+  const uploads = useAttachmentUploads();
   const rememberedSlug = useCurrentProjectSlug();
   const shortcut = useCaptureShortcut();
   const projects = useQuery(projectsQuery);
   const people = useQuery({ ...actorsQuery, enabled: open });
 
   const { bindings } = useKeyboardShortcuts();
-  const [kind, setKind] = useState<CaptureKind>("issue");
+  const [createdKey, setCreatedKey] = useState("");
   const [projectSlug, setProjectSlug] = useState<string | undefined>(undefined);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -169,28 +169,47 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     setError("");
   };
 
+  const addFiles = (files: File[]) => {
+    if (files.length === 0 || pending) return;
+    const { rejected } = uploads.add(files);
+    if (rejected.length > 0) setError(rejected.join(" "));
+  };
+  const { dragging, handlers: dropHandlers } = useFileDrop(addFiles, !open || !!createdKey);
+
+  const finishUploads = () => {
+    uploads.clear();
+    setCreatedKey("");
+    onClose();
+  };
+
   const submit = async () => {
-    if (!project || !title.trim() || pending) return;
+    if (!project || !title.trim() || pending || createdKey) return;
     setPending(true);
     setError("");
     try {
-      if (kind === "issue") {
-        const { issue } = await createIssue({
-          title: title.trim(),
-          plan: body.trim(),
-          status,
-          priority,
-          projectKey: project.key,
-          assigneeId,
-          milestoneId,
-          labelIds,
-        });
-        notify(`Created ${issue.key}`);
-      } else {
-        const created = await createContext({ projectKey: project.key, title: title.trim(), body });
-        notify(`Saved context ${created.context.key}`);
+      const { issue } = await createIssue({
+        title: title.trim(),
+        plan: body.trim(),
+        status,
+        priority,
+        projectKey: project.key,
+        assigneeId,
+        milestoneId,
+        labelIds,
+      });
+      notify(`Created ${issue.key}`);
+
+      // Files upload to the new issue; when some fail the issue stays and they can be retried.
+      const files = uploads.jobs;
+      const failed = files.length > 0 ? await uploads.start(issue.key) : [];
+      for (const job of files) {
+        if (!failed.some((item) => item.id === job.id)) uploads.remove(job.id);
       }
       reset();
+      if (failed.length > 0) {
+        setCreatedKey(issue.key);
+        return;
+      }
       onClose();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not save");
@@ -241,10 +260,11 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
       aria-labelledby="quick-capture-heading"
       className={
         standalone
-          ? "flex h-dvh w-full flex-col bg-[#15171b] text-[#e7e8ec]"
-          : "fixed z-60 flex max-h-[calc(100dvh-24px)] min-h-[300px] w-[min(560px,calc(100vw-24px))] min-w-[340px] resize flex-col overflow-hidden rounded-2xl border border-[#3a3e48] bg-[#15171b]/98 text-[#e7e8ec] shadow-[0_24px_80px_#000c,0_0_0_1px_#0006] backdrop-blur"
+          ? `flex h-dvh w-full flex-col bg-[#15171b] text-[#e7e8ec] ${dragging ? "ring-1 ring-[#426fff] ring-inset" : ""}`
+          : `fixed z-60 flex max-h-[calc(100dvh-24px)] min-h-[300px] w-[min(560px,calc(100vw-24px))] min-w-[340px] resize flex-col overflow-hidden rounded-2xl border border-[#3a3e48] bg-[#15171b]/98 text-[#e7e8ec] shadow-[0_24px_80px_#000c,0_0_0_1px_#0006] backdrop-blur ${dragging ? "border-[#426fff]" : ""}`
       }
       style={standalone || !position ? undefined : { left: position.x, top: position.y }}
+      {...dropHandlers}
       onKeyDown={(event) => {
         if (matchesChord(event, bindings.submit)) {
           event.preventDefault();
@@ -267,24 +287,6 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
         >
           Quick capture
         </h2>
-        <div
-          className="ml-2 flex rounded-full border border-[#30333b] bg-[#1d1f24] p-0.5"
-          role="tablist"
-          aria-label="What to create"
-        >
-          {(["issue", "context"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="tab"
-              aria-selected={kind === option}
-              className="rounded-full border-0 bg-transparent px-3 py-1 text-[12px] text-[#a5a8b1] aria-selected:bg-[#2c3346] aria-selected:text-white"
-              onClick={() => setKind(option)}
-            >
-              {option === "issue" ? "Issue" : "Context"}
-            </button>
-          ))}
-        </div>
         <span className="ml-auto" />
         {shortcut && (
           <kbd className="pointer-events-none rounded border border-[#30333b] px-1.5 text-[11px] text-[#7d818c]">
@@ -301,7 +303,16 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
         </button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-2">
+      {createdKey && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <UploadFailures issueKey={createdKey} uploads={uploads} onDone={finishUploads} />
+        </div>
+      )}
+
+      <div
+        hidden={!!createdKey}
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-2"
+      >
         {error && (
           <p role="alert" className="m-0 text-[13px] text-[#f2a9ae]">
             {error}
@@ -317,139 +328,131 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
             options={(projects.data ?? []).map((item) => ({ value: item.slug, label: item.name }))}
           />
           <Icon name="chevron-right" />
-          <span>{kind === "issue" ? "New issue" : "New context"}</span>
+          <span>New issue</span>
         </div>
         <input
           ref={titleInput}
           id="quick-capture-title"
-          aria-label={kind === "issue" ? "Issue title" : "Context title"}
+          aria-label="Issue title"
           className="w-full border-0 border-b border-[#33363e] bg-transparent pb-2 text-[17px] font-semibold text-[#f1f2f4] outline-none placeholder:text-[#6f7380] focus:border-[#4f6fe0]"
-          placeholder={kind === "issue" ? "What went wrong?" : "What is this about?"}
+          placeholder="What went wrong?"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
         />
         <MarkdownEditor
-          label={kind === "issue" ? "Issue description" : "Context notes"}
-          placeholder={
-            kind === "issue"
-              ? "Steps, what you expected, what happened… Paste or capture screenshots."
-              : "Notes, links, inspiration… Paste or capture screenshots."
-          }
+          label="Issue description"
+          placeholder="Steps, what you expected, what happened…"
           value={body}
           onChange={setBody}
-          projectKey={project?.key}
-          onImageError={setError}
-          className="[&_.tiptap]:min-h-[110px]! [&_.tiptap]:text-[14px]! [&_.tiptap]:text-[#e4e6ea]! [&_img]:max-h-[220px] [&_img]:rounded-md [&_img]:border [&_img]:border-[#33363e]"
+          onFiles={addFiles}
+          className="[&_.tiptap]:min-h-[110px]! [&_.tiptap]:text-[14px]! [&_.tiptap]:text-[#e4e6ea]!"
         />
+        <UploadList jobs={uploads.jobs} onRemove={(job) => uploads.remove(job.id)} showDone />
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-[6px] border-t border-[#2a2d34] px-3 pt-2.5 [&_button]:min-h-8 [&_button]:text-[12px]">
-        <ScreenshotButton
-          projectKey={project?.key ?? ""}
-          onCaptured={(attachment) => setBody((current) => appendImage(current, attachment.url))}
-          onError={setError}
+      <div
+        hidden={!!createdKey}
+        className="flex shrink-0 flex-wrap items-center gap-[6px] border-t border-[#2a2d34] px-3 pt-2.5 [&_button]:min-h-8 [&_button]:text-[12px]"
+      >
+        <Select
+          variant="chip"
+          label="Status"
+          value={status}
+          onChange={(value) => setStatus(value as IssueStatus)}
+          options={issueStatuses.map((value) => ({
+            value,
+            label: issueStatusLabel[value],
+            icon: statusIcon[value],
+            iconClassName: statusIconColor[value],
+          }))}
         />
-        {kind === "issue" && (
-          <>
-            <Select
-              variant="chip"
-              label="Status"
-              value={status}
-              onChange={(value) => setStatus(value as IssueStatus)}
-              options={issueStatuses.map((value) => ({
-                value,
-                label: issueStatusLabel[value],
-                icon: statusIcon[value],
-                iconClassName: statusIconColor[value],
-              }))}
-            />
-            <Select
-              variant="chip"
-              label="Priority"
-              value={priority}
-              onChange={(value) => setPriority(value as IssuePriority)}
-              options={priorityOptions}
-            />
-            <Select
-              variant="chip"
-              icon="circle-user-round"
-              label="Assignee"
-              value={assigneeId}
-              onChange={setAssigneeId}
-              options={[
-                { value: "", label: "No assignee" },
-                ...assignable.map((actor) => ({ value: actor.id, label: actor.display_name })),
-              ]}
-            />
-            <Select
-              variant="chip"
-              icon="target"
-              label="Milestone"
-              value={milestoneId}
-              onChange={setMilestoneId}
-              options={[
-                { value: "", label: "No milestone" },
-                ...(milestones.data ?? []).map((milestone) => ({
-                  value: milestone.id,
-                  label: milestone.name,
-                })),
-              ]}
-            />
-            <button
-              ref={labelTrigger}
-              type="button"
-              aria-haspopup="true"
-              aria-expanded={labelsOpen}
-              className="inline-flex items-center gap-[6px] rounded-full border border-[#36383e] bg-[#2a2c31] px-[9px] py-[5px] whitespace-nowrap text-[#d6d7dc] hover:border-[#484b54] hover:bg-[#383b42]"
-              onClick={() => setLabelsOpen((current) => !current)}
-            >
-              <Icon name="list-filter" className="size-4" />
-              {selectedLabels.length ? `Labels · ${selectedLabels.length}` : "Labels"}
-            </button>
-            {labelsOpen && (
-              <FloatingMenu
-                anchor={labelTrigger}
-                minWidth={220}
-                onDismiss={() => setLabelsOpen(false)}
-                aria-label="Choose labels"
-                className="max-h-[260px] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-1.5 text-[#d7dfeb] shadow-[0_12px_28px_#0009]"
-              >
-                {projectLabels.length === 0 && (
-                  <p className="m-0 px-3 py-2 text-[13px] text-[#8e9bac]">
-                    This project has no labels.
-                  </p>
-                )}
-                {projectLabels.map((label) => {
-                  const selected = labelIds.includes(label.id);
-                  return (
-                    <button
-                      key={label.id}
-                      type="button"
-                      aria-pressed={selected}
-                      className="flex min-h-9 w-full items-center justify-between gap-3 rounded-[5px] border-0 bg-transparent px-[9px] py-2 text-left text-sm text-[#bfcbdc] hover:bg-[#283140]"
-                      onClick={() =>
-                        setLabelIds((current) =>
-                          selected
-                            ? current.filter((id) => id !== label.id)
-                            : [...current, label.id],
-                        )
-                      }
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <LabelDot color={label.color} />
-                        <span className="truncate">{label.name}</span>
-                      </span>
-                      {selected && <Icon name="check" className="size-4 text-[#7896ff]" />}
-                    </button>
-                  );
-                })}
-              </FloatingMenu>
+        <Select
+          variant="chip"
+          label="Priority"
+          value={priority}
+          onChange={(value) => setPriority(value as IssuePriority)}
+          options={priorityOptions}
+        />
+        <Select
+          variant="chip"
+          icon="circle-user-round"
+          label="Assignee"
+          value={assigneeId}
+          onChange={setAssigneeId}
+          options={[
+            { value: "", label: "No assignee" },
+            ...assignable.map((actor) => ({ value: actor.id, label: actor.display_name })),
+          ]}
+        />
+        <Select
+          variant="chip"
+          icon="target"
+          label="Milestone"
+          value={milestoneId}
+          onChange={setMilestoneId}
+          options={[
+            { value: "", label: "No milestone" },
+            ...(milestones.data ?? []).map((milestone) => ({
+              value: milestone.id,
+              label: milestone.name,
+            })),
+          ]}
+        />
+        <button
+          ref={labelTrigger}
+          type="button"
+          aria-haspopup="true"
+          aria-expanded={labelsOpen}
+          className="inline-flex items-center gap-[6px] rounded-full border border-[#36383e] bg-[#2a2c31] px-[9px] py-[5px] whitespace-nowrap text-[#d6d7dc] hover:border-[#484b54] hover:bg-[#383b42]"
+          onClick={() => setLabelsOpen((current) => !current)}
+        >
+          <Icon name="list-filter" className="size-4" />
+          {selectedLabels.length ? `Labels · ${selectedLabels.length}` : "Labels"}
+        </button>
+        {labelsOpen && (
+          <FloatingMenu
+            anchor={labelTrigger}
+            minWidth={220}
+            onDismiss={() => setLabelsOpen(false)}
+            aria-label="Choose labels"
+            className="max-h-[260px] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-1.5 text-[#d7dfeb] shadow-[0_12px_28px_#0009]"
+          >
+            {projectLabels.length === 0 && (
+              <p className="m-0 px-3 py-2 text-[13px] text-[#8e9bac]">
+                This project has no labels.
+              </p>
             )}
-          </>
+            {projectLabels.map((label) => {
+              const selected = labelIds.includes(label.id);
+              return (
+                <button
+                  key={label.id}
+                  type="button"
+                  aria-pressed={selected}
+                  className="flex min-h-9 w-full items-center justify-between gap-3 rounded-[5px] border-0 bg-transparent px-[9px] py-2 text-left text-sm text-[#bfcbdc] hover:bg-[#283140]"
+                  onClick={() =>
+                    setLabelIds((current) =>
+                      selected ? current.filter((id) => id !== label.id) : [...current, label.id],
+                    )
+                  }
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <LabelDot color={label.color} />
+                    <span className="truncate">{label.name}</span>
+                  </span>
+                  {selected && <Icon name="check" className="size-4 text-[#7896ff]" />}
+                </button>
+              );
+            })}
+          </FloatingMenu>
         )}
+        <AttachmentButtons onFiles={addFiles} onError={setError} disabled={pending} />
       </div>
 
-      <footer className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
+      <footer
+        hidden={!!createdKey}
+        className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5"
+      >
         <span className="text-[11px] text-[#7d818c]">
           {bindings.submit ? `${bindings.submit} to save` : ""}
         </span>
@@ -459,7 +462,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
           disabled={pending || !title.trim() || !project}
           onClick={() => void submit()}
         >
-          {pending ? "Saving…" : kind === "issue" ? "Create issue" : "Save context"}
+          {pending ? "Saving…" : "Create issue"}
         </button>
       </footer>
     </div>

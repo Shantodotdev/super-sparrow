@@ -53,7 +53,7 @@ describe("notificationFor", () => {
 
   test("skips the person's own changes and their agents' changes", () => {
     const mine = event("finding.added", "me", { title: "Mine" });
-    const myAgent = event("context.created", "my-agent", { title: "Notes" });
+    const myAgent = event("comment.added", "my-agent", {});
     expect(notificationFor([mine, myAgent], lookup)).toBeNull();
   });
 
@@ -61,11 +61,11 @@ describe("notificationFor", () => {
     const batch = [
       event("finding.added", "agent", { issue_id: "issue-1", title: "One" }),
       event("comment.added", "agent", {}),
-      event("context.created", "teammate", { title: "Inspiration" }),
+      event("finding.status_changed", "teammate", { number: 3, to: "wontfix", reason: "Later" }),
     ];
     expect(notificationFor(batch, lookup)).toEqual({
       title: "2 updates in Super Sparrow",
-      body: "New finding on WP-1\nNew context",
+      body: "New finding on WP-1\nR3: Won't fix",
     });
   });
 });

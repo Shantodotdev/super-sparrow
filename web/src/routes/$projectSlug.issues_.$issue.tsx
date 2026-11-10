@@ -5,6 +5,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Discussion } from "../components/discussion";
 import { EventLine, eventIssueId } from "../components/event-line";
 import { Icon, type IconName } from "../components/icon";
+import { AttachmentsPanel } from "../components/attachments-panel";
 import { IssuePlan } from "../components/issue-plan";
 import { IssuePrioritySelect } from "../components/issue-priority-select";
 import { IssueTextField } from "../components/issue-text-field";
@@ -19,6 +20,7 @@ import { statusIcon } from "../lib/issue-status";
 import { validateIssueSearch, type IssueTab } from "../lib/search";
 import type { ActivityEvent, Finding, Issue, ReviewRound } from "../lib/types";
 import { findingsQuery } from "../queries/findings";
+import { issueAttachmentsQuery } from "../queries/attachments";
 import { issueQuery, issuesQuery } from "../queries/issues";
 import {
   activityQuery,
@@ -35,6 +37,7 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   staticData: { section: "issues" },
   validateSearch: validateIssueSearch,
   loader: async ({ context, params }) => {
+    void context.queryClient.prefetchQuery(issueAttachmentsQuery(params.issue));
     await Promise.all([
       loadQuery(context.queryClient, issueQuery(params.issue)),
       loadQuery(context.queryClient, subissuesQuery(params.issue)),
@@ -215,6 +218,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
           {tab === "plan" && (
             <>
               <IssuePlan key={issue.id} issue={issue} />
+              <AttachmentsPanel key={`attachments-${issue.id}`} issue={issue} />
               <SubissueList issue={issue} />
             </>
           )}

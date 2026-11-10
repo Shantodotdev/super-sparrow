@@ -8,7 +8,14 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
   const affected = new Set<string>(["activity"]);
   const projectKeys = new Set<string>();
   const issueIDs = new Set<string>();
+  const attachmentIssues = new Set<string>();
   for (const event of events) {
+    if (event.kind === "attachment.created" || event.kind === "attachment.deleted") {
+      if (typeof event.payload.issue_key === "string") {
+        attachmentIssues.add(event.payload.issue_key.toUpperCase());
+      }
+      continue;
+    }
     const project = projects.find((p) => p.id === event.project_id);
     if (project) projectKeys.add(project.key);
     switch (event.target_type) {
@@ -34,12 +41,6 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
         if (typeof event.payload.issue_id === "string") issueIDs.add(event.payload.issue_id);
         break;
       case "project":
-        if (event.kind.startsWith("attachment.")) break;
-        if (event.kind.startsWith("context.")) {
-          affected.add("contexts");
-          affected.add("context");
-          break;
-        }
         affected.add("projects");
         affected.add("issues");
         affected.add("labels");
@@ -85,7 +86,9 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
         );
       }
       if (resource === "keyboard-shortcuts") return affected.has("keyboard-shortcuts");
-      if (resource === "context") return affected.has("context");
+      if (resource === "attachments") {
+        return typeof key === "string" && attachmentIssues.has(key.toUpperCase());
+      }
       if (typeof resource !== "string" || !affected.has(resource)) return false;
       return key === undefined || typeof key !== "string" || projectKeys.has(key);
     },

@@ -40,11 +40,6 @@ function describe(event: ActivityEvent, lookup: NotificationLookup): Notificatio
         body: [by && `Decided by ${by}`, text(payload.reason)].filter(Boolean).join(" · "),
       };
     }
-    case "context.created":
-      return {
-        title: "New context",
-        body: [text(payload.title), by && `Saved by ${by}`].filter(Boolean).join(" · "),
-      };
   }
   return null;
 }
