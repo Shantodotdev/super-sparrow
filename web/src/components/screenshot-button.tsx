@@ -1,33 +1,26 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Camera } from "lucide-react";
-import { apiUploadImage } from "../lib/api";
+import { screenshotFilename } from "../lib/attachments";
 import { cropToPng, dragRegion, grabScreen, type Region, type ScreenGrab } from "../lib/screenshot";
-import type { Attachment } from "../lib/types";
 
 type ScreenshotButtonProps = {
-  projectKey: string;
-  onCaptured: (attachment: Attachment) => void;
+  onCaptured: (file: File) => void;
   onError: (message: string) => void;
   className?: string;
 };
 
 /**
  * Takes a screenshot of part of the screen: it grabs the screen, lets the person drag over the
- * part they want, and uploads that part to the project.
+ * part they want, and hands that part over as a PNG file.
  */
-export function ScreenshotButton({
-  projectKey,
-  onCaptured,
-  onError,
-  className = "",
-}: ScreenshotButtonProps) {
+export function ScreenshotButton({ onCaptured, onError, className = "" }: ScreenshotButtonProps) {
   const [grab, setGrab] = useState<ScreenGrab | null>(null);
   const [busy, setBusy] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
 
   const start = async () => {
-    if (busy || !projectKey) return;
+    if (busy) return;
     setBusy(true);
     try {
       const taken = await grabScreen();
@@ -47,7 +40,7 @@ export function ScreenshotButton({
       await taken.finish();
       if (!region) return;
       const png = await cropToPng(taken.image, region);
-      onCaptured(await apiUploadImage(projectKey, png));
+      onCaptured(new File([png], screenshotFilename(new Date()), { type: "image/png" }));
     } catch (error) {
       onError(error instanceof Error ? error.message : "Could not save the screenshot");
     } finally {
@@ -65,7 +58,7 @@ export function ScreenshotButton({
         type="button"
         className={`inline-flex items-center gap-[6px] rounded-full border border-[#36383e] bg-[#2a2c31] px-[9px] py-[5px] text-[12px] whitespace-nowrap text-[#d6d7dc] hover:border-[#484b54] hover:bg-[#383b42] disabled:opacity-60 ${className}`}
         onClick={() => void start()}
-        disabled={busy || !projectKey}
+        disabled={busy}
         title="Drag over part of the screen to attach it"
       >
         <Camera aria-hidden="true" className="size-4" />

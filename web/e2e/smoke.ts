@@ -1569,12 +1569,10 @@ try {
   await waitText("Assigned to you");
   if (
     !(await evaluate(
-      `(() => {const nav = document.querySelector('nav[aria-label="Main navigation"]'); const groups = nav.querySelectorAll('section'); return nav.querySelector('a[href="/issues"]').textContent.includes('My issues') && nav.querySelector('a[href="/activity"]').textContent.includes('Activity') && groups.length === 2 && [...groups].every(g => g.querySelectorAll('a').length === 3 && g.textContent.includes('Issues') && g.textContent.includes('Milestones') && g.textContent.includes('Context') && !g.textContent.includes('Open findings'));})()`,
+      `(() => {const nav = document.querySelector('nav[aria-label="Main navigation"]'); const groups = nav.querySelectorAll('section'); return nav.querySelector('a[href="/issues"]').textContent.includes('My issues') && nav.querySelector('a[href="/activity"]').textContent.includes('Activity') && groups.length === 2 && [...groups].every(g => g.querySelectorAll('a').length === 2 && g.textContent.includes('Issues') && g.textContent.includes('Milestones') && !g.textContent.includes('Open findings'));})()`,
     ))
   )
-    throw new Error(
-      "Sidebar must keep root links and the issues, milestones, and context links per project",
-    );
+    throw new Error("Sidebar must keep root links and the issues and milestones links per project");
   checks++;
   await navigate("/settings/sessions");
   await waitText("Current");

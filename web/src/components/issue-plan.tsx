@@ -6,7 +6,8 @@ import { PlanAutosave } from "../lib/plan-autosave";
 import { readPlanDraft, storePlanDraft } from "../lib/plan-draft";
 import type { Issue } from "../lib/types";
 import { issueQuery, issuesQuery } from "../queries/issues";
-import { imageFiles, insertUploadedImages, markdownExtensions } from "./markdown-editor";
+import { transferredFiles } from "../lib/attachments";
+import { markdownExtensions } from "./markdown-editor";
 import { useToast } from "./toast";
 
 /** An inline Markdown editor that saves serially using the server's plan revision. */
@@ -41,22 +42,13 @@ export function IssuePlan({ issue }: { issue: Issue }) {
     contentType: "markdown",
     editorProps: {
       handlePaste: (_view, event) => {
-        const images = imageFiles(event.clipboardData);
-        if (images.length && editor) {
-          void insertUploadedImages(editor, issue.project_key, images, notify);
-          return true;
-        }
         const text = event.clipboardData?.getData("text/plain");
         if (!text || event.clipboardData?.getData("text/html")) return false;
         editor?.commands.insertContent(text, { contentType: "markdown" });
         return true;
       },
-      handleDrop: (_view, event) => {
-        const images = imageFiles(event.dataTransfer);
-        if (!images.length || !editor) return false;
-        void insertUploadedImages(editor, issue.project_key, images, notify);
-        return true;
-      },
+      // Dropped files belong in the attachments below, and must not replace the page.
+      handleDrop: (_view, event) => transferredFiles(event.dataTransfer).length > 0,
       attributes: { "aria-label": "Issue plan", role: "textbox", "aria-multiline": "true" },
     },
     onUpdate: ({ editor: current }) => autosave.edit(current.getMarkdown()),

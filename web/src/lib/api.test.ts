@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, apiGet } from "./api";
+import { ApiError, apiErrorFromText, apiGet } from "./api";
 
 function respondWith(status: number, body: unknown): typeof fetch {
   return (async () => Response.json(body, { status })) as unknown as typeof fetch;
@@ -70,5 +70,18 @@ describe("apiWrite", () => {
         respondWith(409, { error: "plan changed", field: "plan_revision" }),
       ),
     ).rejects.toMatchObject({ status: 409, message: "plan changed", field: "plan_revision" });
+  });
+});
+
+describe("apiErrorFromText", () => {
+  test("reads the message and field from the server's JSON body", () => {
+    const error = apiErrorFromText(413, '{"error":"file too large","field":"filename"}', "POST /x");
+    expect(error).toMatchObject({ status: 413, message: "file too large", field: "filename" });
+  });
+
+  test("falls back to the status when the body is not the error shape", () => {
+    expect(apiErrorFromText(502, "<html>Bad gateway</html>", "POST /x").message).toBe(
+      "POST /x failed with status 502",
+    );
   });
 });

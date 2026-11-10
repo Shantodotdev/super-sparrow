@@ -9,7 +9,7 @@ const notificationWindowMs = 2000;
 
 /**
  * Returns a function that takes live events and, in the desktop app, shows a native notification
- * for new findings, decisions, and contexts made by others. Events arriving within two seconds
+ * for new findings and decisions made by others. Events arriving within two seconds
  * share one notification. In a browser it does nothing.
  */
 export function desktopNotifier(client: QueryClient): {
