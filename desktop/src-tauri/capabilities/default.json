@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissions for the local setup page. The server's page is granted its permissions at runtime, for the configured server's address only.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "allow-save-server", "allow-current-server"]
 }

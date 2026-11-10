@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-current-shortcut"
+description = "Enables the current_shortcut command without any pre-configured scope."
+commands.allow = ["current_shortcut"]
+
+[[permission]]
+identifier = "deny-current-shortcut"
+description = "Denies the current_shortcut command without any pre-configured scope."
+commands.deny = ["current_shortcut"]

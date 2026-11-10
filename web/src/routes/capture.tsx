@@ -13,6 +13,13 @@ export const Route = createFileRoute("/capture")({
  * only the quick capture panel; saving or closing hides the window, keeping it ready for next time.
  */
 function CapturePage() {
+  // The desktop window is transparent, so only the panel's rounded shape shows.
+  useEffect(() => {
+    for (const element of [document.documentElement, document.body]) {
+      element.style.background = "transparent";
+    }
+  }, []);
+
   // Each time the window is shown again, the title takes the focus so typing can start at once.
   useEffect(() => {
     const focusTitle = () => {

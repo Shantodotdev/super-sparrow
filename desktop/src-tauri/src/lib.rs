@@ -90,8 +90,19 @@ pub fn run() {
             build_tray(&handle)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("failed to start the Super Sparrow desktop app");
+        .build(tauri::generate_context!())
+        .expect("failed to start the Super Sparrow desktop app")
+        .run(|_app, event| {
+            // The app lives in the tray, so having no window open, such as while the setup page
+            // is replaced by the server's page, must not end it. Quit from the tray passes an
+            // exit code and still ends it.
+            if let tauri::RunEvent::ExitRequested {
+                code: None, api, ..
+            } = event
+            {
+                api.prevent_exit();
+            }
+        });
 }
 
 /// Saves the server address from the setup page and opens it. Called by the local setup page.
@@ -207,7 +218,12 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             .window(MAIN_WINDOW)
             .window(CAPTURE_WINDOW)
             .permission("core:default")
-            .permission("core:window:allow-start-dragging"),
+            .permission("core:window:allow-start-dragging")
+            .permission("allow-hide-capture")
+            .permission("allow-current-shortcut")
+            .permission("allow-notify")
+            .permission("allow-capture-screen")
+            .permission("allow-end-capture"),
     )?;
     if let Ok(mut current) = app.state::<Server>().0.lock() {
         *current = Some(server.clone());
@@ -232,9 +248,11 @@ fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWind
         .map_err(|error| tauri::Error::Anyhow(error.into()))?;
     let window = WebviewWindowBuilder::new(app, CAPTURE_WINDOW, WebviewUrl::External(capture_url))
         .title("Quick capture")
-        .inner_size(560.0, 640.0)
-        .min_inner_size(380.0, 360.0)
+        .inner_size(480.0, 300.0)
+        .min_inner_size(380.0, 260.0)
         .decorations(false)
+        .transparent(true)
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .center()

@@ -1,29 +1,29 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { GripHorizontal } from "lucide-react";
+import { Bookmark, Minus, Send, SlidersHorizontal, X } from "lucide-react";
+import { splitCapture } from "../lib/capture-text";
 import {
   issuePriorities,
   issuePriorityLabel,
   issueStatusLabel,
   issueStatuses,
+  statusIcon,
+  statusIconColor,
 } from "../lib/issue-status";
-import { statusIcon, statusIconColor } from "../lib/issue-status";
 import type { IssuePriority, IssueStatus } from "../lib/types";
-import { useCreateIssue } from "../queries/issues";
+import { useCaptureShortcut } from "../hooks/use-capture-shortcut";
 import { useCreateContext } from "../queries/contexts";
+import { useCreateIssue } from "../queries/issues";
 import { actorsQuery, projectsQuery } from "../queries/project";
 import { projectLabelsQuery, projectMilestonesQuery } from "../queries/project-resources";
+import { Avatar } from "./avatar";
 import { FloatingMenu } from "./floating-menu";
-import { Icon } from "./icon";
 import { LabelDot } from "./label-dot";
 import { MarkdownEditor, appendImage } from "./markdown-editor";
 import { ScreenshotButton } from "./screenshot-button";
 import { Select } from "./select";
 import { useCurrentProjectSlug } from "./shortcuts";
 import { useToast } from "./toast";
-import { useCaptureShortcut } from "../hooks/use-capture-shortcut";
-
-type CaptureKind = "issue" | "context";
 
 type QuickCaptureProps = {
   open: boolean;
@@ -38,38 +38,43 @@ type QuickCaptureProps = {
 type Position = { x: number; y: number };
 
 const positionKey = "sparrow:quick-capture-position";
-const panelWidth = 560;
+const panelWidth = 480;
+
+const priorityColor: Record<IssuePriority, string> = {
+  "": "text-[#a9b6c8]",
+  urgent: "text-[#f2a9ae]",
+  high: "text-[#f2ad67]",
+  medium: "text-[#f2cf87]",
+  low: "text-[#a7c0ff]",
+};
 
 const priorityOptions = [
   {
     value: "",
     label: "No priority",
     icon: "circle-dashed" as const,
-    iconClassName: "text-[#a9b6c8]",
+    iconClassName: priorityColor[""],
   },
-  ...issuePriorities.map((priority: IssuePriority) => ({
+  ...issuePriorities.map((priority) => ({
     value: priority,
     label: issuePriorityLabel[priority],
     icon:
       priority === "urgent" || priority === "high"
         ? ("triangle-alert" as const)
         : ("circle-dot" as const),
-    iconClassName:
-      priority === "urgent"
-        ? "text-[#f2a9ae]"
-        : priority === "high"
-          ? "text-[#f2ad67]"
-          : priority === "medium"
-            ? "text-[#f2cf87]"
-            : "text-[#a7c0ff]",
+    iconClassName: priorityColor[priority],
   })),
 ];
 
+const iconButton =
+  "grid size-7 place-items-center rounded-full border-0 bg-transparent text-[#8a8e98] hover:bg-[#24272d] hover:text-white";
+
 /**
- * A movable panel for writing down a problem or a note the moment it is noticed: an issue with
- * its status, priority, assignee, milestone, and labels, or a context. It stays open while the
- * person works elsewhere on the page and closes only when they create the record, press the close
- * button, or press Ctrl+Q again. Its draft survives being closed and reopened.
+ * A compact, movable panel for writing down a problem the moment it is noticed: a title, details
+ * with screenshots inline, priority and assignee at hand, and status, milestone, and labels under
+ * More. It saves as an issue or as a context. The panel stays open while the person works
+ * elsewhere and closes only when they save, press its close button, or press the capture shortcut
+ * again. Its draft survives being closed.
  */
 export function QuickCapture({ open, onClose, standalone = false }: QuickCaptureProps) {
   const { notify } = useToast();
@@ -80,22 +85,23 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
   const projects = useQuery(projectsQuery);
   const people = useQuery({ ...actorsQuery, enabled: open });
 
-  const [kind, setKind] = useState<CaptureKind>("issue");
   const [projectSlug, setProjectSlug] = useState<string | undefined>(undefined);
   const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [details, setDetails] = useState("");
   const [status, setStatus] = useState<IssueStatus>("backlog");
   const [priority, setPriority] = useState<IssuePriority>("");
   const [assigneeId, setAssigneeId] = useState("");
   const [milestoneId, setMilestoneId] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
-  const [labelsOpen, setLabelsOpen] = useState(false);
-  const [pending, setPending] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [pending, setPending] = useState<"issue" | "context" | null>(null);
   const [error, setError] = useState("");
   const [position, setPosition] = useState<Position | null>(null);
-  const titleInput = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const labelTrigger = useRef<HTMLButtonElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
+  const moreMenu = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
   const project =
@@ -110,9 +116,16 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     enabled: open && !!project,
   });
 
-  // Each opening focuses the title, so the person can start typing at once.
+  // A typed title wins; without one, the first line of the details becomes the title.
+  const fromDetails = splitCapture(details);
+  const finalTitle = title.trim() || fromDetails.title;
+  const finalBody = title.trim() ? details.trim() : fromDetails.body;
+
+  // Each opening expands the panel and puts the cursor in the title.
   useEffect(() => {
-    if (open) requestAnimationFrame(() => titleInput.current?.focus());
+    if (!open) return;
+    setCollapsed(false);
+    requestAnimationFrame(() => titleInput.current?.focus());
   }, [open]);
 
   // The panel opens where it was last left, or near the top right of the window.
@@ -136,6 +149,18 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     return () => window.removeEventListener("resize", keepInside);
   }, [standalone]);
 
+  // The More menu closes on a click outside it; its own dropdowns open inside it.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (moreMenu.current?.contains(target) || moreTrigger.current?.contains(target)) return;
+      setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [moreOpen]);
+
   const switchProject = (slug: string) => {
     setProjectSlug(slug);
     setMilestoneId("");
@@ -144,24 +169,25 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
 
   const reset = () => {
     setTitle("");
-    setBody("");
+    setDetails("");
     setStatus("backlog");
     setPriority("");
     setAssigneeId("");
     setMilestoneId("");
     setLabelIds([]);
+    setMoreOpen(false);
     setError("");
   };
 
-  const submit = async () => {
-    if (!project || !title.trim() || pending) return;
-    setPending(true);
+  const save = async (kind: "issue" | "context") => {
+    if (!project || !finalTitle || pending) return;
+    setPending(kind);
     setError("");
     try {
       if (kind === "issue") {
         const { issue } = await createIssue({
-          title: title.trim(),
-          plan: body.trim(),
+          title: finalTitle,
+          plan: finalBody,
           status,
           priority,
           projectKey: project.key,
@@ -171,15 +197,19 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
         });
         notify(`Created ${issue.key}`);
       } else {
-        const created = await createContext({ projectKey: project.key, title: title.trim(), body });
-        notify(`Saved context ${created.context.key}`);
+        const created = await createContext({
+          projectKey: project.key,
+          title: finalTitle,
+          body: finalBody,
+        });
+        notify(`Added context ${created.context.key}`);
       }
       reset();
       onClose();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not save");
     } finally {
-      setPending(false);
+      setPending(null);
     }
   };
 
@@ -214,7 +244,10 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     (actor) => actor.kind !== "system" && !actor.disabled_at,
   );
   const projectLabels = labels.data ?? [];
-  const selectedLabels = projectLabels.filter((label) => labelIds.includes(label.id));
+  // How many of the fields under More differ from a new issue's defaults.
+  const moreSet =
+    (status === "backlog" ? 0 : 1) + (milestoneId ? 1 : 0) + (labelIds.length ? 1 : 0);
+  const canSave = !!project && !!finalTitle && !pending;
 
   return (
     <div
@@ -225,225 +258,268 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
       aria-labelledby="quick-capture-heading"
       className={
         standalone
-          ? "flex h-dvh w-full flex-col bg-[#15171b] text-[#e7e8ec]"
-          : "fixed z-60 flex max-h-[calc(100dvh-24px)] min-h-[300px] w-[min(560px,calc(100vw-24px))] min-w-[340px] resize flex-col overflow-hidden rounded-2xl border border-[#3a3e48] bg-[#15171b]/98 text-[#e7e8ec] shadow-[0_24px_80px_#000c,0_0_0_1px_#0006] backdrop-blur"
+          ? "flex h-dvh w-full flex-col overflow-hidden rounded-[22px] border border-[#2a2d34] bg-[#141619] text-[#e7e8ec]"
+          : `fixed z-60 flex max-h-[calc(100dvh-24px)] w-[min(480px,calc(100vw-24px))] min-w-[340px] flex-col overflow-hidden rounded-[22px] border border-[#2a2d34] bg-[#141619]/98 text-[#e7e8ec] shadow-[0_24px_64px_#000b] backdrop-blur ${collapsed ? "" : "resize"}`
       }
       style={standalone || !position ? undefined : { left: position.x, top: position.y }}
       onKeyDown={(event) => {
         if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
           event.preventDefault();
-          void submit();
+          void save("issue");
         }
       }}
     >
       <header
-        className={`flex shrink-0 items-center gap-2 border-b border-[#2a2d34] px-3 py-2 ${standalone ? "" : "cursor-grab active:cursor-grabbing"}`}
+        className={`flex shrink-0 items-center gap-2 px-4 pt-3 ${collapsed ? "pb-3" : "pb-2"} ${standalone ? "" : "cursor-grab active:cursor-grabbing"}`}
         onPointerDown={startDrag}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         data-tauri-drag-region={standalone ? "" : undefined}
       >
-        <GripHorizontal aria-hidden="true" className="pointer-events-none size-4 text-[#6f7380]" />
+        <img src="/logo.png" alt="" className="pointer-events-none size-5 rounded" />
         <h2
           id="quick-capture-heading"
-          className="pointer-events-none m-0 text-[13px] font-semibold"
+          className="pointer-events-none m-0 text-[13px] font-medium text-[#c9ccd3]"
         >
-          Quick capture
+          Super Sparrow
         </h2>
-        <div
-          className="ml-2 flex rounded-full border border-[#30333b] bg-[#1d1f24] p-0.5"
-          role="tablist"
-          aria-label="What to create"
-        >
-          {(["issue", "context"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="tab"
-              aria-selected={kind === option}
-              className="rounded-full border-0 bg-transparent px-3 py-1 text-[12px] text-[#a5a8b1] aria-selected:bg-[#2c3346] aria-selected:text-white"
-              onClick={() => setKind(option)}
-            >
-              {option === "issue" ? "Issue" : "Context"}
-            </button>
-          ))}
-        </div>
+        {(projects.data?.length ?? 0) > 1 && (
+          <div className="[&_button]:min-h-[22px]! [&_button]:py-0! [&_button]:text-[11px]!">
+            <Select
+              variant="chip"
+              icon="folder"
+              label="Project"
+              value={project?.slug ?? ""}
+              onChange={switchProject}
+              options={(projects.data ?? []).map((item) => ({
+                value: item.slug,
+                label: item.name,
+              }))}
+            />
+          </div>
+        )}
         <span className="ml-auto" />
         {shortcut && (
-          <kbd className="pointer-events-none rounded border border-[#30333b] px-1.5 text-[11px] text-[#7d818c]">
+          <kbd className="pointer-events-none font-sans text-[10px] tracking-wide text-[#5f636d]">
             {shortcut}
           </kbd>
+        )}
+        {!standalone && (
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand quick capture" : "Minimize quick capture"}
+            aria-expanded={!collapsed}
+            className={iconButton}
+            onClick={() => setCollapsed((current) => !current)}
+          >
+            <Minus aria-hidden="true" className="size-4" />
+          </button>
         )}
         <button
           type="button"
           aria-label="Close quick capture"
-          className="grid place-items-center rounded-lg border-0 bg-transparent p-1.5 text-[#9a9da6] hover:bg-[#2b2e35] hover:text-white"
+          className={iconButton}
           onClick={onClose}
         >
-          <Icon name="circle-x" />
+          <X aria-hidden="true" className="size-4" />
         </button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-2">
+      <div hidden={collapsed} className="flex min-h-0 flex-1 flex-col gap-2.5 px-4 pb-4">
         {error && (
-          <p role="alert" className="m-0 text-[13px] text-[#f2a9ae]">
+          <p role="alert" className="m-0 text-[12px] text-[#f2a9ae]">
             {error}
           </p>
         )}
-        <div className="flex items-center gap-2 text-[12px] text-[#a5a8b1]">
+
+        <div className="flex min-h-0 flex-1 flex-col rounded-[18px] bg-[#1b1d22] ring-1 ring-transparent transition-shadow focus-within:ring-[#3b5bd6]/60">
+          <input
+            ref={titleInput}
+            id="quick-capture-title"
+            aria-label="Title"
+            className="w-full border-0 bg-transparent px-4 pt-3 pb-1 text-[15px] font-semibold text-[#f1f2f4] outline-none placeholder:font-medium placeholder:text-[#62666f]"
+            placeholder="Title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+          <div
+            id="quick-capture-description"
+            className="min-h-0 flex-1 overflow-y-auto px-4 pb-2.5"
+          >
+            <MarkdownEditor
+              label="Details"
+              placeholder="Add details, paste or capture screenshots…"
+              value={details}
+              onChange={setDetails}
+              projectKey={project?.key}
+              onImageError={setError}
+              className="[&_.tiptap]:max-h-[180px] [&_.tiptap]:min-h-[52px]! [&_.tiptap]:text-[13px]! [&_.tiptap]:leading-relaxed! [&_.tiptap]:text-[#c9ccd3]! [&_img]:max-h-40 [&_img]:rounded-xl [&_p]:my-0.5!"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 [&_.custom-select_button]:min-h-7! [&_.custom-select_button]:border-transparent! [&_.custom-select_button]:bg-transparent! [&_.custom-select_button]:py-0! [&_.custom-select_button]:text-[12px] [&_.custom-select_button]:text-[#a9adb6]! [&_.custom-select_button:hover]:bg-[#22252b]! [&_.custom-select_button[aria-expanded=true]]:bg-[#22252b]!">
+          <ScreenshotButton
+            compact
+            projectKey={project?.key ?? ""}
+            onCaptured={(attachment) =>
+              setDetails((current) => appendImage(current, attachment.url))
+            }
+            onError={setError}
+            className="size-7! rounded-full! border-transparent! bg-transparent! text-[#a9adb6]! hover:bg-[#22252b]!"
+          />
+          <span aria-hidden="true" className="mx-1 h-3.5 w-px bg-[#2a2d34]" />
           <Select
             variant="chip"
-            icon="folder"
-            label="Project"
-            value={project?.slug ?? ""}
-            onChange={switchProject}
-            options={(projects.data ?? []).map((item) => ({ value: item.slug, label: item.name }))}
+            label="Priority"
+            value={priority}
+            onChange={(value) => setPriority(value as IssuePriority)}
+            options={priorityOptions}
           />
-          <Icon name="chevron-right" />
-          <span>{kind === "issue" ? "New issue" : "New context"}</span>
-        </div>
-        <input
-          ref={titleInput}
-          id="quick-capture-title"
-          aria-label={kind === "issue" ? "Issue title" : "Context title"}
-          className="w-full border-0 border-b border-[#33363e] bg-transparent pb-2 text-[17px] font-semibold text-[#f1f2f4] outline-none placeholder:text-[#6f7380] focus:border-[#4f6fe0]"
-          placeholder={kind === "issue" ? "What went wrong?" : "What is this about?"}
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-        />
-        <MarkdownEditor
-          label={kind === "issue" ? "Issue description" : "Context notes"}
-          placeholder={
-            kind === "issue"
-              ? "Steps, what you expected, what happened… Paste or capture screenshots."
-              : "Notes, links, inspiration… Paste or capture screenshots."
-          }
-          value={body}
-          onChange={setBody}
-          projectKey={project?.key}
-          onImageError={setError}
-          className="[&_.tiptap]:min-h-[110px]! [&_.tiptap]:text-[14px]! [&_.tiptap]:text-[#e4e6ea]! [&_img]:max-h-[220px] [&_img]:rounded-md [&_img]:border [&_img]:border-[#33363e]"
-        />
-      </div>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-[6px] border-t border-[#2a2d34] px-3 pt-2.5 [&_button]:min-h-8 [&_button]:text-[12px]">
-        <ScreenshotButton
-          projectKey={project?.key ?? ""}
-          onCaptured={(attachment) => setBody((current) => appendImage(current, attachment.url))}
-          onError={setError}
-        />
-        {kind === "issue" && (
-          <>
-            <Select
-              variant="chip"
-              label="Status"
-              value={status}
-              onChange={(value) => setStatus(value as IssueStatus)}
-              options={issueStatuses.map((value) => ({
-                value,
-                label: issueStatusLabel[value],
-                icon: statusIcon[value],
-                iconClassName: statusIconColor[value],
-              }))}
-            />
-            <Select
-              variant="chip"
-              label="Priority"
-              value={priority}
-              onChange={(value) => setPriority(value as IssuePriority)}
-              options={priorityOptions}
-            />
-            <Select
-              variant="chip"
-              icon="circle-user-round"
-              label="Assignee"
-              value={assigneeId}
-              onChange={setAssigneeId}
-              options={[
-                { value: "", label: "No assignee" },
-                ...assignable.map((actor) => ({ value: actor.id, label: actor.display_name })),
-              ]}
-            />
-            <Select
-              variant="chip"
-              icon="target"
-              label="Milestone"
-              value={milestoneId}
-              onChange={setMilestoneId}
-              options={[
-                { value: "", label: "No milestone" },
-                ...(milestones.data ?? []).map((milestone) => ({
-                  value: milestone.id,
-                  label: milestone.name,
-                })),
-              ]}
-            />
-            <button
-              ref={labelTrigger}
-              type="button"
-              aria-haspopup="true"
-              aria-expanded={labelsOpen}
-              className="inline-flex items-center gap-[6px] rounded-full border border-[#36383e] bg-[#2a2c31] px-[9px] py-[5px] whitespace-nowrap text-[#d6d7dc] hover:border-[#484b54] hover:bg-[#383b42]"
-              onClick={() => setLabelsOpen((current) => !current)}
-            >
-              <Icon name="list-filter" className="size-4" />
-              {selectedLabels.length ? `Labels · ${selectedLabels.length}` : "Labels"}
-            </button>
-            {labelsOpen && (
-              <FloatingMenu
-                anchor={labelTrigger}
-                minWidth={220}
-                onDismiss={() => setLabelsOpen(false)}
-                aria-label="Choose labels"
-                className="max-h-[260px] overflow-y-auto rounded-[12px] border border-[#303744] bg-[#171b21] p-1.5 text-[#d7dfeb] shadow-[0_12px_28px_#0009]"
-              >
-                {projectLabels.length === 0 && (
-                  <p className="m-0 px-3 py-2 text-[13px] text-[#8e9bac]">
-                    This project has no labels.
-                  </p>
-                )}
-                {projectLabels.map((label) => {
-                  const selected = labelIds.includes(label.id);
-                  return (
-                    <button
-                      key={label.id}
-                      type="button"
-                      aria-pressed={selected}
-                      className="flex min-h-9 w-full items-center justify-between gap-3 rounded-[5px] border-0 bg-transparent px-[9px] py-2 text-left text-sm text-[#bfcbdc] hover:bg-[#283140]"
-                      onClick={() =>
-                        setLabelIds((current) =>
-                          selected
-                            ? current.filter((id) => id !== label.id)
-                            : [...current, label.id],
-                        )
-                      }
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <LabelDot color={label.color} />
-                        <span className="truncate">{label.name}</span>
-                      </span>
-                      {selected && <Icon name="check" className="size-4 text-[#7896ff]" />}
-                    </button>
-                  );
-                })}
-              </FloatingMenu>
+          <Select
+            variant="chip"
+            label="Assignee"
+            icon="circle-user-round"
+            value={assigneeId}
+            onChange={setAssigneeId}
+            options={[
+              { value: "", label: "Assign" },
+              ...assignable.map((actor) => ({
+                value: actor.id,
+                label: actor.display_name,
+                leading: (
+                  <span className="flex shrink-0 [&_.agent-icon]:size-4 [&_.avatar]:size-4 [&_.avatar]:basis-4 [&_.avatar]:text-[8px]">
+                    <Avatar actor={actor} />
+                  </span>
+                ),
+              })),
+            ]}
+          />
+          <button
+            ref={moreTrigger}
+            type="button"
+            aria-haspopup="true"
+            aria-expanded={moreOpen}
+            className="ml-auto inline-flex min-h-7 items-center gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[12px] whitespace-nowrap text-[#a9adb6] hover:bg-[#22252b] aria-expanded:bg-[#22252b]"
+            onClick={() => setMoreOpen((current) => !current)}
+          >
+            <SlidersHorizontal aria-hidden="true" className="size-3.5 text-[#a9adb6]" />
+            More
+            {moreSet > 0 && (
+              <span className="grid size-4 place-items-center rounded-full bg-[#2455eb] text-[10px] font-semibold text-white">
+                {moreSet}
+              </span>
             )}
-          </>
-        )}
-      </div>
+          </button>
+          {moreOpen && (
+            <FloatingMenu
+              anchor={moreTrigger}
+              minWidth={250}
+              onDismiss={() => setMoreOpen(false)}
+              aria-label="More issue fields"
+              className="w-[260px] rounded-[18px] border border-[#2a2d34] bg-[#16181c] p-3 text-[#d7dfeb] shadow-[0_12px_28px_#0009] [&_.custom-select]:w-full [&_.custom-select_button]:min-h-8! [&_.custom-select_button]:w-full! [&_.custom-select_button]:text-[12px]"
+            >
+              <div ref={moreMenu} className="grid gap-2.5">
+                <MoreField label="Status">
+                  <Select
+                    variant="chip"
+                    label="Status"
+                    value={status}
+                    onChange={(value) => setStatus(value as IssueStatus)}
+                    options={issueStatuses.map((value) => ({
+                      value,
+                      label: issueStatusLabel[value],
+                      icon: statusIcon[value],
+                      iconClassName: statusIconColor[value],
+                    }))}
+                  />
+                </MoreField>
+                <MoreField label="Milestone">
+                  <Select
+                    variant="chip"
+                    icon="target"
+                    label="Milestone"
+                    value={milestoneId}
+                    onChange={setMilestoneId}
+                    options={[
+                      { value: "", label: "No milestone" },
+                      ...(milestones.data ?? []).map((milestone) => ({
+                        value: milestone.id,
+                        label: milestone.name,
+                      })),
+                    ]}
+                  />
+                </MoreField>
+                <MoreField label="Labels">
+                  {projectLabels.length === 0 ? (
+                    <p className="m-0 text-[12px] text-[#8e9bac]">This project has no labels.</p>
+                  ) : (
+                    <div className="flex max-h-[96px] flex-wrap gap-1 overflow-y-auto">
+                      {projectLabels.map((label) => {
+                        const selected = labelIds.includes(label.id);
+                        return (
+                          <button
+                            key={label.id}
+                            type="button"
+                            aria-pressed={selected}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#303642] bg-[#101216] px-2 py-0.5 text-[11px] text-[#a9b6c8] hover:bg-[#20242c] aria-pressed:border-[#6685ee] aria-pressed:bg-[#202b45] aria-pressed:text-[#eaf0ff]"
+                            onClick={() =>
+                              setLabelIds((current) =>
+                                selected
+                                  ? current.filter((id) => id !== label.id)
+                                  : [...current, label.id],
+                              )
+                            }
+                          >
+                            <LabelDot color={label.color} />
+                            {label.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </MoreField>
+              </div>
+            </FloatingMenu>
+          )}
+        </div>
 
-      <footer className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
-        <span className="text-[11px] text-[#7d818c]">Ctrl+Enter to save</span>
-        <button
-          type="button"
-          className="rounded-full border border-[#3264ff] bg-[#2455eb] px-4 py-2 text-[13px] font-[550] text-white hover:bg-[#3566f6] disabled:opacity-50"
-          disabled={pending || !title.trim() || !project}
-          onClick={() => void submit()}
-        >
-          {pending ? "Saving…" : kind === "issue" ? "Create issue" : "Save context"}
-        </button>
-      </footer>
+        <footer className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border-0 bg-[#1f2228] text-[13px] font-medium text-[#c9ccd3] hover:bg-[#262a31] disabled:opacity-40"
+            disabled={!canSave}
+            onClick={() => void save("context")}
+            title="Save as a context for coding agents"
+          >
+            <Bookmark aria-hidden="true" className="size-4 text-[#8ea6ff]" />
+            {pending === "context" ? "Adding…" : "Add to Context"}
+          </button>
+          <button
+            type="button"
+            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border-0 bg-[#2455eb] text-[13px] font-semibold text-white hover:bg-[#3566f6] disabled:opacity-40"
+            disabled={!canSave}
+            onClick={() => void save("issue")}
+            title="Ctrl+Enter"
+          >
+            <Send aria-hidden="true" className="size-4" />
+            {pending === "issue" ? "Creating…" : "Create Issue"}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+/** One labelled field in the More menu. */
+function MoreField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-1">
+      <span className="text-[11px] font-medium tracking-wide text-[#8290a5] uppercase">
+        {label}
+      </span>
+      {children}
     </div>
   );
 }
