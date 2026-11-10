@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
+	"github.com/shantodotdev/super-sparrow/server/internal/store/storetest"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
 
@@ -141,7 +142,7 @@ func TestCreateFirstOwner(t *testing.T) {
 	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	st := New(db, time.Now, t.TempDir())
+	st := New(db, time.Now, storetest.NewObjects())
 
 	owner, err := st.CreateFirstOwner(ctx, "Shanto", "Shanto@Example.com")
 	if err != nil {

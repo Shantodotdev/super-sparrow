@@ -6,12 +6,6 @@
 // holds only the public key, so it cannot read its own backups; restoring needs the private key,
 // which the team keeps outside the server. A daily backup that fails is tried again with each
 // hourly sync until one succeeds that day.
-//
-// Attached files are backed up too, each as its own immutable object attachments/<id>.age,
-// encrypted to the same key and not compressed. Both jobs upload the files the database copy
-// refers to, and only the missing ones, before they upload the copy, so a copy never refers to an
-// object the bucket lacks. The daily prune deletes a file object once no attachment refers to it
-// and it is older than the days to keep.
 package backup
 
 import (
@@ -28,6 +22,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/shantodotdev/super-sparrow/server/internal/r2"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
@@ -37,20 +32,9 @@ const (
 	dailyPrefix = "daily/"
 	dateLayout  = "2006-01-02"
 	syncEvery   = time.Hour
-
-	attachmentPrefix = "attachments/"
-	attachmentSuffix = ".age"
 )
 
-var (
-	dailyKeyPattern      = regexp.MustCompile(`^daily/sparrow-(\d{4}-\d{2}-\d{2})\.db\.gz\.age$`)
-	attachmentKeyPattern = regexp.MustCompile(`^attachments/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.age$`)
-)
-
-// AttachmentKey returns where the encrypted file of an attachment is kept.
-func AttachmentKey(id string) string {
-	return attachmentPrefix + id + attachmentSuffix
-}
+var dailyKeyPattern = regexp.MustCompile(`^daily/sparrow-(\d{4}-\d{2}-\d{2})\.db\.gz\.age$`)
 
 // DailyKey returns where the daily backup of a day is kept. The date is day's own date, in
 // whatever time zone day is in.
@@ -61,7 +45,7 @@ func DailyKey(day time.Time) string {
 // Runner runs the backup jobs.
 type Runner struct {
 	store     *store.Store
-	bucket    *Bucket
+	bucket    *r2.Bucket
 	recipient age.Recipient
 	workDir   string
 	keepDays  int
@@ -74,12 +58,11 @@ type Runner struct {
 // Options configures a Runner.
 type Options struct {
 	Store  *store.Store
-	Bucket *Bucket
+	Bucket *r2.Bucket
 	// Recipient is the public key each copy is encrypted to. Restore needs its private key.
 	Recipient age.Recipient
 	// WorkDir holds the temporary copies while a job runs. It needs room for the encrypted
-	// database copy plus the encrypted copy of the largest attachment, because attachments are
-	// encrypted to a temporary file one at a time. Keep it on the database's disk.
+	// database copy. Keep it on the database's disk.
 	WorkDir  string
 	KeepDays int
 	// DailyAt is when the daily backup runs, as hours and minutes after midnight in TimeZone.
@@ -169,8 +152,8 @@ func (r *Runner) Sync(ctx context.Context) error {
 	return r.record(ctx, store.BackupSync, SyncKey)
 }
 
-// Daily uploads today's dated copy, records the run, and deletes dated copies and unreferenced
-// attachment files older than the number of days to keep.
+// Daily uploads today's dated copy, records the run, and deletes dated copies older than the number
+// of days to keep.
 func (r *Runner) Daily(ctx context.Context) error {
 	today := r.now().In(r.timeZone)
 	key := DailyKey(today)
@@ -179,7 +162,7 @@ func (r *Runner) Daily(ctx context.Context) error {
 	}
 
 	// The new copy is safely uploaded, so a failure to prune only leaves extra copies behind.
-	err := errors.Join(r.prune(ctx, today), r.pruneAttachments(ctx))
+	err := r.prune(ctx, today)
 	if err != nil {
 		r.logger.ErrorContext(ctx, "deleting old backups failed", "error", err)
 		return err
@@ -213,8 +196,7 @@ func (r *Runner) record(ctx context.Context, job store.BackupJob, key string) er
 }
 
 // upload copies, compresses, encrypts, and uploads the database to key, and returns the size of
-// the database copy. The attachment files the copy refers to are uploaded first and are not
-// counted in the size. Their number and size are logged.
+// the database copy.
 func (r *Runner) upload(ctx context.Context, key string) (int64, error) {
 	dir, err := os.MkdirTemp(r.workDir, ".sparrow-backup-")
 	if err != nil {
@@ -227,97 +209,15 @@ func (r *Runner) upload(ctx context.Context, key string) (int64, error) {
 		return 0, err
 	}
 
-	// The files are chosen from the snapshot, not from the live database, so the copy never refers
-	// to a file that was not uploaded, and a file deleted after the snapshot is not required.
-	referenced, err := readAttachments(ctx, snapshot)
-	if err != nil {
-		return 0, err
-	}
-
 	encrypted := filepath.Join(dir, "snapshot.db.gz.age")
-	if err := encryptFile(snapshot, encrypted, r.recipient, true); err != nil {
+	if err := encryptFile(snapshot, encrypted, r.recipient); err != nil {
 		return 0, err
 	}
 	if err := os.Remove(snapshot); err != nil {
 		return 0, fmt.Errorf("remove the plain copy: %w", err)
 	}
 
-	// The files go first: if one fails, the old database copy stays and the next job tries again.
-	if err := r.uploadAttachments(ctx, dir, referenced); err != nil {
-		return 0, err
-	}
-
 	return r.bucket.Put(ctx, key, encrypted)
-}
-
-// uploadAttachments uploads the encrypted file of every attachment in referenced that the bucket
-// does not hold yet, one at a time, using dir for the temporary encrypted file. The first failure
-// stops the run and is returned with the attachment's ID.
-func (r *Runner) uploadAttachments(ctx context.Context, dir string, referenced []attachmentRow) error {
-	if len(referenced) == 0 {
-		return nil
-	}
-
-	objects, err := r.bucket.List(ctx, attachmentPrefix)
-	if err != nil {
-		return err
-	}
-	held := make(map[string]int64, len(objects))
-	for _, object := range objects {
-		held[object.Key] = object.Size
-	}
-
-	var uploaded, skipped int
-	var uploadedBytes int64
-	for _, row := range referenced {
-		if size, ok := held[AttachmentKey(row.ID)]; ok && plausibleEncryptedSize(size, row.ByteSize) {
-			skipped++
-			continue
-		}
-
-		size, err := r.uploadAttachment(ctx, dir, row)
-		if err != nil {
-			r.logger.ErrorContext(ctx, "attachment backup failed", "attachment_id", row.ID, "error", err)
-			return fmt.Errorf("back up attachment %s: %w", row.ID, err)
-		}
-		uploaded++
-		uploadedBytes += size
-	}
-
-	r.logger.InfoContext(ctx, "attachments backed up", "uploaded", uploaded, "already_in_bucket", skipped, "uploaded_bytes", uploadedBytes)
-	return nil
-}
-
-// uploadAttachment encrypts one attachment's file to a temporary file in dir, uploads it, and
-// removes the temporary file whether or not the upload worked. It returns the uploaded size.
-func (r *Runner) uploadAttachment(ctx context.Context, dir string, row attachmentRow) (int64, error) {
-	source := r.store.AttachmentPath(row.ID)
-	if source == "" {
-		return 0, fmt.Errorf("%q is not an attachment ID", row.ID)
-	}
-
-	info, err := os.Stat(source)
-	if err != nil {
-		return 0, fmt.Errorf("check the file: %w", err)
-	}
-	if info.Size() != row.ByteSize {
-		return 0, fmt.Errorf("the file has %d bytes but the database says %d", info.Size(), row.ByteSize)
-	}
-
-	encrypted := filepath.Join(dir, row.ID+attachmentSuffix)
-	defer os.Remove(encrypted)
-
-	if err := encryptFile(source, encrypted, r.recipient, false); err != nil {
-		return 0, err
-	}
-	return r.bucket.Put(ctx, AttachmentKey(row.ID), encrypted)
-}
-
-// plausibleEncryptedSize reports whether an object of size bytes can be the age encryption of a
-// file of plain bytes: age adds a header of well under a kilobyte and 16 bytes per 64 KiB. An
-// object of another size is uploaded again.
-func plausibleEncryptedSize(size, plain int64) bool {
-	return size > plain && size <= plain+plain/4096+4096
 }
 
 // prune deletes the dated copies older than the number of days to keep, counting today. today is
@@ -350,44 +250,8 @@ func (r *Runner) prune(ctx context.Context, today time.Time) error {
 	return errors.Join(problems...)
 }
 
-// pruneAttachments deletes attachment objects that no attachment in the live database refers to
-// and that were last modified more than the days to keep ago, so the older database copies that
-// are still kept can be restored with their files. An object with no modification time is kept.
-func (r *Runner) pruneAttachments(ctx context.Context) error {
-	objects, err := r.bucket.List(ctx, attachmentPrefix)
-	if err != nil {
-		return err
-	}
-
-	attachments, err := r.store.ListAllAttachments(ctx)
-	if err != nil {
-		return fmt.Errorf("list attachments to keep: %w", err)
-	}
-	live := make(map[string]bool, len(attachments))
-	for _, attachment := range attachments {
-		live[attachment.ID] = true
-	}
-
-	cutoff := r.now().AddDate(0, 0, -r.keepDays)
-	var problems []error
-	for _, object := range objects {
-		match := attachmentKeyPattern.FindStringSubmatch(object.Key)
-		if match == nil || live[match[1]] || object.LastModified.IsZero() || !object.LastModified.Before(cutoff) {
-			continue
-		}
-
-		if err := r.bucket.Delete(ctx, object.Key); err != nil {
-			problems = append(problems, err)
-			continue
-		}
-		r.logger.InfoContext(ctx, "old attachment backup deleted", "key", object.Key)
-	}
-	return errors.Join(problems...)
-}
-
-// encryptFile writes the contents of source to target, encrypted to recipient and gzip-compressed
-// when compress is set. Files that are already compressed, such as media, are not compressed again.
-func encryptFile(source, target string, recipient age.Recipient, compress bool) error {
+// encryptFile writes the contents of source to target, gzip-compressed and encrypted to recipient.
+func encryptFile(source, target string, recipient age.Recipient) error {
 	in, err := os.Open(source)
 	if err != nil {
 		return fmt.Errorf("open copy: %w", err)
@@ -405,23 +269,16 @@ func encryptFile(source, target string, recipient age.Recipient, compress bool) 
 		return fmt.Errorf("start encryption: %w", err)
 	}
 
-	var sink io.Writer = encrypting
-	var compressing *gzip.Writer
-	if compress {
-		compressing, err = gzip.NewWriterLevel(encrypting, gzip.BestCompression)
-		if err != nil {
-			return fmt.Errorf("start compression: %w", err)
-		}
-		sink = compressing
+	compressing, err := gzip.NewWriterLevel(encrypting, gzip.BestCompression)
+	if err != nil {
+		return fmt.Errorf("start compression: %w", err)
 	}
 
-	if _, err := io.Copy(sink, in); err != nil {
+	if _, err := io.Copy(compressing, in); err != nil {
 		return fmt.Errorf("encrypt: %w", err)
 	}
-	if compressing != nil {
-		if err := compressing.Close(); err != nil {
-			return fmt.Errorf("finish compression: %w", err)
-		}
+	if err := compressing.Close(); err != nil {
+		return fmt.Errorf("finish compression: %w", err)
 	}
 	if err := encrypting.Close(); err != nil {
 		return fmt.Errorf("finish encryption: %w", err)
@@ -453,7 +310,7 @@ func ResolveCopy(name string) (string, error) {
 // Restore downloads the copy at key, decrypts it with identities, the private keys the copies may
 // be encrypted to, and writes it as the database at target after PRAGMA integrity_check passes. It refuses to replace an existing database, so a
 // restore never overwrites data by accident; move the old file aside first.
-func Restore(ctx context.Context, bucket *Bucket, key string, identities []age.Identity, target string) (int64, error) {
+func Restore(ctx context.Context, bucket *r2.Bucket, key string, identities []age.Identity, target string) (int64, error) {
 	for _, path := range []string{target, target + "-wal", target + "-shm"} {
 		if _, err := os.Stat(path); err == nil {
 			return 0, fmt.Errorf("%s already exists; move the old database aside before restoring", path)

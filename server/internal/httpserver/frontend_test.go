@@ -13,7 +13,7 @@ func TestFrontendIsForTheDesktopApp(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ShellFile), []byte("<!doctype html><title>app</title>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	handler := newFrontend(dir)
+	handler := newFrontend(dir, "https://objects.example")
 	const browser = "Mozilla/5.0 Firefox/130.0"
 
 	tests := []struct {

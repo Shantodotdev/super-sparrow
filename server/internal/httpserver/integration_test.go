@@ -19,13 +19,15 @@ import (
 
 const webhookSecret = "a-long-enough-webhook-secret"
 
+const objectOrigin = "https://objects.test"
+
 // withOptions rebuilds the fixture's handler with the frontend folder and webhook secret set.
 func (a *apiTeam) withOptions(webDir string) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publicURL, _ := url.Parse(origin)
 	a.handler = New(Options{
 		Logger: logger, Store: a.store, Auth: a.auth, PublicURL: publicURL, Now: time.Now,
-		WebDir: webDir, GitHubWebhookSecret: webhookSecret,
+		WebDir: webDir, ObjectOrigin: objectOrigin, GitHubWebhookSecret: webhookSecret,
 	})
 }
 
@@ -86,7 +88,10 @@ func TestShellPageAllowsOnlyItsOwnInlineScripts(t *testing.T) {
 	sum := sha256.Sum256([]byte(inline))
 	want := "script-src 'self' 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "';"
 	if response.Code != http.StatusOK || !strings.Contains(policy, want) || strings.Contains(policy, "unsafe-inline") ||
-		!strings.Contains(policy, "frame-ancestors 'none'") {
+		!strings.Contains(policy, "frame-ancestors 'none'") ||
+		!strings.Contains(policy, "img-src 'self' data: blob: "+objectOrigin+";") ||
+		!strings.Contains(policy, "media-src 'self' "+objectOrigin+";") ||
+		!strings.Contains(policy, "connect-src 'self' "+objectOrigin+" ") {
 		t.Fatalf("status %d, policy %q, want %q in it", response.Code, policy, want)
 	}
 	if response.Header().Get("Content-Type") != "text/html; charset=utf-8" {

@@ -19,7 +19,9 @@ import (
 
 	"filippo.io/age"
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
+	"github.com/shantodotdev/super-sparrow/server/internal/r2"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
+	"github.com/shantodotdev/super-sparrow/server/internal/store/storetest"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
 
@@ -103,7 +105,7 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	// 04:00 in Dhaka is 22:00 UTC the day before, so the copy must take Dhaka's date.
 	today := time.Date(2026, 3, 1, 4, 0, 0, 0, dhaka(t))
 	clock := func() time.Time { return today }
-	st := store.New(db, clock, t.TempDir())
+	st := store.New(db, clock, storetest.NewObjects())
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +122,7 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	server := httptest.NewServer(fake)
 	defer server.Close()
 	endpoint, _ := url.Parse(server.URL)
-	bucket := newBucket(endpoint, "auto", "key-id", "secret", "bucket", time.Now)
+	bucket := r2.NewBucketAt(endpoint, "auto", "key-id", "secret", "bucket")
 
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {

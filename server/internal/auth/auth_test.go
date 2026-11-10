@@ -16,6 +16,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
 	"github.com/shantodotdev/super-sparrow/server/internal/email"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
+	"github.com/shantodotdev/super-sparrow/server/internal/store/storetest"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
 
@@ -66,7 +67,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	st := store.New(db, time.Now, t.TempDir())
+	st := store.New(db, time.Now, storetest.NewObjects())
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatalf("CreateFirstOwner: %v", err)

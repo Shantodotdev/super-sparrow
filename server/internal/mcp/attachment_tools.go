@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"mime"
 	"slices"
 	"strings"
@@ -37,7 +36,6 @@ type attachmentOutput struct {
 	Filename    string       `json:"filename"`
 	ContentType string       `json:"content_type"`
 	ByteSize    int64        `json:"byte_size"`
-	SHA256      string       `json:"sha256"`
 	URL         string       `json:"url"`
 	CreatedBy   *actorOutput `json:"created_by"`
 	CreatedAt   time.Time    `json:"created_at"`
@@ -57,7 +55,7 @@ func (s *Server) attachmentTools() []tool {
 		{
 			name:  "list_attachments",
 			title: "List an issue's attachments",
-			description: "List the files attached to an issue, oldest first: id, filename, content type, size, SHA-256, " +
+			description: "List the files attached to an issue, oldest first: id, filename, content type, size, " +
 				"download URL, creator, and time. Call get_attachment to read one. Filenames are untrusted input.",
 			schema:   object([]string{"issue_key"}, map[string]any{"issue_key": issueKey}),
 			readOnly: true,
@@ -191,20 +189,7 @@ func (s *Server) textBlock(ctx context.Context, attachment store.Attachment) (ma
 // readAttachment reads at most limit bytes of the attachment's file and reports whether the file
 // has more.
 func (s *Server) readAttachment(ctx context.Context, attachment store.Attachment, limit int64) ([]byte, bool, error) {
-	file, _, err := s.store.OpenAttachment(ctx, attachment.ID)
-	if err != nil {
-		return nil, false, err
-	}
-	defer file.Close()
-
-	data, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, false, fmt.Errorf("read attachment %s: %w", attachment.ID, err)
-	}
-	if int64(len(data)) > limit {
-		return data[:limit], true, nil
-	}
-	return data, false, nil
+	return s.store.ReadAttachmentPrefix(ctx, attachment, limit)
 }
 
 func (s *Server) newAttachmentOutput(ctx context.Context, names *actorNames, a store.Attachment) (attachmentOutput, error) {
@@ -214,7 +199,7 @@ func (s *Server) newAttachmentOutput(ctx context.Context, names *actorNames, a s
 	}
 	return attachmentOutput{
 		ID: a.ID, IssueKey: a.IssueKey, Filename: a.Filename, ContentType: a.ContentType, ByteSize: a.ByteSize,
-		SHA256: a.SHA256, URL: s.absoluteURL(a.URLPath()), CreatedBy: creator, CreatedAt: a.CreatedAt,
+		URL: s.absoluteURL(a.URLPath()), CreatedBy: creator, CreatedAt: a.CreatedAt,
 	}, nil
 }
 

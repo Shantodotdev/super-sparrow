@@ -42,6 +42,9 @@ type Options struct {
 	Version string
 	// WebDir is the folder of the built frontend to serve, or "" to serve none.
 	WebDir string
+	// ObjectOrigin is the address of the attachments bucket, such as
+	// https://<account>.r2.cloudflarestorage.com, which the page's security policy allows.
+	ObjectOrigin string
 	// GitHubWebhookSecret checks GitHub webhook signatures; "" turns the webhook off.
 	GitHubWebhookSecret string
 }
@@ -149,7 +152,8 @@ func New(opts Options) http.Handler {
 	s.route("POST /api/issues/{key}/reviews/{round}/findings/{finding}/comments", signedIn, s.addFindingComment)
 	s.route("PATCH /api/comments/{id}", signedIn, s.editComment)
 
-	s.route("POST /api/issues/{key}/attachments", signedIn, s.uploadAttachment)
+	s.route("POST /api/issues/{key}/attachments", signedIn, s.beginAttachment)
+	s.route("POST /api/attachments/{id}/complete", signedIn, s.completeAttachment)
 	s.route("GET /api/issues/{key}/attachments", signedIn, s.listAttachments)
 	s.route("GET /api/attachments/{id}", signedIn, s.downloadAttachment)
 	s.route("DELETE /api/attachments/{id}", humanOnly, s.deleteAttachment)
@@ -170,7 +174,7 @@ func New(opts Options) http.Handler {
 	// Unknown API paths answer in JSON, so they never fall through to the frontend.
 	s.mux.HandleFunc("/api/", s.noSuchEndpoint)
 	if opts.WebDir != "" {
-		s.mux.Handle("/", newFrontend(opts.WebDir))
+		s.mux.Handle("/", newFrontend(opts.WebDir, opts.ObjectOrigin))
 	}
 
 	return recoverPanics(opts.Logger, logRequests(opts.Logger, s.mux))

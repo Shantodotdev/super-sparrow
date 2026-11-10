@@ -117,7 +117,7 @@ func (s *Store) DeleteProject(ctx context.Context, by Caller, projectID string) 
 		return err
 	}
 
-	return s.removeAttachmentFiles(attachmentIDs)
+	return s.removeAttachmentFiles(ctx, attachmentIDs)
 }
 
 // GetProject returns the project with the given ID.

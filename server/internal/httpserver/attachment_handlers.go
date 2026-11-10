@@ -1,9 +1,6 @@
 package httpserver
 
 import (
-	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,11 +9,6 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
-// uploadStallTimeout is how long an upload may go without sending a byte before it is cut off.
-// The deadline moves forward with every read, so a large upload is never limited by its total
-// time, only a stalled one.
-const uploadStallTimeout = time.Minute
-
 type attachmentView struct {
 	ID               string    `json:"id"`
 	ProjectKey       string    `json:"project_key"`
@@ -24,7 +16,6 @@ type attachmentView struct {
 	Filename         string    `json:"filename"`
 	ContentType      string    `json:"content_type"`
 	ByteSize         int64     `json:"byte_size"`
-	SHA256           string    `json:"sha256"`
 	URL              string    `json:"url"`
 	CreatedByActorID string    `json:"created_by_actor_id"`
 	CreatedAt        time.Time `json:"created_at"`
@@ -32,7 +23,7 @@ type attachmentView struct {
 
 func newAttachmentView(a store.Attachment) attachmentView {
 	return attachmentView{ID: a.ID, ProjectKey: a.ProjectKey, IssueKey: a.IssueKey, Filename: a.Filename,
-		ContentType: a.ContentType, ByteSize: a.ByteSize, SHA256: a.SHA256, URL: a.URLPath(),
+		ContentType: a.ContentType, ByteSize: a.ByteSize, URL: a.URLPath(),
 		CreatedByActorID: a.CreatedByID, CreatedAt: a.CreatedAt}
 }
 
@@ -46,50 +37,38 @@ func isInline(contentType string) bool {
 	return inlineTypes[contentType] || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/")
 }
 
-// idleDeadlineBody pushes the connection's read deadline forward on every read.
-type idleDeadlineBody struct {
-	io.ReadCloser
-	controller *http.ResponseController
+type beginAttachmentRequest struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	ByteSize    int64  `json:"byte_size"`
 }
 
-func (b idleDeadlineBody) Read(p []byte) (int, error) {
-	// Ignoring the error is deliberate: servers that cannot set a deadline have none to enforce.
-	_ = b.controller.SetReadDeadline(time.Now().Add(uploadStallTimeout))
-	return b.ReadCloser.Read(p)
-}
-
-// uploadAttachment attaches the request body, the raw file, to the issue in the path. The file's
-// name comes from the filename query parameter. The body is streamed to disk, never held in
-// memory, and is exempt from the server's read timeout so a large video can finish uploading.
-func (s *server) uploadAttachment(w http.ResponseWriter, r *http.Request) error {
-	filename := r.URL.Query().Get("filename")
-	if strings.TrimSpace(filename) == "" {
-		return &store.ValidationError{Field: "filename", Message: "is required"}
-	}
-	if r.ContentLength > store.MaxVideoBytes {
-		return store.Refuse(store.ErrTooLarge, "files must be at most %d bytes, and videos at most %d bytes", store.MaxAttachmentBytes, store.MaxVideoBytes)
-	}
-	if r.ContentLength == 0 {
-		return &store.ValidationError{Field: "body", Message: "must hold a file"}
+// beginAttachment records a pending attachment and answers with the link the client sends the
+// file to. The file goes straight to the bucket; completeAttachment confirms it.
+func (s *server) beginAttachment(w http.ResponseWriter, r *http.Request) error {
+	var req beginAttachmentRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 
-	controller := http.NewResponseController(w)
-	if err := controller.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return fmt.Errorf("lift write deadline: %w", err)
-	}
-	if err := controller.SetReadDeadline(time.Now().Add(uploadStallTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return fmt.Errorf("extend read deadline: %w", err)
-	}
-	body := idleDeadlineBody{ReadCloser: http.MaxBytesReader(w, r.Body, store.MaxVideoBytes), controller: controller}
-
-	attachment, err := s.store.CreateAttachment(r.Context(), identityFrom(r.Context()).caller(), r.PathValue("key"), filename, body)
-	if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
-		return store.Refuse(store.ErrTooLarge, "files must be at most %d bytes, and videos at most %d bytes", store.MaxAttachmentBytes, store.MaxVideoBytes)
-	}
+	attachment, upload, err := s.store.BeginAttachment(r.Context(), identityFrom(r.Context()).caller(), r.PathValue("key"),
+		req.Filename, req.ContentType, req.ByteSize)
 	if err != nil {
 		return err
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"attachment": newAttachmentView(attachment)})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"attachment": newAttachmentView(attachment),
+		"upload":     map[string]any{"url": upload.URL, "method": http.MethodPut, "headers": upload.Headers},
+	})
+	return nil
+}
+
+func (s *server) completeAttachment(w http.ResponseWriter, r *http.Request) error {
+	attachment, err := s.store.CompleteAttachment(r.Context(), identityFrom(r.Context()).caller(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"attachment": newAttachmentView(attachment)})
 	return nil
 }
 
@@ -107,38 +86,23 @@ func (s *server) listAttachments(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// downloadAttachment serves a file, with Range requests for seeking in videos and resuming
-// downloads. Only images, video, audio, and PDF are shown in the page; every other type is a
-// download with a generic content type, so a browser never runs an uploaded page or script.
+// downloadAttachment sends the caller to a short-lived signed link to the file in the bucket,
+// which answers Range requests for seeking in videos and resuming downloads. Only images, video,
+// audio, and PDF are shown in the page; every other type is forced to download with a generic
+// content type, so a browser never runs an uploaded page or script.
 func (s *server) downloadAttachment(w http.ResponseWriter, r *http.Request) error {
-	file, attachment, err := s.store.OpenAttachment(r.Context(), r.PathValue("id"))
+	attachment, err := s.store.GetAttachment(r.Context(), r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
-	controller := http.NewResponseController(w)
-	if err := controller.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return fmt.Errorf("lift write deadline: %w", err)
-	}
-	if err := controller.SetReadDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return fmt.Errorf("lift read deadline: %w", err)
-	}
-
-	header := w.Header()
-	header.Set("ETag", `"`+attachment.SHA256+`"`)
-	header.Set("Cache-Control", "private, no-cache")
-	header.Set("X-Content-Type-Options", "nosniff")
-	header.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	contentType, disposition := "application/octet-stream", "attachment; filename*=UTF-8''"+encodeFilename(attachment.Filename)
 	if isInline(attachment.ContentType) {
-		header.Set("Content-Type", attachment.ContentType)
-		header.Set("Content-Disposition", "inline")
-	} else {
-		header.Set("Content-Type", "application/octet-stream")
-		header.Set("Content-Disposition", "attachment; filename*=UTF-8''"+encodeFilename(attachment.Filename))
+		contentType, disposition = attachment.ContentType, "inline"
 	}
 
-	http.ServeContent(w, r, "", attachment.CreatedAt, file)
+	w.Header().Set("Cache-Control", "private, no-store")
+	http.Redirect(w, r, s.store.DownloadURL(attachment, contentType, disposition), http.StatusFound)
 	return nil
 }
 
