@@ -1,6 +1,6 @@
 [package]
 name = "super-sparrow"
-version = "0.1.1"
+version = "0.1.2"
 description = "Super Sparrow desktop app"
 edition = "2024"
 rust-version = "1.99"
