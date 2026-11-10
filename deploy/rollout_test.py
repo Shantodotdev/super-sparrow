@@ -193,5 +193,28 @@ class RollbackTests(unittest.TestCase):
         self.exercise_failure(True)
 
 
+class SmokeTests(unittest.TestCase):
+    def test_requests_identify_the_desktop_app(self):
+        seen = []
+
+        def fake_urlopen(request, timeout):
+            seen.append(request.get_header("User-agent"))
+            body = b'{"status": "ok"}' if request.full_url.endswith("/health") else b'<script src="/assets/a.js"></script>'
+            return _Response(body)
+
+        class _Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        with patch.object(rollout.urllib.request, "urlopen", fake_urlopen):
+            rollout.smoke("https://example.test")
+
+        self.assertEqual(len(seen), 3)
+        self.assertTrue(all(agent.startswith("SuperSparrowDesktop/") for agent in seen))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -64,7 +64,11 @@ def smoke(public_url):
     """Require database health and every asset referenced by the frontend shell."""
 
     def read(path):
-        with urllib.request.urlopen(public_url + path, timeout=10) as response:
+        # The server hands its pages and assets only to the desktop app, which this header names.
+        request = urllib.request.Request(
+            public_url + path, headers={"User-Agent": "SuperSparrowDesktop/smoke"}
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
             return response.read()
 
     if json.loads(read("/api/health")) != {"status": "ok"}:
