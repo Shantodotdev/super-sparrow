@@ -29,6 +29,12 @@ type fakeS3 struct {
 	mu      sync.Mutex
 	objects map[string][]byte
 	failPut bool
+	// failPutPrefix makes uploads of keys with this prefix fail, when it is not empty.
+	failPutPrefix string
+	// puts lists the keys uploaded, in order.
+	puts []string
+	// modified holds the last-modified time listed for a key; keys without one list none.
+	modified map[string]time.Time
 }
 
 func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -42,15 +48,17 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimPrefix(r.URL.Path, "/bucket/")
 
 	switch {
-	case r.Method == http.MethodPut && f.failPut:
+	case r.Method == http.MethodPut && (f.failPut || (f.failPutPrefix != "" && strings.HasPrefix(key, f.failPutPrefix))):
 		http.Error(w, "<Error><Code>InternalError</Code><Message>try again</Message></Error>", http.StatusInternalServerError)
 	case r.Method == http.MethodPut:
 		data, _ := io.ReadAll(r.Body)
 		f.objects[key] = data
+		f.puts = append(f.puts, key)
 	case r.Method == http.MethodGet && r.URL.Path == "/bucket":
 		type content struct {
-			Key  string
-			Size int64
+			Key          string
+			Size         int64
+			LastModified string `xml:",omitempty"`
 		}
 		var listing struct {
 			XMLName  xml.Name `xml:"ListBucketResult"`
@@ -58,7 +66,11 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		for name, data := range f.objects {
 			if strings.HasPrefix(name, r.URL.Query().Get("prefix")) {
-				listing.Contents = append(listing.Contents, content{Key: name, Size: int64(len(data))})
+				entry := content{Key: name, Size: int64(len(data))}
+				if when, ok := f.modified[name]; ok {
+					entry.LastModified = when.UTC().Format(time.RFC3339)
+				}
+				listing.Contents = append(listing.Contents, entry)
 			}
 		}
 		sort.Slice(listing.Contents, func(i, j int) bool { return listing.Contents[i].Key < listing.Contents[j].Key })
@@ -91,7 +103,7 @@ func TestBackupsUploadPruneAndRestore(t *testing.T) {
 	// 04:00 in Dhaka is 22:00 UTC the day before, so the copy must take Dhaka's date.
 	today := time.Date(2026, 3, 1, 4, 0, 0, 0, dhaka(t))
 	clock := func() time.Time { return today }
-	st := store.New(db, clock)
+	st := store.New(db, clock, t.TempDir())
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatal(err)

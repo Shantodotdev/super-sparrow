@@ -82,21 +82,18 @@ Each subissue returns `id` (UUID), `key` (such as `WP-142.1`), `issue_id`, `titl
 
 People and agents use the same authenticated endpoints. Actor fields are rejected; the server derives identity from the session or token. Each committed creation or edit emits `issue.subissue_created` or `issue.subissue_updated` on the parent issue, with the subissue ID and number in its payload. These events appear in the parent history and event stream. The web interface shows subissues below the description and instead of review rounds in the sidebar, with creation available from either list. Clicking an existing subissue opens a right-side drawer: titles save on blur, statuses save immediately, and Markdown descriptions autosave with revision checks and recoverable drafts. MCP exposes `list_subissues`, `create_subissue`, `update_subissue`, and `set_labels`; the CLI can call them through `tool call`. Existing CLI issue commands operate on full issues. See [MCP.md](MCP.md) for tool arguments, pagination, and safe retries.
 
-## Images and contexts
+## Attachments
 
-Images are stored in the database with their project, so backups include them. Markdown in plans, descriptions, and contexts shows an image through its URL, `![Screenshot](/api/attachments/{id})`.
+Files are attached to an issue and shown below its description. They are stored on the server's attachments volume (`ATTACHMENTS_DIR`), not in the database, and the encrypted backups include them.
 
-| Method and path                        | Access | What it does                                                                                                                                        |
-| -------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/projects/{key}/attachments` |        | The body is the image itself, not JSON: PNG, JPEG, GIF, or WebP, up to 10 MiB, recognized from its bytes. Returns `{attachment}` with its `url`     |
-| `GET /api/attachments/{id}`            |        | The image, cached as immutable and served with `nosniff` and a sandboxing Content-Security-Policy                                                   |
-| `GET /api/projects/{key}/contexts`     |        | `{contexts}`, newest first. Filters: `?issue=WP-1`, `?search=` (title, or a context key). Pages with `?limit=` and `?offset=`                       |
-| `POST /api/projects/{key}/contexts`    |        | `{title, body?, issue_id?}`; returns `{context}` with 201                                                                                           |
-| `GET /api/contexts/{key}`              |        | `{context}`, by a key such as `WP-C3`                                                                                                               |
-| `PATCH /api/contexts/{key}`            |        | Supplied `title`, `body`, and/or `issue_id` (`""` or `null` unlinks). A new `body` needs the `body_revision` it was edited from; a stale one is 409 |
-| `DELETE /api/contexts/{key}`           | person | Deletes the context. Its images stay, since other Markdown may show them                                                                            |
+| Method and path                      | Access | What it does                                                                                                                                                                                                |
+| ------------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/issues/{key}/attachments` |        | The body is the file itself, not JSON, and `?filename=` names it. Any type up to 100 MB; a video up to 5 GB (413 when larger). The type is read from the bytes. Returns `{attachment}` with 201             |
+| `GET /api/issues/{key}/attachments`  |        | `{attachments}`, oldest first                                                                                                                                                                               |
+| `GET /api/attachments/{id}`          |        | The file, with Range support. Images, video, audio, and PDF show in the page; every other type, including HTML and SVG, downloads as `application/octet-stream`. Served with `nosniff` and a sandboxing CSP |
+| `DELETE /api/attachments/{id}`       | person | Deletes the attachment and its file                                                                                                                                                                         |
 
-A context is a note kept outside the issue tracker: inspiration, research, and screenshots. Contexts are numbered per project and shown as `WP-C3`; each returns `id`, `key`, `project_key`, `project_slug`, `number`, `title`, `body`, `body_revision`, `issue_id`, `issue_key`, `created_by_actor_id`, `created_at`, and `updated_at`. A linked issue must be in the context's project. Uploads write `attachment.created`, and context changes write `context.created`, `context.updated`, and `context.deleted`, all on the project.
+Each attachment returns `id`, `project_key`, `issue_key`, `filename`, `content_type`, `byte_size`, `sha256`, `url`, `created_by_actor_id`, and `created_at`. Uploads write `attachment.created` and deletions write `attachment.deleted`, on the project.
 
 ## Reviews and findings
 

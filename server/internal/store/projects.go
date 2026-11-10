@@ -77,16 +77,22 @@ func (s *Store) RenameProject(ctx context.Context, by Caller, projectID, name st
 	})
 }
 
-// DeleteProject deletes a project with all of its milestones, labels, issues, reviews, and
+// DeleteProject deletes a project with all of its milestones, labels, issues, attachments, reviews, and
 // comments. Its events stay as history. Only an owner can delete projects.
 func (s *Store) DeleteProject(ctx context.Context, by Caller, projectID string) error {
-	return s.write(ctx, by, func(w *writeTx) error {
+	var attachmentIDs []string
+	err := s.write(ctx, by, func(w *writeTx) error {
 		if err := w.requireOwner("delete projects"); err != nil {
 			return err
 		}
 
 		project, err := getProject(w.ctx, w.tx, `id = ?`, projectID)
 		if err != nil {
+			return err
+		}
+
+		// The rows go with the project; collect the IDs now to remove their files afterwards.
+		if attachmentIDs, err = attachmentIDsOfProject(w, project.ID); err != nil {
 			return err
 		}
 
@@ -107,6 +113,11 @@ func (s *Store) DeleteProject(ctx context.Context, by Caller, projectID string) 
 		return w.event(project.ID, TargetProject, project.ID, "project.deleted",
 			map[string]any{"key": project.Key, "name": project.Name})
 	})
+	if err != nil {
+		return err
+	}
+
+	return s.removeAttachmentFiles(attachmentIDs)
 }
 
 // GetProject returns the project with the given ID.

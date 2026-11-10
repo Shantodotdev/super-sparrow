@@ -17,6 +17,8 @@ var (
 	ErrForbidden = errors.New("forbidden")
 	// ErrInvalidTransition means the record cannot move from its current state to the requested one.
 	ErrInvalidTransition = errors.New("invalid transition")
+	// ErrTooLarge means an upload is bigger than the limit for its kind.
+	ErrTooLarge = errors.New("too large")
 	// ErrUnauthenticated means a session or agent token is unknown, expired, revoked, or belongs
 	// to a disabled actor.
 	ErrUnauthenticated = errors.New("not signed in")

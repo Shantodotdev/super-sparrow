@@ -50,6 +50,8 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, http.StatusForbidden, errorBody{Error: store.Explain(err)})
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, errorBody{Error: store.Explain(err)})
+	case errors.Is(err, store.ErrTooLarge):
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody{Error: store.Explain(err), Field: "body"})
 	case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrInvalidTransition):
 		writeJSON(w, http.StatusConflict, errorBody{Error: store.Explain(err)})
 	default:

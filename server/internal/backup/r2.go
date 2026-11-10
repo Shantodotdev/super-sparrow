@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,12 +18,17 @@ import (
 )
 
 const (
-	r2Region       = "auto"
-	s3Service      = "s3"
-	r2Timeout      = 10 * time.Minute
+	r2Region  = "auto"
+	s3Service = "s3"
+	r2Timeout = 10 * time.Minute
+	// A request that is not an upload or download of a file must finish in this time.
+	r2ListTimeout  = 5 * time.Minute
 	emptyHash      = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	maxErrorDetail = 4 << 10
 )
+
+// ErrNotFound means the bucket has no object under the requested key.
+var ErrNotFound = errors.New("object not found")
 
 // Bucket is an S3-compatible bucket, such as a Cloudflare R2 bucket, reached with path-style
 // requests signed with AWS Signature Version 4.
@@ -50,14 +56,22 @@ func NewR2Bucket(accountID, accessKeyID, secretAccessKey, bucket string) *Bucket
 }
 
 func newBucket(endpoint *url.URL, region, accessKeyID, secretAccessKey, bucket string, now func() time.Time) *Bucket {
+	// A file can be several gigabytes, so the client has no overall timeout: the caller's context
+	// ends a request. The transport still gives up on a server that accepts a request, or the end
+	// of an upload, and then stays silent.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = r2Timeout
+
 	return &Bucket{
 		endpoint: endpoint, bucket: bucket, region: region, accessKeyID: accessKeyID,
-		secretAccessKey: secretAccessKey, http: &http.Client{Timeout: r2Timeout}, now: now,
+		secretAccessKey: secretAccessKey, http: &http.Client{Transport: transport}, now: now,
 	}
 }
 
-// Put uploads the file at path as key. The bucket replaces an existing object only once the new
-// upload has completed, so a failed upload leaves the old copy in place.
+// Put uploads the file at path as key in a single request, which R2 accepts up to 5 GiB. The
+// file is read twice, once to hash it for the signature and once to send it, and is never held in
+// memory. The bucket replaces an existing object only once the new upload has completed, so a
+// failed upload leaves the old copy in place.
 func (b *Bucket) Put(ctx context.Context, key, path string) (int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -105,6 +119,9 @@ func (b *Bucket) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 
 // Delete removes key.
 func (b *Bucket) Delete(ctx context.Context, key string) error {
+	ctx, cancel := context.WithTimeout(ctx, r2ListTimeout)
+	defer cancel()
+
 	request, err := b.newRequest(ctx, http.MethodDelete, key, nil, nil)
 	if err != nil {
 		return err
@@ -120,6 +137,9 @@ func (b *Bucket) Delete(ctx context.Context, key string) error {
 
 // List returns every object whose key starts with prefix, in key order.
 func (b *Bucket) List(ctx context.Context, prefix string) ([]Object, error) {
+	ctx, cancel := context.WithTimeout(ctx, r2ListTimeout)
+	defer cancel()
+
 	var objects []Object
 	token := ""
 	for {
@@ -192,14 +212,19 @@ func (b *Bucket) send(request *http.Request, payloadHash string) (*http.Response
 		detail, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorDetail))
 		response.Body.Close()
 
+		var notFound error
+		if response.StatusCode == http.StatusNotFound {
+			notFound = ErrNotFound
+		}
+
 		var failure struct {
 			Code    string `xml:"Code"`
 			Message string `xml:"Message"`
 		}
 		if xml.Unmarshal(detail, &failure) == nil && failure.Code != "" {
-			return nil, fmt.Errorf("status %d: %s: %s", response.StatusCode, failure.Code, failure.Message)
+			return nil, errors.Join(notFound, fmt.Errorf("status %d: %s: %s", response.StatusCode, failure.Code, failure.Message))
 		}
-		return nil, fmt.Errorf("status %d: %s", response.StatusCode, strings.TrimSpace(string(detail)))
+		return nil, errors.Join(notFound, fmt.Errorf("status %d: %s", response.StatusCode, strings.TrimSpace(string(detail))))
 	}
 	return response, nil
 }
