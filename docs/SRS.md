@@ -111,7 +111,7 @@ The MCP endpoint uses the streamable HTTP transport without sessions: each reque
 - FR-19: Views: project issue list, issue page, review round page, activity feed, settings for actors and tokens.
 - FR-20: Views update live through the event stream.
 - FR-21: Command palette and keyboard shortcuts for navigation and finding decisions. A Keyboard shortcuts settings page lists application shortcuts and lets each person edit, disable, or reset their own bindings, including desktop global capture. Save overrides in SQLite and synchronize clients; refuse conflicting chords and ambiguous sequence prefixes. Escape and Tab retain standard cancellation and focus behavior.
-- FR-22: The desktop app adds a tray icon, native notifications, and a global shortcut to open an issue by key. It starts at login and stays in the tray, and the system-wide Meta+Shift+Q opens an always-on-top quick capture window over any application.
+- FR-22: The desktop app adds a tray icon, native notifications, and a global shortcut to open an issue by key. It starts at login and stays in the tray, and the system-wide Meta+Shift+Q opens an always-on-top quick capture window over any application. It updates itself: it checks the signed releases published on GitHub shortly after launch and every six hours, then installs the update and restarts, but only while its main window is hidden in the tray.
 
 ### Import and integration
 
@@ -168,6 +168,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 - Comments, plans, findings, and imported content are untrusted. Markdown is sanitized before rendering. Agent tools never execute content.
 - The app's page is served with a Content-Security-Policy that allows only its own files and, by hash, the inline scripts its build writes, so content that slips past sanitizing cannot run scripts.
 - Backups are encrypted before they leave the server.
+- Desktop updates are signed with a private key held only in the release workflow’s secrets. The app installs an update only if its signature verifies against the public key embedded in the app.
 - Attachments live in their own private R2 bucket, reached only through short-lived signed URLs, with a token scoped to that bucket and separate from the backup token. Attachments are not backed up.
 
 ## 7. Backups

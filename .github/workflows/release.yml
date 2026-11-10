@@ -77,10 +77,21 @@ jobs:
         with:
           workspaces: desktop/src-tauri
       - run: bun install --frozen-lockfile
+      - name: Check the tag matches the app version
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./desktop/src-tauri/tauri.conf.json").version)')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match app version $version" >&2
+            exit 1
+          fi
       - name: Build and upload the installers
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update packages; installed apps verify them with the public key in tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
           tauriScript: bunx tauri

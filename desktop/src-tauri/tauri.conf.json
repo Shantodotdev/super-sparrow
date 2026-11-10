@@ -31,6 +31,15 @@
       "rpm": {
         "desktopTemplate": "linux/super-sparrow.desktop"
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBOTJEREQ2RDY1RDM4NTIKUldSU09GM1cxdDJTS2xadzZIMkhQYTBqOWRIc25ETjdFbFFjT2VSclVWZitOVWlwRUk0VHJET2YK",
+      "endpoints": [
+        "https://github.com/Shantodotdev/super-sparrow/releases/latest/download/latest.json"
+      ]
     }
   }
 }
