@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   attachmentKind,
-  attachmentUploadPath,
+  attachmentUploadRequest,
   formatBytes,
   maxFileBytes,
   maxVideoBytes,
@@ -86,11 +86,17 @@ describe("queueFiles", () => {
   });
 });
 
-describe("attachmentUploadPath", () => {
-  test("encodes the issue key and filename", () => {
-    expect(attachmentUploadPath("WP-1", "my file & more.png")).toBe(
-      "/api/issues/WP-1/attachments?filename=my%20file%20%26%20more.png",
-    );
+describe("attachmentUploadRequest", () => {
+  test("describes the file for the server", () => {
+    expect(attachmentUploadRequest(file("a b.png", 12, "image/png"))).toEqual({
+      filename: "a b.png",
+      content_type: "image/png",
+      byte_size: 12,
+    });
+  });
+
+  test("falls back to a generic content type", () => {
+    expect(attachmentUploadRequest(file("notes", 3)).content_type).toBe("application/octet-stream");
   });
 });
 

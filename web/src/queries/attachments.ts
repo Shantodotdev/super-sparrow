@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { queryOptions, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { apiGet, apiUploadFile, apiWrite } from "../lib/api";
-import { attachmentUploadPath, queueFiles } from "../lib/attachments";
+import { apiGet, apiPutFile, apiWrite, type UploadTarget } from "../lib/api";
+import { attachmentUploadRequest, queueFiles } from "../lib/attachments";
 import type { Attachment } from "../lib/types";
 import { useToast } from "../components/toast";
 
@@ -95,17 +95,32 @@ export function useAttachmentUploads() {
     const controller = new AbortController();
     controllers.current.set(job.id, controller);
     patch(job.id, { status: "uploading", progress: 0, error: "" });
+    let pendingId = "";
 
     try {
-      const { attachment } = await apiUploadFile<{ attachment: Attachment }>(
-        attachmentUploadPath(issueKey, job.file.name),
-        job.file,
-        { signal: controller.signal, onProgress: (progress) => patch(job.id, { progress }) },
+      const started = await apiWrite<{ attachment: Attachment; upload: UploadTarget }>(
+        `/api/issues/${encodeURIComponent(issueKey)}/attachments`,
+        "POST",
+        attachmentUploadRequest(job.file),
+      );
+      pendingId = started.attachment.id;
+      await apiPutFile(started.upload, job.file, {
+        signal: controller.signal,
+        onProgress: (progress) => patch(job.id, { progress }),
+      });
+      const { attachment } = await apiWrite<{ attachment: Attachment }>(
+        `/api/attachments/${encodeURIComponent(pendingId)}/complete`,
+        "POST",
       );
       cacheAttachment(client, attachment);
       patch(job.id, { status: "done", progress: 1 });
       return true;
     } catch (failure) {
+      // Best effort: drop the pending row so it does not linger.
+      if (pendingId)
+        void apiWrite<void>(`/api/attachments/${encodeURIComponent(pendingId)}`, "DELETE").catch(
+          () => {},
+        );
       const canceled = failure instanceof DOMException && failure.name === "AbortError";
       if (!canceled) {
         patch(job.id, {

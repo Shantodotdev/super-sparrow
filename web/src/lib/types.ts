@@ -189,7 +189,6 @@ export type Attachment = {
   filename: string;
   content_type: string;
   byte_size: number;
-  sha256: string;
   url: string;
   created_by_actor_id: string;
   created_at: string;
