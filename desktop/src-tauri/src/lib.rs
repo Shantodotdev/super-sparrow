@@ -25,6 +25,9 @@ const MAIN_WINDOW: &str = "main";
 const CAPTURE_WINDOW: &str = "capture";
 /// The argument the login item starts the app with, so it starts in the tray without a window.
 const HIDDEN_ARGUMENT: &str = "--hidden";
+/// The User-Agent of the app's windows. The server serves its pages only to requests that carry
+/// the `SuperSparrowDesktop/` token, so browsers are turned away.
+const USER_AGENT: &str = concat!("SuperSparrowDesktop/", env!("CARGO_PKG_VERSION"));
 const MAX_NOTIFICATION_TITLE: usize = 120;
 const MAX_NOTIFICATION_BODY: usize = 400;
 
@@ -245,6 +248,7 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
     )?;
     let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(server.clone()))
         .title("Super Sparrow")
+        .user_agent(USER_AGENT)
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .visible(show)
@@ -262,6 +266,7 @@ fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWind
         .map_err(|error| tauri::Error::Anyhow(error.into()))?;
     let window = WebviewWindowBuilder::new(app, CAPTURE_WINDOW, WebviewUrl::External(capture_url))
         .title("Quick capture")
+        .user_agent(USER_AGENT)
         .inner_size(560.0, 640.0)
         .min_inner_size(380.0, 360.0)
         .decorations(false)

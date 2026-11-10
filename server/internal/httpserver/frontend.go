@@ -7,12 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path"
 	"regexp"
 	"strings"
 )
+
+// DesktopAgentToken is the product token the desktop app puts in its User-Agent. The server hands
+// the app's pages only to requests that carry it, or that arrive on a local development address.
+const DesktopAgentToken = "SuperSparrowDesktop/"
 
 // ShellFile is the page TanStack Start's SPA build writes for the app to start from.
 const ShellFile = "_shell.html"
@@ -46,6 +51,11 @@ func (f *frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !desktopRequest(r) {
+		serveDesktopOnly(w)
+		return
+	}
+
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -70,6 +80,33 @@ func (f *frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// desktopRequest reports whether a page request comes from the desktop app, or from a browser on
+// a local development address. The marker is not a secret, so this keeps browsers away from the
+// pages but is no protection for the API, which every request still has to authenticate for.
+func desktopRequest(r *http.Request) bool {
+	if strings.Contains(r.UserAgent(), DesktopAgentToken) {
+		return true
+	}
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = strings.Trim(r.Host, "[]")
+	}
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+// serveDesktopOnly answers a browser with a short page that points to the desktop app.
+func serveDesktopOnly(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	w.Header().Set("X-Robots-Tag", "noindex")
+	w.WriteHeader(http.StatusForbidden)
+	fmt.Fprint(w, `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`+
+		`<title>Super Sparrow</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#07080a;color:#aebed4;font:15px system-ui,sans-serif}`+
+		`main{max-width:360px;padding:24px;text-align:center}h1{margin:0 0 8px;font-size:20px;color:#eef0f5}p{margin:0}</style>`+
+		`<main><h1>Open the desktop app</h1><p>Super Sparrow no longer runs in a browser. Sign in with the Super Sparrow desktop app.</p></main></html>`)
 }
 
 func (f *frontend) serveShell(w http.ResponseWriter, r *http.Request) {
