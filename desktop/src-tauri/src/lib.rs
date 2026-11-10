@@ -270,7 +270,10 @@ fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWind
         .inner_size(560.0, 640.0)
         .min_inner_size(380.0, 360.0)
         .decorations(false)
+        .transparent(true)
+        .shadow(false)
         .always_on_top(true)
+        .visible_on_all_workspaces(true)
         .skip_taskbar(true)
         .center()
         .focused(true)
@@ -293,9 +296,12 @@ fn toggle_capture(app: &AppHandle) {
         return;
     }
     let _ = window.set_always_on_top(true);
+    let _ = window.set_visible_on_all_workspaces(true);
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
+    // Puts the keyboard in the title, which the page cannot do until the window owns the focus.
+    let _ = window.eval("document.querySelector('#quick-capture-title')?.focus()");
 }
 
 fn show_main(app: &AppHandle) {
