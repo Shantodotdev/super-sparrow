@@ -6,6 +6,7 @@ mod capture;
 mod server_url;
 mod settings;
 mod shortcut;
+mod updater;
 
 use std::sync::Mutex;
 
@@ -59,6 +60,7 @@ pub fn run() {
             Some(vec![HIDDEN_ARGUMENT]),
         ))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -110,6 +112,10 @@ pub fn run() {
                 eprintln!("{error}");
             }
             build_tray(&handle)?;
+            // A development build would otherwise replace itself with the published release.
+            if !cfg!(debug_assertions) {
+                updater::start(&handle);
+            }
             Ok(())
         })
         .run(context)

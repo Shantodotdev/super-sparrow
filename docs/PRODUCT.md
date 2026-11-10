@@ -26,7 +26,7 @@ Our code is now written at agent speed, but our tracking tools still work at hum
 3. **Each finding stands alone.** A finding has a number, severity, problem, fix, evidence (file and line), a status, and its own discussion thread. The developer decides fix, wontfix, or later per finding, with one keystroke.
 4. **Every action has an author.** Humans and agents each have their own identity. The history reads "Found by Codex, fixed by Claude, approved by Shanto."
 5. **Agents connect directly.** A built-in MCP server and a CLI give agents tools shaped around the workflow: find the issue for this branch, start a review, add a finding, mark it fixed.
-6. **It is fast everywhere.** A native desktop app for Linux, macOS, and Windows, plus the same interface in a browser, with live updates and keyboard shortcuts.
+6. **It is fast everywhere.** A native desktop app for Linux, macOS, and Windows, that updates itself, with live updates and keyboard shortcuts.
 7. **We host it.** It runs as one small service on our own server, with an hourly encrypted sync and daily encrypted backups.
 
 ## What it is not

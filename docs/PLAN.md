@@ -90,6 +90,7 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 - [x] Embed the configured deployment address in desktop builds, and grant native features to that address only.
 - [x] Add the tray icon and native notifications for new findings and decisions, start at login, and the configurable quick capture shortcut and window.
 - [ ] Add the global shortcut to open an issue by key.
+- [x] Add automatic updates: signed update packages and `latest.json` are published with each release, and installed apps check for them, install them, and restart while hidden in the tray.
 - [x] Add a GitHub Actions workflow that builds the installers for Linux, macOS, and Windows and publishes them to GitHub Releases when a version tag is pushed.
 
 ## 8. Integrations

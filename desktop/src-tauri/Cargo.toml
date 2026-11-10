@@ -22,6 +22,7 @@ tauri-plugin-autostart = "=2.7.0"
 tauri-plugin-global-shortcut = "=2.4.1"
 tauri-plugin-notification = "=2.8.0"
 tauri-plugin-single-instance = "=2.5.5"
+tauri-plugin-updater = "=2.14.1"
 url = "=2.5.8"
 xcap = "=0.9.10"
 
