@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the local setup page. The server's page is granted its permissions at runtime, for the configured server's address only.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "The server's page is granted native permissions at runtime, for the configured server's address only.",
+  "windows": [],
+  "permissions": []
 }

@@ -86,7 +86,7 @@ The MCP server is in `server/internal/mcp` and the CLI in `server/internal/cli`.
 ## 7. Desktop app
 
 - [x] Create the Tauri v2 app that opens the server's URL in its window.
-- [x] Add first-run setup for the server address, and grant native features to that address only.
+- [x] Embed the configured deployment address in desktop builds, and grant native features to that address only.
 - [x] Add the tray icon and native notifications for new findings and decisions, start at login, and the configurable quick capture shortcut and window.
 - [ ] Add the global shortcut to open an issue by key.
 - [x] Add a GitHub Actions workflow that builds the installers for Linux, macOS, and Windows and publishes them to GitHub Releases when a version tag is pushed.

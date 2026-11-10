@@ -4,7 +4,7 @@
 
 .PHONY: help install create-owner dev dev-server dev-web dev-desktop build build-server build-web check check-go check-web check-desktop test test-go test-web test-e2e format format-go format-web format-check clean env-file
 
-# The server and the web dev server read their settings from the repository .env.
+# Development commands read their settings from the repository .env.
 LOAD_ENV := set -a && . ./.env && set +a
 
 help:
@@ -63,8 +63,8 @@ dev-server: env-file
 dev-web: env-file
 	bun --filter @super-sparrow/web dev
 
-dev-desktop:
-	bun --filter @super-sparrow/desktop dev
+dev-desktop: env-file
+	@$(LOAD_ENV) && bun --filter @super-sparrow/desktop dev
 
 # --- Build ---
 build: build-web build-server
@@ -90,6 +90,7 @@ check-web:
 	bun --bun prettier --check "web/**/*.{ts,tsx,css,json}"
 
 check-desktop:
+	@if [ -f .env ]; then $(LOAD_ENV) || exit $$?; fi; \
 	cd desktop/src-tauri && cargo check --locked
 
 # --- Tests ---

@@ -42,6 +42,8 @@ jobs:
       - run: bun run format:check
 
   desktop:
+    env:
+      PUBLIC_URL: http://localhost:3000
     name: Desktop app
     runs-on: ubuntu-24.04
     steps:
