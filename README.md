@@ -25,4 +25,4 @@ Known production performance findings and deferred improvements are recorded in 
 
 ## License
 
-Super Sparrow is proprietary software for KR Shanto and authorized members of the Anthillock team to support internal development. Use, redistribution, and commercialization by others require prior written permission. See [LICENSE.md](LICENSE.md).
+Super Sparrow is source-available, not open source. KR Shanto and authorized members of the Anthillock team may use and modify it for internal development. Anyone else may run an unmodified copy for their own work, including business use and use by their own team. Selling or reselling it, offering it as a service or product to others, modifying it, and sharing copies or modifications outside your team require prior written permission. See [LICENSE.md](LICENSE.md). Outside contributions are not accepted; see [CONTRIBUTING.md](CONTRIBUTING.md).
