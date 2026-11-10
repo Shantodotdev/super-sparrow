@@ -13,15 +13,18 @@ import (
 func developmentEnv(t *testing.T) map[string]string {
 	t.Helper()
 	return map[string]string{
-		"ATTACHMENTS_DIR":  t.TempDir(),
-		"APP_ENV":          "development",
-		"LISTEN_ADDR":      "127.0.0.1:8090",
-		"DATABASE_PATH":    "data/sparrow.db",
-		"PUBLIC_URL":       "http://127.0.0.1:8090",
-		"LOG_LEVEL":        "info",
-		"RESEND_API_KEY":   "re_test_key",
-		"EMAIL_FROM":       "Super Sparrow <sparrow@example.com>",
-		"SIGN_IN_CODE_KEY": "0123456789abcdef0123456789abcdef",
+		"APP_ENV":                          "development",
+		"LISTEN_ADDR":                      "127.0.0.1:8090",
+		"DATABASE_PATH":                    "data/sparrow.db",
+		"PUBLIC_URL":                       "http://127.0.0.1:8090",
+		"LOG_LEVEL":                        "info",
+		"RESEND_API_KEY":                   "re_test_key",
+		"EMAIL_FROM":                       "Super Sparrow <sparrow@example.com>",
+		"SIGN_IN_CODE_KEY":                 "0123456789abcdef0123456789abcdef",
+		"ATTACHMENTS_R2_ACCOUNT_ID":        "fedcba9876543210fedcba9876543210",
+		"ATTACHMENTS_R2_ACCESS_KEY_ID":     "attachments-key-id",
+		"ATTACHMENTS_R2_SECRET_ACCESS_KEY": "attachments-secret",
+		"ATTACHMENTS_R2_BUCKET":            "sparrow-attachments",
 	}
 }
 
@@ -147,22 +150,22 @@ func TestLoadNamesEveryMissingSetting(t *testing.T) {
 
 func TestLoadRejectsMalformedSettings(t *testing.T) {
 	cases := map[string]string{
-		"APP_ENV":               "staging",
-		"LISTEN_ADDR":           "8090",
-		"PUBLIC_URL":            "sparrow.example.com",
-		"LOG_LEVEL":             "loud",
-		"RESEND_API_KEY":        "sk_live_123",
-		"EMAIL_FROM":            "not an address",
-		"SIGN_IN_CODE_KEY":      "too-short",
-		"TRUSTED_PROXIES":       "10.0.0.0/8, proxy.local",
-		"WEB_DIR":               "/no/such/folder",
-		"GITHUB_WEBHOOK_SECRET": "short",
-		"BACKUP_AGE_RECIPIENT":  "age1notakey",
-		"BACKUP_DAILY_TIME":     "25:00",
-		"BACKUP_TIME_ZONE":      "Mars/Olympus",
-		"BACKUP_KEEP_DAYS":      "0",
-		"R2_ACCOUNT_ID":         "not-an-account",
-		"ATTACHMENTS_DIR":       "no/such/relative/folder",
+		"APP_ENV":                   "staging",
+		"LISTEN_ADDR":               "8090",
+		"PUBLIC_URL":                "sparrow.example.com",
+		"LOG_LEVEL":                 "loud",
+		"RESEND_API_KEY":            "sk_live_123",
+		"EMAIL_FROM":                "not an address",
+		"SIGN_IN_CODE_KEY":          "too-short",
+		"TRUSTED_PROXIES":           "10.0.0.0/8, proxy.local",
+		"WEB_DIR":                   "/no/such/folder",
+		"GITHUB_WEBHOOK_SECRET":     "short",
+		"BACKUP_AGE_RECIPIENT":      "age1notakey",
+		"BACKUP_DAILY_TIME":         "25:00",
+		"BACKUP_TIME_ZONE":          "Mars/Olympus",
+		"BACKUP_KEEP_DAYS":          "0",
+		"R2_ACCOUNT_ID":             "not-an-account",
+		"ATTACHMENTS_R2_ACCOUNT_ID": "not-an-account",
 	}
 
 	for name, value := range cases {
@@ -178,36 +181,42 @@ func TestLoadRejectsMalformedSettings(t *testing.T) {
 	}
 }
 
-func TestAttachmentsDirMustExistAndBeWritable(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(file, nil, 0o600); err != nil {
-		t.Fatal(err)
+func TestAttachmentsR2ReportsEachMissingOrMalformedSetting(t *testing.T) {
+	cases := map[string]string{
+		"ATTACHMENTS_R2_ACCOUNT_ID":        "not-an-account",
+		"ATTACHMENTS_R2_ACCESS_KEY_ID":     "",
+		"ATTACHMENTS_R2_SECRET_ACCESS_KEY": "",
+		"ATTACHMENTS_R2_BUCKET":            "",
 	}
-	readOnly := t.TempDir()
-	if err := os.Chmod(readOnly, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chmod(readOnly, 0o700) })
 
-	cases := map[string]string{"missing": filepath.Join(t.TempDir(), "absent"), "a file": file}
-	if os.Geteuid() != 0 {
-		cases["read-only"] = readOnly
-	}
-	for name, dir := range cases {
+	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {
 			env := developmentEnv(t)
-			env["ATTACHMENTS_DIR"] = dir
+			env[name] = value
 
 			_, err := Load(lookup(env))
-			if err == nil || !strings.Contains(err.Error(), "ATTACHMENTS_DIR") {
-				t.Fatalf("Load accepted %s as the attachments folder: %v", name, err)
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("Load accepted %s=%q: %v", name, value, err)
 			}
 		})
 	}
+}
 
+func TestAttachmentsR2IsLoadedInDevelopment(t *testing.T) {
 	env := developmentEnv(t)
+
 	cfg, err := Load(lookup(env))
-	if err != nil || cfg.AttachmentsDir != env["ATTACHMENTS_DIR"] {
-		t.Fatalf("attachments dir %q, error %v", cfg.AttachmentsDir, err)
+	if err != nil {
+		t.Fatalf("Load returned an error: %v", err)
+	}
+
+	want := R2{
+		AccountID:       "fedcba9876543210fedcba9876543210",
+		AccessKeyID:     "attachments-key-id",
+		SecretAccessKey: "attachments-secret",
+		Bucket:          "sparrow-attachments",
+	}
+	if cfg.AttachmentsR2 != want {
+		t.Errorf("AttachmentsR2 = %+v, want %+v", cfg.AttachmentsR2, want)
 	}
 }

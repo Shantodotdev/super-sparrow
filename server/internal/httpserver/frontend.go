@@ -38,10 +38,13 @@ var (
 // scripts the build wrote into it, so markdown that slips past sanitizing cannot run scripts.
 type frontend struct {
 	files fs.FS
+	// objectOrigin is the address of the attachments bucket, which the page may load files from
+	// and send uploads to.
+	objectOrigin string
 }
 
-func newFrontend(dir string) *frontend {
-	return &frontend{files: os.DirFS(dir)}
+func newFrontend(dir, objectOrigin string) *frontend {
+	return &frontend{files: os.DirFS(dir), objectOrigin: objectOrigin}
 }
 
 func (f *frontend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -122,15 +125,16 @@ func (f *frontend) serveShell(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(shell))
+	w.Header().Set("Content-Security-Policy", contentSecurityPolicy(shell, f.objectOrigin))
 	http.ServeContent(w, r, ShellFile, info.ModTime(), bytes.NewReader(shell))
 }
 
 // contentSecurityPolicy allows the app's own files and, by their SHA-256 hashes, the inline
 // scripts in shell, which TanStack Start writes at build time. Hashing them when the page is
 // served keeps the policy right after every build without listing them by hand.
-// The desktop app's command bridge is the only other address the page may reach.
-func contentSecurityPolicy(shell []byte) string {
+// The desktop app's command bridge and the attachments bucket are the only other addresses the
+// page may reach.
+func contentSecurityPolicy(shell []byte, objectOrigin string) string {
 	scripts := []string{"'self'"}
 	for _, match := range scriptPattern.FindAllSubmatch(shell, -1) {
 		attributes, text := match[1], match[2]
@@ -141,9 +145,9 @@ func contentSecurityPolicy(shell []byte) string {
 		scripts = append(scripts, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
 	}
 
-	return fmt.Sprintf("default-src 'self'; script-src %s; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; "+
-		"connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-		strings.Join(scripts, " "))
+	return fmt.Sprintf("default-src 'self'; script-src %[1]s; style-src 'self'; img-src 'self' data: blob: %[2]s; media-src 'self' %[2]s; font-src 'self'; "+
+		"connect-src 'self' %[2]s ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+		strings.Join(scripts, " "), objectOrigin)
 }
 
 // hiddenPath reports whether any part of name starts with a dot, such as .env, which is never served.

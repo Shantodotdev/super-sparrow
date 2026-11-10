@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
+	"github.com/shantodotdev/super-sparrow/server/internal/store/storetest"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
 
@@ -37,14 +38,14 @@ func (c *testClock) advance(d time.Duration) {
 
 // team is a test database with an owner, a member, and an agent working for the member.
 type team struct {
-	store  *Store
-	files  string
-	clock  *testClock
-	ctx    context.Context
-	system Caller
-	owner  Caller
-	member Caller
-	agent  Caller
+	store   *Store
+	objects *storetest.Objects
+	clock   *testClock
+	ctx     context.Context
+	system  Caller
+	owner   Caller
+	member  Caller
+	agent   Caller
 }
 
 func newTeam(t *testing.T) *team {
@@ -62,8 +63,8 @@ func newTeam(t *testing.T) *team {
 	}
 
 	clock := &testClock{now: time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
-	filesDir := t.TempDir()
-	tm := &team{store: New(db, clock.Now, filesDir), files: filesDir, clock: clock, ctx: ctx, system: Caller{ActorID: SystemActorID}}
+	objects := storetest.NewObjects()
+	tm := &team{store: New(db, clock.Now, objects), objects: objects, clock: clock, ctx: ctx, system: Caller{ActorID: SystemActorID}}
 
 	owner := got(tm.store.CreateHuman(ctx, tm.system, NewHuman{DisplayName: "Olive Owner", Email: "olive@example.com", Role: RoleOwner})).must(t)
 	member := got(tm.store.CreateHuman(ctx, tm.system, NewHuman{DisplayName: "Max Member", Email: "max@example.com", Role: RoleMember})).must(t)

@@ -26,6 +26,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/httpserver"
 	"github.com/shantodotdev/super-sparrow/server/internal/linear"
 	"github.com/shantodotdev/super-sparrow/server/internal/logging"
+	"github.com/shantodotdev/super-sparrow/server/internal/r2"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
@@ -41,12 +42,9 @@ Server commands (read the server settings from the environment):
   import-linear --project NAME [--team KEY] Import a Linear project (needs LINEAR_API_KEY)
   backup-keygen                             Make the key pair backups are encrypted with
   restore --list                            List the backup copies in R2 (needs the R2_ settings)
-  restore --copy sync|daily/YYYY-MM-DD --identity FILE|- --database PATH --attachments DIR
+  restore --copy sync|daily/YYYY-MM-DD --identity FILE|- --database PATH
                                             Restore a copy into a new database file, decrypted
-                                            with the private key in FILE, or on standard input,
-                                            then restore the attached files into the existing DIR
-  restore --files-only --identity FILE|- --database PATH --attachments DIR
-                                            Restore only the attached files of an existing database
+                                            with the private key in FILE, or on standard input
   version                                   Print the version
 
 ` + cli.Usage
@@ -104,7 +102,9 @@ func openStore(ctx context.Context) (config.Config, *sql.DB, *store.Store, error
 		return config.Config{}, nil, nil, err
 	}
 
-	return cfg, db, store.New(db, time.Now, cfg.AttachmentsDir), nil
+	bucket := cfg.AttachmentsR2
+	objects := r2.NewR2Bucket(bucket.AccountID, bucket.AccessKeyID, bucket.SecretAccessKey, bucket.Bucket)
+	return cfg, db, store.New(db, time.Now, objects), nil
 }
 
 // createOwner adds the first owner to a team that has nobody yet. They then sign in with their
@@ -183,37 +183,33 @@ func backupKeygen() error {
 	return nil
 }
 
-// restore lists the backup copies, or restores one into a new database file and then the attached
-// files it refers to. With --files-only it restores just the files of an existing database, to
-// retry after some were missing. It needs only the R2 settings and the backups' private key, so it
-// runs on a fresh machine without the server's other settings.
+// restore lists the backup copies, or restores one into a new database file. It needs only the R2
+// settings and the backups' private key, so it runs on a fresh machine without the server's other
+// settings.
 func restore(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
 	list := flags.Bool("list", false, "list the copies in the bucket")
 	copyName := flags.String("copy", "", "sync, daily/YYYY-MM-DD, or a key from --list")
 	target := flags.String("database", "", "where to write the restored database; it must not exist")
 	identityFile := flags.String("identity", "", "the file with the backups' private key, or - to read it from standard input")
-	attachmentsDir := flags.String("attachments", "", "the existing folder to restore the attached files into; use the server's ATTACHMENTS_DIR")
-	filesOnly := flags.Bool("files-only", false, "restore only the attached files of the existing database at --database")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 
-	r2, err := config.LoadR2(os.Getenv)
+	r2Config, err := config.LoadR2(os.Getenv, "R2_")
 	if err != nil {
 		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
-	bucket := backup.NewR2Bucket(r2.AccountID, r2.AccessKeyID, r2.SecretAccessKey, r2.Bucket)
+	bucket := r2.NewR2Bucket(r2Config.AccountID, r2Config.AccessKeyID, r2Config.SecretAccessKey, r2Config.Bucket)
 
 	if *list {
-		if flags.NArg() != 0 || *copyName != "" || *target != "" || *identityFile != "" || *attachmentsDir != "" || *filesOnly {
+		if flags.NArg() != 0 || *copyName != "" || *target != "" || *identityFile != "" {
 			return errors.New("usage: sparrow restore --list")
 		}
 		return listCopies(ctx, bucket)
 	}
-	if flags.NArg() != 0 || *target == "" || *identityFile == "" || *attachmentsDir == "" || (*copyName == "") == !*filesOnly {
-		return errors.New("usage: sparrow restore --copy sync|daily/YYYY-MM-DD --identity FILE|- --database PATH --attachments DIR\n" +
-			"       sparrow restore --files-only --identity FILE|- --database PATH --attachments DIR")
+	if flags.NArg() != 0 || *copyName == "" || *target == "" || *identityFile == "" {
+		return errors.New("usage: sparrow restore --copy sync|daily/YYYY-MM-DD --identity FILE|- --database PATH")
 	}
 	identities, err := readIdentities(*identityFile)
 	if err != nil {
@@ -223,36 +219,17 @@ func restore(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolve --database: %w", err)
 	}
-	filesDir, err := filepath.Abs(*attachmentsDir)
+
+	key, err := backup.ResolveCopy(*copyName)
 	if err != nil {
-		return fmt.Errorf("resolve --attachments: %w", err)
+		return err
 	}
-	if info, err := os.Stat(filesDir); err != nil || !info.IsDir() {
-		return fmt.Errorf("--attachments %s must be an existing folder", filesDir)
+	size, err := backup.Restore(ctx, bucket, key, identities, path)
+	if err != nil {
+		return err
 	}
-
-	if !*filesOnly {
-		key, err := backup.ResolveCopy(*copyName)
-		if err != nil {
-			return err
-		}
-		size, err := backup.Restore(ctx, bucket, key, identities, path)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Restored %s into %s (%d bytes); its integrity check passed.\n", key, path, size)
-	}
-
-	report, err := backup.RestoreAttachments(ctx, bucket, path, identities, filesDir)
-	fmt.Printf("Attached files in %s: %d restored, %d already there, %d missing, %d failed.\n",
-		filesDir, report.Restored, report.Skipped, len(report.Missing), len(report.Failed))
-	for _, id := range report.Missing {
-		fmt.Printf("  missing from the bucket: %s\n", id)
-	}
-	for id, failure := range report.Failed {
-		fmt.Printf("  failed: %s: %v\n", id, failure)
-	}
-	return err
+	fmt.Printf("Restored %s into %s (%d bytes); its integrity check passed.\n", key, path, size)
+	return nil
 }
 
 // readIdentities reads the age private keys in path, or on standard input when path is "-".
@@ -274,7 +251,7 @@ func readIdentities(path string) ([]age.Identity, error) {
 	return identities, nil
 }
 
-func listCopies(ctx context.Context, bucket *backup.Bucket) error {
+func listCopies(ctx context.Context, bucket *r2.Bucket) error {
 	for _, prefix := range []string{"sync/", "daily/"} {
 		objects, err := bucket.List(ctx, prefix)
 		if err != nil {
@@ -315,6 +292,7 @@ func serve(ctx context.Context) error {
 			Stop:                stopStreams,
 			Version:             version,
 			WebDir:              cfg.WebDir,
+			ObjectOrigin:        "https://" + cfg.AttachmentsR2.AccountID + ".r2.cloudflarestorage.com",
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,
 		}),
 		// JSON request bodies are at most a megabyte, so a slow sender is cut off after the read
@@ -331,7 +309,7 @@ func serve(ctx context.Context) error {
 	if cfg.Backups != nil {
 		runner := backup.NewRunner(backup.Options{
 			Store:     st,
-			Bucket:    backup.NewR2Bucket(cfg.Backups.R2.AccountID, cfg.Backups.R2.AccessKeyID, cfg.Backups.R2.SecretAccessKey, cfg.Backups.R2.Bucket),
+			Bucket:    r2.NewR2Bucket(cfg.Backups.R2.AccountID, cfg.Backups.R2.AccessKeyID, cfg.Backups.R2.SecretAccessKey, cfg.Backups.R2.Bucket),
 			Recipient: cfg.Backups.Recipient,
 			WorkDir:   filepath.Dir(cfg.DatabasePath),
 			KeepDays:  cfg.Backups.KeepDays,

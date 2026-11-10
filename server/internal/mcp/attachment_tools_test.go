@@ -17,17 +17,19 @@ import (
 
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
+	"github.com/shantodotdev/super-sparrow/server/internal/store/storetest"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
 
 type attachmentFixture struct {
-	t      *testing.T
-	ctx    context.Context
-	store  *store.Store
-	server *Server
-	agent  store.Caller
-	first  store.Issue
-	second store.Issue
+	t       *testing.T
+	ctx     context.Context
+	store   *store.Store
+	objects *storetest.Objects
+	server  *Server
+	agent   store.Caller
+	first   store.Issue
+	second  store.Issue
 }
 
 func newAttachmentFixture(t *testing.T) *attachmentFixture {
@@ -43,7 +45,8 @@ func newAttachmentFixture(t *testing.T) *attachmentFixture {
 		t.Fatal(err)
 	}
 
-	st := store.New(db, time.Now, t.TempDir())
+	objects := storetest.NewObjects()
+	st := store.New(db, time.Now, objects)
 	system := store.Caller{ActorID: store.SystemActorID}
 	owner, err := st.CreateHuman(ctx, system, store.NewHuman{DisplayName: "Olive Owner", Email: "olive@example.com", Role: store.RoleOwner})
 	if err != nil {
@@ -54,7 +57,7 @@ func newAttachmentFixture(t *testing.T) *attachmentFixture {
 		t.Fatal(err)
 	}
 
-	f := &attachmentFixture{t: t, ctx: ctx, store: st, agent: store.Caller{ActorID: agent.ID}}
+	f := &attachmentFixture{t: t, ctx: ctx, store: st, objects: objects, agent: store.Caller{ActorID: agent.ID}}
 	human := store.Caller{ActorID: owner.ID}
 	for i, key := range []string{"WP", "OT"} {
 		project, err := st.CreateProject(ctx, human, store.NewProject{Key: key, Name: "Project " + key})
@@ -79,7 +82,13 @@ func newAttachmentFixture(t *testing.T) *attachmentFixture {
 
 func (f *attachmentFixture) attach(issue store.Issue, name string, data []byte) store.Attachment {
 	f.t.Helper()
-	attachment, err := f.store.CreateAttachment(f.ctx, f.agent, issue.Key(), name, bytes.NewReader(data))
+	attachment, _, err := f.store.BeginAttachment(f.ctx, f.agent, issue.Key(), name, "application/octet-stream", int64(len(data)))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.objects.Put(attachment.ID, data)
+
+	attachment, err = f.store.CompleteAttachment(f.ctx, f.agent, attachment.ID)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -147,10 +156,30 @@ func TestListAttachmentsOldestFirstForOneIssue(t *testing.T) {
 		t.Fatalf("order %v", listed)
 	}
 	creator := first["created_by"].(map[string]any)
-	if first["filename"] != "shot.png" || first["content_type"] != "image/png" || first["sha256"] != older.SHA256 ||
+	if first["filename"] != "shot.png" || first["content_type"] != "image/png" ||
 		first["byte_size"].(float64) != float64(older.ByteSize) || first["url"] != "https://sparrow.example.com/api/attachments/"+older.ID ||
 		first["created_at"] == "" || creator["name"] != "Claude Code" || creator["kind"] != "agent" {
 		t.Fatalf("attachment %v", first)
+	}
+}
+
+func TestListAttachmentsHidesPendingUploads(t *testing.T) {
+	f := newAttachmentFixture(t)
+	done := f.attach(f.first, "done.txt", []byte("hello"))
+	pending, _, err := f.store.BeginAttachment(f.ctx, f.agent, f.first.Key(), "pending.txt", "text/plain", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result := f.call("list_attachments", map[string]any{"issue_key": f.first.Key()})
+	listed := metadata(t, result)["attachments"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["id"] != done.ID {
+		t.Fatalf("listed %v", listed)
+	}
+
+	result = f.call("get_attachment", map[string]any{"attachment_id": pending.ID})
+	if result["isError"] != true {
+		t.Fatalf("pending attachment was readable: %v", result)
 	}
 }
 

@@ -1,4 +1,4 @@
-package backup
+package r2
 
 import (
 	"context"
@@ -322,4 +322,122 @@ func uriEncode(value string) string {
 		}
 	}
 	return encoded.String()
+}
+
+// NewBucketAt returns a bucket reached at endpoint, such as a test server standing in for R2.
+func NewBucketAt(endpoint *url.URL, region, accessKeyID, secretAccessKey, bucket string) *Bucket {
+	return newBucket(endpoint, region, accessKeyID, secretAccessKey, bucket, time.Now)
+}
+
+// Head returns the size of key's object, or ErrNotFound when the bucket has none.
+func (b *Bucket) Head(ctx context.Context, key string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, r2ListTimeout)
+	defer cancel()
+
+	request, err := b.newRequest(ctx, http.MethodHead, key, nil, nil)
+	if err != nil {
+		return 0, err
+	}
+	response, err := b.send(request, emptyHash)
+	if err != nil {
+		return 0, fmt.Errorf("inspect %s: %w", key, err)
+	}
+	response.Body.Close()
+	return response.ContentLength, nil
+}
+
+// GetPrefix returns the first limit bytes of key's object, or all of it when it is shorter.
+func (b *Bucket) GetPrefix(ctx context.Context, key string, limit int64) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, r2ListTimeout)
+	defer cancel()
+
+	request, err := b.newRequest(ctx, http.MethodGet, key, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Range", fmt.Sprintf("bytes=0-%d", limit-1))
+
+	response, err := b.send(request, emptyHash)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", key, err)
+	}
+	defer response.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(response.Body, limit))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", key, err)
+	}
+	return data, nil
+}
+
+// PresignPut returns a link that lets whoever holds it upload key's object with a PUT that
+// carries exactly the given Content-Type, until ttl has passed.
+func (b *Bucket) PresignPut(key, contentType string, ttl time.Duration) string {
+	return b.presign(http.MethodPut, key, url.Values{}, map[string]string{"content-type": contentType}, ttl)
+}
+
+// PresignGet returns a link that lets whoever holds it download key's object until ttl has
+// passed. The bucket answers with the given content type and Content-Disposition instead of
+// the ones stored with the object.
+func (b *Bucket) PresignGet(key, contentType, disposition string, ttl time.Duration) string {
+	query := url.Values{"response-content-type": {contentType}, "response-content-disposition": {disposition}}
+	return b.presign(http.MethodGet, key, query, nil, ttl)
+}
+
+// presign signs a request into its query string (AWS Signature Version 4), signing the host and
+// the given headers, which the caller must then send unchanged.
+func (b *Bucket) presign(method, key string, query url.Values, headers map[string]string, ttl time.Duration) string {
+	now := b.now().UTC()
+	amzDate := now.Format("20060102T150405Z")
+	date := now.Format("20060102")
+	scope := date + "/" + b.region + "/" + s3Service + "/aws4_request"
+
+	target := *b.endpoint
+	target.Path = "/" + key
+	if b.bucket != "" {
+		target.Path = "/" + b.bucket + target.Path
+	}
+	target.RawPath = escapePath(target.Path)
+
+	signed := map[string]string{"host": target.Host}
+	for name, value := range headers {
+		signed[strings.ToLower(name)] = strings.TrimSpace(value)
+	}
+	names := make([]string, 0, len(signed))
+	for name := range signed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	signedHeaders := strings.Join(names, ";")
+
+	query.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	query.Set("X-Amz-Credential", b.accessKeyID+"/"+scope)
+	query.Set("X-Amz-Date", amzDate)
+	query.Set("X-Amz-Expires", fmt.Sprint(int64(ttl.Seconds())))
+	query.Set("X-Amz-SignedHeaders", signedHeaders)
+	canonical := canonicalQuery(query)
+
+	var canonicalHeaders strings.Builder
+	for _, name := range names {
+		canonicalHeaders.WriteString(name + ":" + signed[name] + "\n")
+	}
+	canonicalRequest := strings.Join([]string{
+		method, target.EscapedPath(), canonical, canonicalHeaders.String(), signedHeaders, "UNSIGNED-PAYLOAD",
+	}, "\n")
+	requestHash := sha256.Sum256([]byte(canonicalRequest))
+	stringToSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hex.EncodeToString(requestHash[:])
+
+	signingKey := hmacSHA256([]byte("AWS4"+b.secretAccessKey), date)
+	for _, part := range []string{b.region, s3Service, "aws4_request"} {
+		signingKey = hmacSHA256(signingKey, part)
+	}
+
+	target.RawQuery = canonical + "&X-Amz-Signature=" + hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
+	return target.String()
+}
+
+// Origin returns the address browsers reach the bucket at, for the page's content security
+// policy and the bucket's CORS rule.
+func (b *Bucket) Origin() string {
+	return b.endpoint.Scheme + "://" + b.endpoint.Host
 }

@@ -1,13 +1,6 @@
 package store
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,68 +13,130 @@ func mp4Bytes(size int) []byte {
 	return append([]byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"), make([]byte, size)...)
 }
 
-// leftovers counts files under dir, including temporary uploads.
-func leftovers(t *testing.T, dir string) int {
+// beginAndUpload begins an attachment and simulates the finished upload of data.
+func (tm *team) beginAndUpload(t *testing.T, by Caller, issueKey, filename string, data []byte) Attachment {
 	t.Helper()
-	count := 0
-	err := filepath.WalkDir(dir, func(_ string, entry os.DirEntry, err error) error {
-		if err == nil && !entry.IsDir() {
-			count++
-		}
-		return err
-	})
+	attachment, _, err := tm.store.BeginAttachment(tm.ctx, by, issueKey, filename, "application/octet-stream", int64(len(data)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return count
+	tm.objects.Put(attachment.ID, data)
+	return attachment
 }
 
-func TestCreateAttachmentStoresFileAndRecordsActorAndEvent(t *testing.T) {
+func TestBeginAttachmentReturnsPendingAttachmentAndUploadLink(t *testing.T) {
 	tm := newTeam(t)
-	project := tm.project(t, "WP")
-	issue := tm.issue(t, project.ID, "Fix header")
-	data := pngBytes()
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	before := tm.eventCount(t)
 
-	attachment := got(tm.store.CreateAttachment(tm.ctx, tm.agent, issue.Key(), "../../etc/shot\x00.png", bytes.NewReader(data))).must(t)
+	attachment, upload, err := tm.store.BeginAttachment(tm.ctx, tm.agent, issue.Key(), "../../etc/shot\x00.png", "image/png; charset=binary", 1234)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	sum := sha256.Sum256(data)
-	if attachment.Filename != "shot.png" || attachment.ContentType != "image/png" || attachment.ByteSize != int64(len(data)) ||
-		attachment.SHA256 != hex.EncodeToString(sum[:]) || attachment.CreatedByID != tm.agent.ActorID ||
+	if !attachment.Pending || attachment.Filename != "shot.png" || attachment.ByteSize != 1234 || attachment.CreatedByID != tm.agent.ActorID ||
 		attachment.IssueKey != issue.Key() || attachment.ProjectKey != "WP" || attachment.URLPath() != "/api/attachments/"+attachment.ID {
 		t.Fatalf("attachment %+v", attachment)
 	}
-
-	file, opened, err := tm.store.OpenAttachment(tm.ctx, attachment.ID)
-	if err != nil {
-		t.Fatal(err)
+	if upload.URL != "https://objects.test/put/"+attachment.ID+"?type=image/png" || len(upload.Headers) != 1 || upload.Headers["Content-Type"] != "image/png" {
+		t.Fatalf("upload %+v", upload)
 	}
-	defer file.Close()
-	stored, _ := io.ReadAll(file)
-	if opened.ID != attachment.ID || !bytes.Equal(stored, data) {
-		t.Fatalf("stored bytes differ")
-	}
-	if tm.store.AttachmentPath(attachment.ID) != filepath.Join(tm.files, attachment.ID[:2], attachment.ID) {
-		t.Fatalf("path %s", tm.store.AttachmentPath(attachment.ID))
-	}
-	if leftovers(t, tm.files) != 1 {
-		t.Fatalf("want exactly the stored file, found %d files", leftovers(t, tm.files))
-	}
-
-	var kind, actor, payload string
-	err = tm.store.db.QueryRow(`SELECT kind, actor_id, payload FROM events ORDER BY sequence DESC LIMIT 1`).Scan(&kind, &actor, &payload)
-	if err != nil || kind != "attachment.created" || actor != tm.agent.ActorID ||
-		!strings.Contains(payload, `"issue_key":"WP-1"`) || !strings.Contains(payload, `"filename":"shot.png"`) {
-		t.Fatalf("event %s by %s: %s (%v)", kind, actor, payload, err)
-	}
-
-	list := got(tm.store.ListIssueAttachments(tm.ctx, issue.Key())).must(t)
-	all := got(tm.store.ListAllAttachments(tm.ctx)).must(t)
-	if len(list) != 1 || len(all) != 1 || list[0].ID != attachment.ID {
-		t.Fatalf("lists %v %v", list, all)
+	if tm.eventCount(t) != before {
+		t.Fatal("beginning an upload wrote an event")
 	}
 }
 
-func TestCreateAttachmentSniffsTheContentType(t *testing.T) {
+func TestBeginAttachmentUsesGenericTypeWhenDeclaredTypeIsMalformed(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+
+	_, upload, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "a.bin", "not a type", 10)
+	if err != nil || upload.Headers["Content-Type"] != "application/octet-stream" {
+		t.Fatalf("upload %+v (%v)", upload, err)
+	}
+}
+
+func TestBeginAttachmentRefusesBadInput(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	before := tm.eventCount(t)
+
+	for _, name := range []string{"", "   ", "..", "dir/", "\x00\x01", "bad\xff.txt"} {
+		_, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), name, "text/plain", 1)
+		wantInvalid(t, err, "filename")
+	}
+	for _, size := range []int64{0, -5} {
+		_, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "a.txt", "text/plain", size)
+		wantInvalid(t, err, "byte_size")
+	}
+	_, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, "WP-99", "a.txt", "text/plain", 1)
+	wantErr(t, err, ErrNotFound)
+	_, _, err = tm.store.BeginAttachment(tm.ctx, tm.member, "nonsense", "a.txt", "text/plain", 1)
+	wantInvalid(t, err, "key")
+
+	var rows int
+	if err := tm.store.db.QueryRow(`SELECT count(*) FROM attachments`).Scan(&rows); err != nil || rows != 0 || tm.eventCount(t) != before {
+		t.Fatalf("refused begins left %d rows (%v) or events", rows, err)
+	}
+}
+
+func TestBeginAttachmentSizeLimits(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+
+	if _, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "big.bin", "application/octet-stream", MaxAttachmentBytes); err != nil {
+		t.Fatalf("file of exactly the limit: %v", err)
+	}
+	_, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "big.bin", "application/octet-stream", MaxAttachmentBytes+1)
+	wantErr(t, err, ErrTooLarge)
+	_, _, err = tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "huge.png", "image/png", MaxVideoBytes)
+	wantErr(t, err, ErrTooLarge)
+
+	if _, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "clip.mp4", "video/mp4", MaxVideoBytes); err != nil {
+		t.Fatalf("video of exactly the video limit: %v", err)
+	}
+	_, _, err = tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "clip.mp4", "video/mp4", MaxVideoBytes+1)
+	wantErr(t, err, ErrTooLarge)
+}
+
+func TestCompleteAttachmentSniffsTypeAndRecordsActorAndEvent(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	data := pngBytes()
+
+	// The declared type and size are wrong; the object decides both.
+	pending, _, err := tm.store.BeginAttachment(tm.ctx, tm.agent, issue.Key(), "shot.png", "text/plain", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.objects.Put(pending.ID, data)
+
+	attachment, err := tm.store.CompleteAttachment(tm.ctx, tm.agent, pending.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if attachment.Pending || attachment.ContentType != "image/png" || attachment.ByteSize != int64(len(data)) || attachment.CreatedByID != tm.agent.ActorID {
+		t.Fatalf("attachment %+v", attachment)
+	}
+	stored := got(tm.store.GetAttachment(tm.ctx, pending.ID)).must(t)
+	if stored.ContentType != "image/png" || stored.ByteSize != int64(len(data)) {
+		t.Fatalf("stored %+v", stored)
+	}
+
+	event := tm.lastEvent(t)
+	if event.Kind != "attachment.created" || event.ActorID != tm.agent.ActorID ||
+		!strings.Contains(string(event.Payload), `"issue_key":"WP-1"`) || !strings.Contains(string(event.Payload), `"filename":"shot.png"`) {
+		t.Fatalf("event %+v", event)
+	}
+
+	list := got(tm.store.ListIssueAttachments(tm.ctx, issue.Key())).must(t)
+	if len(list) != 1 || list[0].ID != attachment.ID {
+		t.Fatalf("list %v", list)
+	}
+}
+
+func TestCompleteAttachmentSniffsTheContentType(t *testing.T) {
 	tm := newTeam(t)
 	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
 
@@ -100,34 +155,146 @@ func TestCreateAttachmentSniffsTheContentType(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			// The filename claims an image; the bytes decide.
-			attachment := got(tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "picture.png", bytes.NewReader(c.data))).must(t)
-			if attachment.ContentType != c.want {
-				t.Fatalf("content type %q, want %q", attachment.ContentType, c.want)
+			pending := tm.beginAndUpload(t, tm.member, issue.Key(), "picture.png", c.data)
+			attachment, err := tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID)
+			if err != nil || attachment.ContentType != c.want {
+				t.Fatalf("content type %q, want %q (%v)", attachment.ContentType, c.want, err)
 			}
 		})
 	}
 }
 
-func TestCreateAttachmentRefusesBadInput(t *testing.T) {
+func TestCompleteAttachmentBeforeTheUploadIsInvalid(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	pending, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "a.txt", "text/plain", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := tm.eventCount(t)
+
+	_, err = tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID)
+	wantInvalid(t, err, "attachment")
+
+	// The attachment stays pending, so the upload can still be finished.
+	tm.objects.Put(pending.ID, []byte("hello"))
+	if _, err := tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	if tm.eventCount(t) != before+1 {
+		t.Fatal("completion should write exactly one event")
+	}
+}
+
+func TestCompleteAttachmentRefusesAnOversizedObjectAndDeletesIt(t *testing.T) {
 	tm := newTeam(t)
 	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
 	before := tm.eventCount(t)
 
-	_, err := tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "empty.txt", bytes.NewReader(nil))
-	wantInvalid(t, err, "body")
-	for _, name := range []string{"", "   ", "..", "dir/", "\x00\x01"} {
-		_, err = tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), name, strings.NewReader("x"))
-		wantInvalid(t, err, "filename")
+	// A declared video that is really an image does not get the video limit.
+	pending, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "clip.mp4", "video/mp4", 1000)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err = tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "bad\xff.txt", strings.NewReader("x"))
-	wantInvalid(t, err, "filename")
-	_, err = tm.store.CreateAttachment(tm.ctx, tm.member, "WP-99", "a.txt", strings.NewReader("x"))
-	wantErr(t, err, ErrNotFound)
-	_, err = tm.store.CreateAttachment(tm.ctx, tm.member, "nonsense", "a.txt", strings.NewReader("x"))
-	wantInvalid(t, err, "key")
+	tm.objects.PutSize(pending.ID, pngBytes(), MaxAttachmentBytes+1)
 
-	if tm.eventCount(t) != before || leftovers(t, tm.files) != 0 {
-		t.Fatalf("a refused upload left events or files behind")
+	_, err = tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID)
+	wantErr(t, err, ErrTooLarge)
+
+	if tm.objects.Has(pending.ID) {
+		t.Fatal("the oversized object was kept")
+	}
+	var rows int
+	if err := tm.store.db.QueryRow(`SELECT count(*) FROM attachments`).Scan(&rows); err != nil || rows != 0 || tm.eventCount(t) != before {
+		t.Fatalf("rows %d (%v), events %d want %d", rows, err, tm.eventCount(t), before)
+	}
+
+	// A real video of the same size is fine.
+	video, _, err := tm.store.BeginAttachment(tm.ctx, tm.member, issue.Key(), "clip.mp4", "video/mp4", 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.objects.PutSize(video.ID, mp4Bytes(10), MaxAttachmentBytes+1)
+	done, err := tm.store.CompleteAttachment(tm.ctx, tm.member, video.ID)
+	if err != nil || done.ContentType != "video/mp4" || done.ByteSize != MaxAttachmentBytes+1 {
+		t.Fatalf("video %+v (%v)", done, err)
+	}
+}
+
+func TestOnlyTheCreatorCanCompleteAnAttachment(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	pending := tm.beginAndUpload(t, tm.agent, issue.Key(), "a.txt", []byte("hello"))
+	before := tm.eventCount(t)
+
+	for _, other := range []Caller{tm.member, tm.owner} {
+		_, err := tm.store.CompleteAttachment(tm.ctx, other, pending.ID)
+		wantErr(t, err, ErrNotFound)
+	}
+	_, err := tm.store.CompleteAttachment(tm.ctx, tm.member, "missing")
+	wantErr(t, err, ErrNotFound)
+
+	if tm.eventCount(t) != before || len(got(tm.store.ListIssueAttachments(tm.ctx, issue.Key())).must(t)) != 0 {
+		t.Fatal("a refused completion changed state")
+	}
+}
+
+func TestCompletingTwiceIsIdempotent(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	pending := tm.beginAndUpload(t, tm.member, issue.Key(), "a.txt", []byte("hello"))
+
+	first := got(tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID)).must(t)
+	events := tm.eventCount(t)
+	second := got(tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID)).must(t)
+
+	if second.ID != first.ID || second.Pending || second.ContentType != first.ContentType || !second.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Fatalf("first %+v second %+v", first, second)
+	}
+	if tm.eventCount(t) != events {
+		t.Fatal("completing again wrote another event")
+	}
+}
+
+func TestPendingAttachmentsAreHidden(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	pending := tm.beginAndUpload(t, tm.member, issue.Key(), "a.txt", []byte("hello"))
+
+	_, err := tm.store.GetAttachment(tm.ctx, pending.ID)
+	wantErr(t, err, ErrNotFound)
+	if list := got(tm.store.ListIssueAttachments(tm.ctx, issue.Key())).must(t); len(list) != 0 {
+		t.Fatalf("list %v", list)
+	}
+
+	if _, err := tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tm.store.GetAttachment(tm.ctx, pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	if list := got(tm.store.ListIssueAttachments(tm.ctx, issue.Key())).must(t); len(list) != 1 {
+		t.Fatalf("list %v", list)
+	}
+}
+
+func TestDownloadURLAndReadPrefix(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	pending := tm.beginAndUpload(t, tm.member, issue.Key(), "a.txt", []byte("hello world"))
+	attachment := got(tm.store.CompleteAttachment(tm.ctx, tm.member, pending.ID)).must(t)
+
+	if url := tm.store.DownloadURL(attachment, "text/plain", "attachment"); url != "https://objects.test/get/"+attachment.ID+"?type=text/plain&disposition=attachment" {
+		t.Fatalf("url %s", url)
+	}
+
+	data, more, err := tm.store.ReadAttachmentPrefix(tm.ctx, attachment, 5)
+	if err != nil || string(data) != "hello" || !more {
+		t.Fatalf("prefix %q more=%v (%v)", data, more, err)
+	}
+	data, more, err = tm.store.ReadAttachmentPrefix(tm.ctx, attachment, 11)
+	if err != nil || string(data) != "hello world" || more {
+		t.Fatalf("whole %q more=%v (%v)", data, more, err)
 	}
 }
 
@@ -152,150 +319,82 @@ func TestCleanFilename(t *testing.T) {
 	}
 }
 
-func TestAttachmentSizeLimits(t *testing.T) {
-	if testing.Short() {
-		t.Skip("writes over 100 MB")
-	}
+func TestAgentsCannotDeleteCompletedAttachments(t *testing.T) {
 	tm := newTeam(t)
 	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
-
-	// A file of exactly the limit is accepted; one byte more is refused and leaves nothing.
-	exact := io.MultiReader(strings.NewReader("hello"), io.LimitReader(zeros{}, MaxAttachmentBytes-5))
-	attachment := got(tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "big.bin", exact)).must(t)
-	if attachment.ByteSize != MaxAttachmentBytes {
-		t.Fatalf("size %d", attachment.ByteSize)
-	}
-	if err := tm.store.DeleteAttachment(tm.ctx, tm.member, attachment.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	over := io.MultiReader(strings.NewReader("hello"), io.LimitReader(zeros{}, MaxAttachmentBytes-4))
-	_, err := tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "big.bin", over)
-	wantErr(t, err, ErrTooLarge)
-	if leftovers(t, tm.files) != 0 {
-		t.Fatalf("an oversized upload left a file behind")
-	}
-
-	// A video may be larger than an ordinary file.
-	video := io.MultiReader(bytes.NewReader(mp4Bytes(10)), io.LimitReader(zeros{}, MaxAttachmentBytes))
-	attachment = got(tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "clip.mp4", video)).must(t)
-	if attachment.ContentType != "video/mp4" || attachment.ByteSize <= MaxAttachmentBytes {
-		t.Fatalf("video %+v", attachment)
-	}
-}
-
-type zeros struct{}
-
-func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
-
-func TestAnInterruptedUploadLeavesNothing(t *testing.T) {
-	tm := newTeam(t)
-	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
-
-	// The connection drops after the first bytes.
-	failing := io.MultiReader(bytes.NewReader(mp4Bytes(10)), errReader{})
-	_, err := tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "clip.mp4", failing)
-	if err == nil || !errors.Is(err, errBoom) {
-		t.Fatalf("error %v", err)
-	}
-	if leftovers(t, tm.files) != 0 {
-		t.Fatal("a failed upload left a file behind")
-	}
-}
-
-var errBoom = errors.New("connection reset")
-
-type errReader struct{}
-
-func (errReader) Read([]byte) (int, error) { return 0, errBoom }
-
-func TestAgentsCannotDeleteAttachments(t *testing.T) {
-	tm := newTeam(t)
-	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
-	attachment := got(tm.store.CreateAttachment(tm.ctx, tm.agent, issue.Key(), "a.txt", strings.NewReader("hello"))).must(t)
+	pending := tm.beginAndUpload(t, tm.agent, issue.Key(), "a.txt", []byte("hello"))
+	attachment := got(tm.store.CompleteAttachment(tm.ctx, tm.agent, pending.ID)).must(t)
 
 	wantErr(t, tm.store.DeleteAttachment(tm.ctx, tm.agent, attachment.ID), ErrForbidden)
-	if _, err := os.Stat(tm.store.AttachmentPath(attachment.ID)); err != nil {
-		t.Fatalf("file removed by a refused delete: %v", err)
+	if !tm.objects.Has(attachment.ID) {
+		t.Fatal("object removed by a refused delete")
 	}
 
 	if err := tm.store.DeleteAttachment(tm.ctx, tm.member, attachment.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(tm.store.AttachmentPath(attachment.ID)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("file still there: %v", err)
+	if tm.objects.Has(attachment.ID) {
+		t.Fatal("object still in the bucket")
 	}
 	_, err := tm.store.GetAttachment(tm.ctx, attachment.ID)
 	wantErr(t, err, ErrNotFound)
 	wantErr(t, tm.store.DeleteAttachment(tm.ctx, tm.member, attachment.ID), ErrNotFound)
 
-	var kind, actor string
-	if err := tm.store.db.QueryRow(`SELECT kind, actor_id FROM events ORDER BY sequence DESC LIMIT 1`).Scan(&kind, &actor); err != nil ||
-		kind != "attachment.deleted" || actor != tm.member.ActorID {
-		t.Fatalf("event %s by %s (%v)", kind, actor, err)
+	event := tm.lastEvent(t)
+	if event.Kind != "attachment.deleted" || event.ActorID != tm.member.ActorID {
+		t.Fatalf("event %+v", event)
 	}
 }
 
-func TestDeletingAProjectRemovesItsAttachmentFiles(t *testing.T) {
+func TestCreatorAbandonsAPendingAttachmentWithoutAnEvent(t *testing.T) {
+	tm := newTeam(t)
+	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
+	pending := tm.beginAndUpload(t, tm.agent, issue.Key(), "a.txt", []byte("hello"))
+	before := tm.eventCount(t)
+
+	// Someone else cannot see it, let alone delete it.
+	wantErr(t, tm.store.DeleteAttachment(tm.ctx, tm.owner, pending.ID), ErrNotFound)
+	wantErr(t, tm.store.DeleteAttachment(tm.ctx, tm.member, pending.ID), ErrNotFound)
+	if !tm.objects.Has(pending.ID) {
+		t.Fatal("object removed by a refused delete")
+	}
+
+	if err := tm.store.DeleteAttachment(tm.ctx, tm.agent, pending.ID); err != nil {
+		t.Fatal(err)
+	}
+	if tm.objects.Has(pending.ID) || tm.eventCount(t) != before {
+		t.Fatal("abandoning left an object or wrote an event")
+	}
+	var rows int
+	if err := tm.store.db.QueryRow(`SELECT count(*) FROM attachments`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("rows %d (%v)", rows, err)
+	}
+}
+
+func TestDeletingAProjectRemovesItsAttachmentObjects(t *testing.T) {
 	tm := newTeam(t)
 	doomed := tm.issue(t, tm.project(t, "WP").ID, "Doomed")
 	other := tm.project(t, "OT")
 	kept := tm.issue(t, other.ID, "Kept")
 
-	gone := got(tm.store.CreateAttachment(tm.ctx, tm.member, doomed.Key(), "a.txt", strings.NewReader("one"))).must(t)
-	stays := got(tm.store.CreateAttachment(tm.ctx, tm.member, kept.Key(), "b.txt", strings.NewReader("two"))).must(t)
+	done := tm.beginAndUpload(t, tm.member, doomed.Key(), "a.txt", []byte("one"))
+	got(tm.store.CompleteAttachment(tm.ctx, tm.member, done.ID)).must(t)
+	pending := tm.beginAndUpload(t, tm.member, doomed.Key(), "p.txt", []byte("pending"))
+	stays := tm.beginAndUpload(t, tm.member, kept.Key(), "b.txt", []byte("two"))
+	got(tm.store.CompleteAttachment(tm.ctx, tm.member, stays.ID)).must(t)
 
 	if err := tm.store.DeleteProject(tm.ctx, tm.owner, doomed.ProjectID); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(tm.store.AttachmentPath(gone.ID)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("file of the deleted project remains: %v", err)
+	if tm.objects.Has(done.ID) || tm.objects.Has(pending.ID) {
+		t.Fatal("objects of the deleted project remain")
 	}
-	if _, err := os.Stat(tm.store.AttachmentPath(stays.ID)); err != nil {
-		t.Fatalf("file of another project removed: %v", err)
+	if !tm.objects.Has(stays.ID) {
+		t.Fatal("object of another project removed")
 	}
-	all := got(tm.store.ListAllAttachments(tm.ctx)).must(t)
-	if len(all) != 1 || all[0].ID != stays.ID {
-		t.Fatalf("rows %v", all)
-	}
-}
-
-func TestFailedSavesLeaveNoRowAndNoFile(t *testing.T) {
-	tm := newTeam(t)
-	issue := tm.issue(t, tm.project(t, "WP").ID, "Fix header")
-	before := tm.eventCount(t)
-
-	// A disabled caller fails inside the transaction, after the upload was staged.
-	disabled := Caller{ActorID: "00000000-0000-7000-8000-0000000000ff"}
-	_, err := tm.store.CreateAttachment(tm.ctx, disabled, issue.Key(), "a.txt", strings.NewReader("hello"))
-	wantErr(t, err, ErrForbidden)
-
-	// Files where the final folders should be make the move fail, which must roll back the row.
-	for _, c := range "0123456789abcdef" {
-		for _, d := range "0123456789abcdef" {
-			if err := os.WriteFile(filepath.Join(tm.files, string(c)+string(d)), nil, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	_, err = tm.store.CreateAttachment(tm.ctx, tm.member, issue.Key(), "a.txt", strings.NewReader("hello"))
-	if err == nil {
-		t.Fatal("the move into a blocked folder succeeded")
-	}
-
-	var rows int
-	if err := tm.store.db.QueryRow(`SELECT count(*) FROM attachments`).Scan(&rows); err != nil || rows != 0 {
-		t.Fatalf("rows %d (%v)", rows, err)
-	}
-	if tm.eventCount(t) != before {
-		t.Fatal("a failed save left an event behind")
-	}
-	// Only the blocking files themselves remain; no temporary upload does.
-	entries, _ := os.ReadDir(tm.files)
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".upload-") {
-			t.Fatalf("temporary file %s left behind", entry.Name())
-		}
+	list := got(tm.store.ListIssueAttachments(tm.ctx, kept.Key())).must(t)
+	if len(list) != 1 || list[0].ID != stays.ID {
+		t.Fatalf("rows %v", list)
 	}
 }

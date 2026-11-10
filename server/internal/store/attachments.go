@@ -6,16 +6,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/shantodotdev/super-sparrow/server/internal/files"
+	"github.com/shantodotdev/super-sparrow/server/internal/r2"
 )
 
 const (
@@ -25,10 +23,34 @@ const (
 	MaxVideoBytes = 5_000_000_000
 
 	maxFilenameBytes = 255
+	sniffBytes       = 512
+
+	// uploadTTL is how long an upload link works. It starts the upload; a long transfer already
+	// under way is not cut off when it passes.
+	uploadTTL = 6 * time.Hour
+	// downloadTTL is how long a download link works.
+	downloadTTL = 10 * time.Minute
 )
 
-// Attachment is a file attached to an issue. The bytes are on disk; this is what the database
-// keeps about them.
+// Objects is the bucket that holds the bytes of attached files, one object per attachment, keyed
+// by the attachment's ID. *r2.Bucket is the production implementation.
+type Objects interface {
+	// PresignPut returns a link for uploading the object with a PUT that carries exactly the
+	// given Content-Type.
+	PresignPut(key, contentType string, ttl time.Duration) string
+	// PresignGet returns a link for downloading the object, answered with the given content
+	// type and Content-Disposition.
+	PresignGet(key, contentType, disposition string, ttl time.Duration) string
+	// Head returns the object's size, or an error wrapping r2.ErrNotFound.
+	Head(ctx context.Context, key string) (int64, error)
+	// GetPrefix returns the first limit bytes of the object.
+	GetPrefix(ctx context.Context, key string, limit int64) ([]byte, error)
+	Delete(ctx context.Context, key string) error
+}
+
+// Attachment is a file attached to an issue. The bytes are in the bucket; this is what the
+// database keeps about them. A pending attachment has a row and an upload link but no confirmed
+// file yet, and is hidden everywhere except to the person who is uploading it.
 type Attachment struct {
 	ID          string
 	ProjectID   string
@@ -38,7 +60,7 @@ type Attachment struct {
 	Filename    string
 	ContentType string
 	ByteSize    int64
-	SHA256      string
+	Pending     bool
 	CreatedByID string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -47,48 +69,35 @@ type Attachment struct {
 // URLPath returns the path the API serves the file at.
 func (a Attachment) URLPath() string { return "/api/attachments/" + a.ID }
 
+// Upload tells a client where and how to send the bytes of a pending attachment.
+type Upload struct {
+	URL     string
+	Headers map[string]string
+}
+
 const attachmentSelect = `SELECT a.id, a.project_id, p.key, a.issue_id, p.key || '-' || i.number, a.filename,
-	a.content_type, a.byte_size, a.sha256, a.created_by_actor_id, a.created_at, a.updated_at
+	a.content_type, a.byte_size, a.uploaded_at IS NULL, a.created_by_actor_id, a.created_at, a.updated_at
 	FROM attachments a JOIN projects p ON p.id = a.project_id JOIN issues i ON i.id = a.issue_id`
 
-// CreateAttachment stores the bytes of body as a file attached to the issue. The content type is
-// read from the first bytes rather than trusted from the request, and the filename is reduced to
-// a plain name. The file is streamed to disk, never held in memory, and is refused when it is
-// over MaxAttachmentBytes, or over MaxVideoBytes for a video.
-//
-// The upload is written to a temporary file first. The row and its event are then saved, and the
-// file is moved to its final place before the transaction commits, so a committed row always has
-// its file. A failed save removes the temporary file; a crash may leave a file with no row, which
-// is harmless.
-func (s *Store) CreateAttachment(ctx context.Context, by Caller, issueKey, filename string, body io.Reader) (Attachment, error) {
+// BeginAttachment records a pending attachment on the issue and returns the link the client sends
+// the file to. The file goes straight to the bucket, never through this server. The declared
+// size and type only choose the limit; CompleteAttachment checks the real file.
+func (s *Store) BeginAttachment(ctx context.Context, by Caller, issueKey, filename, contentType string, size int64) (Attachment, Upload, error) {
 	name, err := cleanFilename(filename)
 	if err != nil {
-		return Attachment{}, err
+		return Attachment{}, Upload{}, err
+	}
+	contentType = declaredContentType(contentType)
+	if size < 1 {
+		return Attachment{}, Upload{}, invalid("byte_size", "must be at least 1")
+	}
+	if size > attachmentLimit(contentType) {
+		return Attachment{}, Upload{}, errTooLarge()
 	}
 	issue, err := s.GetIssueByKey(ctx, issueKey)
 	if err != nil {
-		return Attachment{}, err
+		return Attachment{}, Upload{}, err
 	}
-
-	// Stream the upload to disk before taking the database's write lock, so a slow upload never
-	// blocks other changes.
-	var contentType string
-	staged, err := s.files.Stage(body, func(head []byte) (int64, error) {
-		contentType = detectContentType(head)
-		if strings.HasPrefix(contentType, "video/") {
-			return MaxVideoBytes, nil
-		}
-		return MaxAttachmentBytes, nil
-	})
-	switch {
-	case errors.Is(err, files.ErrEmpty):
-		return Attachment{}, invalid("body", "must hold a file")
-	case errors.Is(err, files.ErrTooLarge):
-		return Attachment{}, Refuse(ErrTooLarge, "files must be at most %d bytes, and videos at most %d bytes", MaxAttachmentBytes, MaxVideoBytes)
-	case err != nil:
-		return Attachment{}, fmt.Errorf("stage attachment for %s: %w", issue.Key(), err)
-	}
-	defer staged.Discard()
 
 	var attachment Attachment
 	err = s.write(ctx, by, func(w *writeTx) error {
@@ -98,82 +107,155 @@ func (s *Store) CreateAttachment(ctx context.Context, by Caller, issueKey, filen
 		}
 
 		id := newID()
-		_, err = w.exec(`INSERT INTO attachments (id, project_id, issue_id, filename, content_type, byte_size, sha256,
-			created_by_actor_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, current.ProjectID, current.ID, name, contentType, staged.Size, staged.SHA256, w.caller.ID, w.timestamp(), w.timestamp())
+		_, err = w.exec(`INSERT INTO attachments (id, project_id, issue_id, filename, content_type, byte_size,
+			uploaded_at, created_by_actor_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+			id, current.ProjectID, current.ID, name, contentType, size, w.caller.ID, w.timestamp(), w.timestamp())
 		if err != nil {
 			return fmt.Errorf("store attachment: %w", err)
 		}
-		if attachment, err = getAttachment(w.ctx, w.tx, `a.id = ?`, id); err != nil {
-			return err
-		}
-
-		err = w.event(current.ProjectID, TargetProject, current.ProjectID, "attachment.created", attachmentPayload(attachment))
-		if err != nil {
-			return err
-		}
-
-		// The last step before commit: if the move fails, the row and event roll back.
-		return staged.Commit(id)
+		attachment, err = getAttachment(w.ctx, w.tx, `a.id = ?`, id)
+		return err
 	})
 	if err != nil {
-		// The move may have happened before a failed commit; a file with no row is useless.
-		if attachment.ID != "" {
-			os.Remove(s.files.Path(attachment.ID))
+		return Attachment{}, Upload{}, err
+	}
+
+	upload := Upload{
+		URL:     s.objects.PresignPut(attachment.ID, contentType, uploadTTL),
+		Headers: map[string]string{"Content-Type": contentType},
+	}
+	return attachment, upload, nil
+}
+
+// CompleteAttachment confirms that the pending attachment's file reached the bucket and makes the
+// attachment visible. Only the person or agent that began it can complete it. The bucket is asked
+// for the object's size and first bytes, so the type is sniffed from the file itself rather than
+// trusted from the request. A file that breaks the size rules is deleted along with its row.
+// Completing an attachment that is already complete returns it unchanged.
+func (s *Store) CompleteAttachment(ctx context.Context, by Caller, id string) (Attachment, error) {
+	attachment, err := getAttachment(ctx, s.db, `a.id = ?`, id)
+	if err != nil {
+		return Attachment{}, err
+	}
+	if attachment.CreatedByID != by.ActorID {
+		return Attachment{}, notFound("attachment")
+	}
+	if !attachment.Pending {
+		return attachment, nil
+	}
+
+	size, err := s.objects.Head(ctx, attachment.ID)
+	if errors.Is(err, r2.ErrNotFound) {
+		return Attachment{}, invalid("attachment", "has no uploaded file yet")
+	}
+	if err != nil {
+		return Attachment{}, fmt.Errorf("check uploaded file of attachment %s: %w", id, err)
+	}
+	head, err := s.objects.GetPrefix(ctx, attachment.ID, sniffBytes)
+	if err != nil {
+		return Attachment{}, fmt.Errorf("read uploaded file of attachment %s: %w", id, err)
+	}
+
+	contentType := detectContentType(head)
+	if size < 1 || size > attachmentLimit(contentType) {
+		if err := s.discardAttachment(ctx, attachment.ID); err != nil {
+			return Attachment{}, err
 		}
+		if size < 1 {
+			return Attachment{}, invalid("body", "must hold a file")
+		}
+		return Attachment{}, errTooLarge()
+	}
+
+	err = s.write(ctx, by, func(w *writeTx) error {
+		result, err := w.exec(`UPDATE attachments SET content_type = ?, byte_size = ?, uploaded_at = ?, updated_at = ?
+			WHERE id = ? AND uploaded_at IS NULL`, contentType, size, w.timestamp(), w.timestamp(), attachment.ID)
+		if err != nil {
+			return fmt.Errorf("complete attachment %s: %w", id, err)
+		}
+		if changed, _ := result.RowsAffected(); changed == 0 {
+			return nil
+		}
+		if attachment, err = getAttachment(w.ctx, w.tx, `a.id = ?`, attachment.ID); err != nil {
+			return err
+		}
+		return w.event(attachment.ProjectID, TargetProject, attachment.ProjectID, "attachment.created", attachmentPayload(attachment))
+	})
+	if err != nil {
 		return Attachment{}, err
 	}
 	return attachment, nil
 }
 
-// GetAttachment returns an attachment's details, without its bytes.
+// discardAttachment removes a pending attachment's row and object.
+func (s *Store) discardAttachment(ctx context.Context, id string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM attachments WHERE id = ? AND uploaded_at IS NULL`, id); err != nil {
+		return fmt.Errorf("delete pending attachment %s: %w", id, err)
+	}
+	return s.removeAttachmentFiles(ctx, []string{id})
+}
+
+// GetAttachment returns a completed attachment's details, without its bytes.
 func (s *Store) GetAttachment(ctx context.Context, id string) (Attachment, error) {
-	return getAttachment(ctx, s.db, `a.id = ?`, id)
+	attachment, err := getAttachment(ctx, s.db, `a.id = ?`, id)
+	if err != nil {
+		return Attachment{}, err
+	}
+	if attachment.Pending {
+		return Attachment{}, notFound("attachment")
+	}
+	return attachment, nil
 }
 
-// OpenAttachment opens an attachment's file for reading, with its details. The caller closes the
-// file. The file is an *os.File so it can be served with http.ServeContent, which answers Range
-// requests.
-func (s *Store) OpenAttachment(ctx context.Context, id string) (*os.File, Attachment, error) {
-	attachment, err := s.GetAttachment(ctx, id)
-	if err != nil {
-		return nil, Attachment{}, err
-	}
-
-	file, err := s.files.Open(attachment.ID)
-	if err != nil {
-		return nil, Attachment{}, fmt.Errorf("open attachment %s: %w", id, err)
-	}
-	return file, attachment, nil
+// DownloadURL returns a short-lived link to the attachment's file in the bucket, answered with
+// the given content type and Content-Disposition.
+func (s *Store) DownloadURL(a Attachment, contentType, disposition string) string {
+	return s.objects.PresignGet(a.ID, contentType, disposition, downloadTTL)
 }
 
-// ListIssueAttachments returns the issue's attachments, oldest first.
+// ReadAttachmentPrefix reads at most limit bytes from the start of the attachment's file and
+// reports whether the file has more.
+func (s *Store) ReadAttachmentPrefix(ctx context.Context, a Attachment, limit int64) ([]byte, bool, error) {
+	data, err := s.objects.GetPrefix(ctx, a.ID, limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("read attachment %s: %w", a.ID, err)
+	}
+	if int64(len(data)) > limit {
+		return data[:limit], true, nil
+	}
+	return data, false, nil
+}
+
+// ListIssueAttachments returns the issue's completed attachments, oldest first.
 func (s *Store) ListIssueAttachments(ctx context.Context, issueKey string) ([]Attachment, error) {
 	issue, err := s.GetIssueByKey(ctx, issueKey)
 	if err != nil {
 		return nil, err
 	}
-	return listAttachments(ctx, s.db, `WHERE a.issue_id = ?`, issue.ID)
+	return listAttachments(ctx, s.db, `WHERE a.issue_id = ? AND a.uploaded_at IS NOT NULL`, issue.ID)
 }
-
-// ListAllAttachments returns every attachment, oldest first, which backups use to find the files.
-func (s *Store) ListAllAttachments(ctx context.Context) ([]Attachment, error) {
-	return listAttachments(ctx, s.db, ``)
-}
-
-// AttachmentPath returns the absolute path of the attachment's file on disk.
-func (s *Store) AttachmentPath(id string) string { return s.files.Path(id) }
 
 // DeleteAttachment removes an attachment and, once that is committed, its file. Only a person
-// can delete one.
+// can delete one. A pending attachment can be abandoned by whoever began it.
 func (s *Store) DeleteAttachment(ctx context.Context, by Caller, id string) error {
-	err := s.write(ctx, by, func(w *writeTx) error {
+	pending, err := getAttachment(ctx, s.db, `a.id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if pending.Pending && pending.CreatedByID == by.ActorID {
+		return s.discardAttachment(ctx, id)
+	}
+
+	err = s.write(ctx, by, func(w *writeTx) error {
 		if err := w.requireHuman("delete attachments"); err != nil {
 			return err
 		}
 		attachment, err := getAttachment(w.ctx, w.tx, `a.id = ?`, id)
 		if err != nil {
 			return err
+		}
+		if attachment.Pending {
+			return notFound("attachment")
 		}
 
 		if _, err := w.exec(`DELETE FROM attachments WHERE id = ?`, attachment.ID); err != nil {
@@ -185,7 +267,7 @@ func (s *Store) DeleteAttachment(ctx context.Context, by Caller, id string) erro
 		return err
 	}
 
-	return s.removeAttachmentFiles([]string{id})
+	return s.removeAttachmentFiles(ctx, []string{id})
 }
 
 // attachmentIDsOfProject returns the IDs of the project's attachments, for removing their files
@@ -211,16 +293,39 @@ func attachmentIDsOfProject(w *writeTx, projectID string) ([]string, error) {
 	return ids, nil
 }
 
-// removeAttachmentFiles deletes the files of attachments whose rows are already gone. It tries
-// every file and reports the first failure.
-func (s *Store) removeAttachmentFiles(ids []string) error {
+// removeAttachmentFiles deletes the objects of attachments whose rows are already gone. It tries
+// every object and reports the first failure.
+func (s *Store) removeAttachmentFiles(ctx context.Context, ids []string) error {
 	var first error
 	for _, id := range ids {
-		if err := s.files.Remove(id); err != nil && first == nil {
+		if err := s.objects.Delete(ctx, id); err != nil && first == nil {
 			first = err
 		}
 	}
 	return first
+}
+
+// attachmentLimit is the largest file of the content type: videos may be bigger than the rest.
+func attachmentLimit(contentType string) int64 {
+	if strings.HasPrefix(contentType, "video/") {
+		return MaxVideoBytes
+	}
+	return MaxAttachmentBytes
+}
+
+func errTooLarge() error {
+	return Refuse(ErrTooLarge, "files must be at most %d bytes, and videos at most %d bytes", MaxAttachmentBytes, MaxVideoBytes)
+}
+
+// declaredContentType reduces the type a client declares to a bare media type, or the generic
+// binary type when it is missing or malformed. It only picks the size limit and the upload
+// header; the stored type is sniffed from the file.
+func declaredContentType(raw string) string {
+	mediaType, _, err := mime.ParseMediaType(raw)
+	if err != nil || len(mediaType) > 255 {
+		return "application/octet-stream"
+	}
+	return mediaType
 }
 
 func attachmentPayload(a Attachment) map[string]any {
@@ -259,7 +364,7 @@ func scanAttachment(row scanner) (Attachment, error) {
 	var a Attachment
 	var created, updated string
 	err := row.Scan(&a.ID, &a.ProjectID, &a.ProjectKey, &a.IssueID, &a.IssueKey, &a.Filename, &a.ContentType,
-		&a.ByteSize, &a.SHA256, &a.CreatedByID, &created, &updated)
+		&a.ByteSize, &a.Pending, &a.CreatedByID, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Attachment{}, notFound("attachment")
 	}

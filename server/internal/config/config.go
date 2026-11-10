@@ -50,11 +50,11 @@ type Config struct {
 	Environment  Environment
 	ListenAddr   string
 	DatabasePath string
-	// AttachmentsDir is the absolute path of the existing, writable folder that holds attached
-	// files, normally on a volume.
-	AttachmentsDir string
-	PublicURL      *url.URL
-	LogLevel       slog.Level
+	// AttachmentsR2 is the private bucket that holds attached files. It is separate from the
+	// backup bucket and has its own credentials.
+	AttachmentsR2 R2
+	PublicURL     *url.URL
+	LogLevel      slog.Level
 	// ResendAPIKey authenticates the server to Resend, which sends sign-in codes and invitations.
 	ResendAPIKey string
 	// EmailFrom is the sender of every email, such as "Super Sparrow <sparrow@example.com>".
@@ -137,12 +137,8 @@ func Load(getenv func(string) string) (Config, error) {
 	problems = append(problems, err)
 	cfg.DatabasePath = databasePath
 
-	attachmentsDir, err := required(getenv, "ATTACHMENTS_DIR")
-	if err == nil {
-		attachmentsDir, err = checkAttachmentsDir(attachmentsDir)
-	}
+	cfg.AttachmentsR2, err = LoadR2(getenv, "ATTACHMENTS_R2_")
 	problems = append(problems, err)
-	cfg.AttachmentsDir = attachmentsDir
 
 	publicURL, err := required(getenv, "PUBLIC_URL")
 	if err == nil {
@@ -262,7 +258,7 @@ func loadBackups(getenv func(string) string) (*Backups, error) {
 	}
 	problems = append(problems, err)
 
-	backups.R2, err = LoadR2(getenv)
+	backups.R2, err = LoadR2(getenv, "R2_")
 	problems = append(problems, err)
 
 	if err := errors.Join(problems...); err != nil {
@@ -271,48 +267,27 @@ func loadBackups(getenv func(string) string) (*Backups, error) {
 	return &backups, nil
 }
 
-// LoadR2 reads the R2 bucket settings, which the backup jobs and the restore command share.
-func LoadR2(getenv func(string) string) (R2, error) {
+// LoadR2 reads the settings of one R2 bucket, each named by prefix and its name: R2_BUCKET for
+// the backups, ATTACHMENTS_R2_BUCKET for attached files.
+func LoadR2(getenv func(string) string, prefix string) (R2, error) {
 	var r2 R2
 	var problems []error
 	var err error
 
-	r2.AccountID, err = required(getenv, "R2_ACCOUNT_ID")
+	r2.AccountID, err = required(getenv, prefix+"ACCOUNT_ID")
 	if err == nil && !r2AccountPattern.MatchString(r2.AccountID) {
-		err = errors.New("R2_ACCOUNT_ID must be the 32-character Cloudflare account ID")
+		err = fmt.Errorf("%sACCOUNT_ID must be the 32-character Cloudflare account ID", prefix)
 	}
 	problems = append(problems, err)
 
-	r2.AccessKeyID, err = required(getenv, "R2_ACCESS_KEY_ID")
+	r2.AccessKeyID, err = required(getenv, prefix+"ACCESS_KEY_ID")
 	problems = append(problems, err)
-	r2.SecretAccessKey, err = required(getenv, "R2_SECRET_ACCESS_KEY")
+	r2.SecretAccessKey, err = required(getenv, prefix+"SECRET_ACCESS_KEY")
 	problems = append(problems, err)
-	r2.Bucket, err = required(getenv, "R2_BUCKET")
+	r2.Bucket, err = required(getenv, prefix+"BUCKET")
 	problems = append(problems, err)
 
 	return r2, errors.Join(problems...)
-}
-
-// checkAttachmentsDir resolves the path to an absolute one and checks that it names an existing
-// folder the server can write files to.
-func checkAttachmentsDir(value string) (string, error) {
-	dir, err := filepath.Abs(value)
-	if err != nil {
-		return "", fmt.Errorf("ATTACHMENTS_DIR is not a usable path: %w", err)
-	}
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("ATTACHMENTS_DIR must be an existing folder; %s is not one", dir)
-	}
-
-	probe, err := os.CreateTemp(dir, ".write-check-*")
-	if err != nil {
-		return "", fmt.Errorf("ATTACHMENTS_DIR must be writable by the server: %w", err)
-	}
-	probe.Close()
-	if err := os.Remove(probe.Name()); err != nil {
-		return "", fmt.Errorf("ATTACHMENTS_DIR must be writable by the server: %w", err)
-	}
-	return dir, nil
 }
 
 // parseWebDir checks that the folder holds a built frontend: the _shell.html page that TanStack

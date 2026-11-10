@@ -22,6 +22,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
 	"github.com/shantodotdev/super-sparrow/server/internal/email"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
+	"github.com/shantodotdev/super-sparrow/server/internal/store/storetest"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
 )
 
@@ -62,6 +63,7 @@ type fixture struct {
 	auth    *auth.Service
 	mailer  *fakeMailer
 	owner   store.Actor
+	objects *storetest.Objects
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -77,7 +79,8 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	st := store.New(db, time.Now, t.TempDir())
+	objects := storetest.NewObjects()
+	st := store.New(db, time.Now, objects)
 	owner, err := st.CreateFirstOwner(ctx, "Olive Owner", "olive@example.com")
 	if err != nil {
 		t.Fatalf("CreateFirstOwner: %v", err)
@@ -89,7 +92,7 @@ func newFixture(t *testing.T) *fixture {
 	service := auth.New(st, mailer, publicURL, []byte("test-sign-in-code-key-0123456789"), logger, time.Now)
 
 	handler := New(Options{Logger: logger, DB: db, Store: st, Auth: service, PublicURL: publicURL, Now: time.Now})
-	return &fixture{t: t, handler: handler, store: st, auth: service, mailer: mailer, owner: owner}
+	return &fixture{t: t, handler: handler, store: st, auth: service, mailer: mailer, owner: owner, objects: objects}
 }
 
 // request sends a request with an optional JSON body and credential. A credential starting with
