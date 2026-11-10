@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "bun scripts/install-linux-desktop.ts && tauri dev --config src-tauri/tauri.dev.conf.json",
     "build": "tauri build",
-    "icons": "tauri icon icon.svg"
+    "icons": "tauri icon ../web/public/icon-512.png"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4"
