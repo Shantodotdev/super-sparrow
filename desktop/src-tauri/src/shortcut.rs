@@ -1,59 +1,94 @@
-//! The system-wide shortcut that opens quick capture. People pick one of a few combinations, so
-//! they can move it off a key another application needs, or pause it.
+//! Validated global capture accelerators. Personal preferences arrive from the authenticated page.
 
-use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+use std::str::FromStr;
+use tauri_plugin_global_shortcut::Shortcut;
 
-/// The shortcut used until the person picks another.
-pub const DEFAULT_SHORTCUT: &str = "Ctrl+Q";
+/// The capture accelerator used before a person customizes their account.
+pub const DEFAULT_SHORTCUT: &str = "Meta+Shift+Q";
 
-/// The shortcuts offered in the tray menu, by label.
-pub const CHOICES: [&str; 4] = ["Ctrl+Q", "Ctrl+Shift+Q", "Ctrl+Alt+Q", "Ctrl+Shift+Space"];
-
-/// Turns one of the offered labels, such as "Ctrl+Shift+Q", into a shortcut. Other labels are
-/// refused, so a hand-edited settings file cannot register an arbitrary key.
+/// Accepts one modified accelerator, excluding focus and cancellation keys. Meta is translated
+/// to the native shortcut library's Super name, which also represents Command on macOS.
 pub fn parse(label: &str) -> Option<Shortcut> {
-    let (modifiers, code) = match label {
-        "Ctrl+Q" => (Modifiers::CONTROL, Code::KeyQ),
-        "Ctrl+Shift+Q" => (Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyQ),
-        "Ctrl+Alt+Q" => (Modifiers::CONTROL | Modifiers::ALT, Code::KeyQ),
-        "Ctrl+Shift+Space" => (Modifiers::CONTROL | Modifiers::SHIFT, Code::Space),
-        _ => return None,
-    };
-    Some(Shortcut::new(Some(modifiers), code))
-}
-
-/// The menu item ID of a shortcut choice.
-pub fn menu_id(label: &str) -> String {
-    format!("shortcut:{label}")
+    if label.len() > 80 || label.contains(' ') {
+        return None;
+    }
+    let parts: Vec<&str> = label.split('+').collect();
+    let key = *parts.last()?;
+    if matches!(key, "Escape" | "Tab") || parts.len() < 2 {
+        return None;
+    }
+    let mut previous = None;
+    let mut primary = false;
+    for modifier in &parts[..parts.len() - 1] {
+        let rank = match *modifier {
+            "Ctrl" => {
+                primary = true;
+                0
+            }
+            "Alt" => {
+                primary = true;
+                1
+            }
+            "Meta" => {
+                primary = true;
+                2
+            }
+            "Shift" => 3,
+            _ => return None,
+        };
+        if previous.is_some_and(|previous| previous >= rank) {
+            return None;
+        }
+        previous = Some(rank);
+    }
+    if !primary {
+        return None;
+    }
+    Shortcut::from_str(&label.replace("Meta+", "Super+")).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri_plugin_global_shortcut::{Code, Modifiers};
 
     #[test]
-    fn parses_every_offered_choice_to_a_distinct_shortcut() {
-        let shortcuts: Vec<Shortcut> = CHOICES.iter().map(|label| parse(label).unwrap()).collect();
-        for (index, shortcut) in shortcuts.iter().enumerate() {
-            assert!(!shortcuts[index + 1..].contains(shortcut));
-        }
+    fn default_uses_meta_shift_q() {
         assert_eq!(
-            parse("Ctrl+Q"),
-            Some(Shortcut::new(Some(Modifiers::CONTROL), Code::KeyQ))
+            parse(DEFAULT_SHORTCUT),
+            Some(Shortcut::new(
+                Some(Modifiers::SUPER | Modifiers::SHIFT),
+                Code::KeyQ
+            ))
         );
     }
 
     #[test]
-    fn refuses_labels_that_are_not_offered() {
-        assert_eq!(parse("Alt+F4"), None);
-        assert_eq!(parse("ctrl+q"), None);
-        assert_eq!(parse(""), None);
+    fn accepts_personal_modified_chords() {
+        for label in [
+            "Ctrl+Alt+K",
+            "Meta+Shift+Space",
+            "Alt+F8",
+            "Ctrl+Shift+Slash",
+        ] {
+            assert!(parse(label).is_some(), "{label}");
+        }
     }
 
     #[test]
-    fn menu_ids_round_trip_through_the_label() {
-        for label in CHOICES {
-            assert_eq!(menu_id(label).strip_prefix("shortcut:"), Some(label));
+    fn refuses_sequences_reserved_keys_and_unmodified_accelerators() {
+        for label in [
+            "",
+            "Q",
+            "Shift+Q",
+            "Ctrl+Tab",
+            "Meta+Escape",
+            "G I",
+            "Mod+K",
+            "Meta+Ctrl+K",
+            "Ctrl+Ctrl+K",
+        ] {
+            assert!(parse(label).is_none(), "{label}");
         }
     }
 }
