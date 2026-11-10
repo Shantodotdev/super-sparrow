@@ -27,7 +27,7 @@ macOS needs the Xcode command line tools. Windows needs the Microsoft C++ build 
 5. `make create-owner NAME="Your Name" EMAIL=you@example.com` adds the first owner. It works only on a database with nobody in it; after that, owners invite teammates.
 6. `make dev` builds and runs the Go server and the web dev server together. The web dev server forwards `/api` to the Go server, as production does on one address.
 
-The server creates the SQLite database at `DATABASE_PATH` and applies the migrations in `server/migrations/` when it starts.
+The server creates the SQLite database at `DATABASE_PATH` and applies the migrations in `server/migrations/` when it starts. Attached files are kept in the folder named by `ATTACHMENTS_DIR`; `.env.example` points it at `data/attachments`, and the `make` targets that start the server create it.
 
 ## Commands
 
@@ -76,7 +76,7 @@ The same `sparrow` binary is also the command-line client. With `SPARROW_URL` an
 
 ## Quick capture and the desktop app
 
-Meta+Shift+Q opens the quick capture panel on any page of the web app: a movable panel for a new issue or a new context (Ctrl+Q closes it), with a screenshot button that grabs the screen and lets you drag out the part to keep. In a browser the screenshot asks which screen, window, or tab to share.
+Meta+Shift+Q opens the quick capture panel on any page of the web app: a movable panel for a new issue (Ctrl+Q closes it), with a screenshot button that grabs the screen and lets you drag out the part to keep, and a way to attach files. In a browser the screenshot asks which screen, window, or tab to share.
 
 The desktop app makes Meta+Shift+Q work over every application. `make dev-desktop` reads `PUBLIC_URL` from the root `.env` and opens that address directly, such as `http://localhost:3000` with `make dev` running. No address entry is needed. On Linux, the development command registers a hidden desktop entry for the taskbar icon. Development uses a separate app identifier, so its launcher and settings do not override an installed release. The app starts at login and stays in the tray when its window is closed. Meta+Shift+Q shows an always-on-top capture window, and its screenshot button captures the monitor natively. Open Settings → Keyboard shortcuts to edit, disable, or reset your account’s bindings. The desktop applies your quick-capture binding system-wide; its tray menu opens the same settings page. Edits synchronize across sessions and devices. If a key is reserved or already registered by another app, the page reports the registration failure and preserves the previous working global shortcut. The app also shows native notifications for new findings, finding decisions, and new contexts made by others. On Linux, Wayland sessions do not allow global shortcuts, and macOS asks for the screen recording permission on the first screenshot.
 
