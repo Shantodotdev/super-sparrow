@@ -8,6 +8,7 @@ COPY web/package.json web/
 COPY desktop/package.json desktop/
 RUN bun install --frozen-lockfile
 COPY tsconfig.base.json .gitignore ./
+COPY server/internal/keyboard/definitions.json server/internal/keyboard/
 COPY web web
 RUN bun --filter @super-sparrow/web build
 COPY deploy/verify-web-build.ts deploy/
