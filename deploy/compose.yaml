@@ -16,17 +16,14 @@ services:
       APP_ENV: production
       LISTEN_ADDR: 0.0.0.0:8090
       DATABASE_PATH: /data/sparrow.db
-      ATTACHMENTS_DIR: /attachments
       WEB_DIR: /srv/web
     # Only the reverse proxy on this host reaches the server.
     ports:
       - "127.0.0.1:8090:8090"
     volumes:
       - sparrow-data:/data
-      - sparrow-attachments:/attachments
     mem_limit: 256m
     stop_grace_period: 30s
 
 volumes:
   sparrow-data:
-  sparrow-attachments:

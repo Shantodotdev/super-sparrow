@@ -20,14 +20,14 @@ macOS needs the Xcode command line tools. Windows needs the Microsoft C++ build 
 
 ## First run
 
-1. `cp .env.example .env`, which sets `APP_ENV=development`. The server refuses to start when a setting it needs is missing and names each one. Development leaves `TRUSTED_PROXIES`, `WEB_DIR`, `GITHUB_WEBHOOK_SECRET`, and the backup settings optional, and turns off each feature whose settings are absent; the backup settings go all or none. Production requires every setting; [DEPLOYMENT.md](DEPLOYMENT.md) covers them.
+1. `cp .env.example .env`, which sets `APP_ENV=development`. The server refuses to start when a setting it needs is missing and names each one. Development leaves `TRUSTED_PROXIES`, `WEB_DIR`, `GITHUB_WEBHOOK_SECRET`, and the backup settings optional, and turns off each feature whose settings are absent; the backup settings go all or none. The four `ATTACHMENTS_R2_` settings are required in development too. Production requires every setting; [DEPLOYMENT.md](DEPLOYMENT.md) covers them.
 2. Set `RESEND_API_KEY` to a [Resend](https://resend.com/api-keys) API key. Sign-in codes and invitations are sent through Resend, so nobody can sign in without it. Until your domain is verified in Resend, keep the `onboarding@resend.dev` sender, which only delivers to your own Resend account's address.
 3. Set `SIGN_IN_CODE_KEY` to the output of `openssl rand -hex 32`.
 4. `make install` installs the Bun workspace and downloads the Go modules.
 5. `make create-owner NAME="Your Name" EMAIL=you@example.com` adds the first owner. It works only on a database with nobody in it; after that, owners invite teammates.
 6. `make dev` builds and runs the Go server and the web dev server together. The web dev server forwards `/api` to the Go server, as production does on one address.
 
-The server creates the SQLite database at `DATABASE_PATH` and applies the migrations in `server/migrations/` when it starts. Attached files are kept in the folder named by `ATTACHMENTS_DIR`; `.env.example` points it at `data/attachments`, and the `make` targets that start the server create it.
+The server creates the SQLite database at `DATABASE_PATH` and applies the migrations in `server/migrations/` when it starts. Attached files are kept in a private R2 bucket named by the `ATTACHMENTS_R2_` settings; create a development bucket and token as described in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Commands
 
