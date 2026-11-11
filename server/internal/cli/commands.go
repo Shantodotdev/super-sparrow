@@ -12,13 +12,26 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
 
 // Usage lists the client commands.
-const Usage = `Client commands (need SPARROW_URL and SPARROW_TOKEN; SPARROW_MODEL is optional):
-  tool list                             Discover all agent tools
+const Usage = `Client commands:
+  setup [--agents claude-code,codex] [--url URL]
+                                        Sign in if needed and connect Claude Code and Codex
+  login [--url URL] [--no-open]         Sign in by approving it in the desktop app
+  login --email EMAIL [--url URL]       Sign in with an emailed code instead
+  mcp                                   Serve the agent tools over stdio for an agent; setup
+                                        registers it as: sparrow --agent claude-code mcp
+  logout                                Revoke this computer's session and forget the login
+  whoami                                Show who the CLI acts as
+  tools                                 List every agent tool with its description
+  TOOL-NAME [--flag value ...]          Run any agent tool, such as get-issue --key WP-1;
+                                        TOOL-NAME --help lists its flags
+  tool list                             Discover all agent tools as JSON
   tool call NAME (--arguments JSON | --arguments-file FILE)
                                         Run any MCP tool, including retries and pagination
   issue get KEY                         Show an issue
@@ -37,28 +50,176 @@ const Usage = `Client commands (need SPARROW_URL and SPARROW_TOKEN; SPARROW_MODE
   finding status KEY ROUND FINDING STATUS [--reason TEXT]
   comment add KEY (--body TEXT | --body-file FILE) [--finding ROUND/R3] [--reply-to COMMENT_ID]
   fix-summary KEY (--summary TEXT | --summary-file FILE) --findings 1/R2,1/R3
+  update                                Replace this program with the latest signed release
+  release keygen                        Make a release signing key pair
+  release sign --key-file FILE --version vX.Y.Z --dir DIR
+                                        Sign the release binaries in DIR
 
-A FILE of - reads standard input. Every command prints the API's JSON response.`
+Global flags go before the command: --json prints raw JSON instead of text, and
+--agent claude-code|codex (or SPARROW_AGENT) acts as that agent of the signed-in person; the CLI
+detects Claude Code and Codex on its own. A cloud session can set SPARROW_URL and SPARROW_TOKEN
+(an ssp_ agent token) instead of signing in; SPARROW_MODEL is optional. A FILE of - reads standard
+input.`
 
-// IsCommand reports whether name is a client command.
-func IsCommand(name string) bool {
-	switch name {
-	case "issue", "plan", "review", "finding", "comment", "fix-summary", "tool":
-		return true
-	}
-	return false
+var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+// IsCommand reports whether name could be a client command. Agent tool names are not known until
+// the server is asked, so any lowercase word qualifies and Run reports the ones that match nothing.
+func IsCommand(name string) bool { return toolNamePattern.MatchString(name) }
+
+// ExitError reports the status the program exits with. For a child process it is the child's
+// status; for a usage mistake it is 2, and Err holds the message, which Run has already printed.
+type ExitError struct {
+	Code int
+	Err  error
 }
 
-// Run runs one client command. args starts with the command's name, such as issue.
-func Run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout io.Writer) error {
-	c, err := newClient(getenv)
-	if err != nil {
+func (e *ExitError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("command exited with status %d", e.Code)
+}
+
+func (e *ExitError) Unwrap() error { return e.Err }
+
+// errHelp means a command was given --help or -h, which prints the usage.
+var errHelp = errors.New("help requested")
+
+// usageExitCode is the exit status of a command line that could not be understood.
+const usageExitCode = 2
+
+// builtinCommands are the hand-written commands that talk to the server, as opposed to agent
+// tools whose names only the server knows.
+var builtinCommands = map[string]bool{
+	"whoami": true, "mcp": true, "tools": true, "fix-summary": true,
+	"issue": true, "plan": true, "review": true, "finding": true, "comment": true, "tool": true,
+}
+
+// globalOptions are the flags that go before the command.
+type globalOptions struct {
+	json  bool
+	help  bool
+	agent string
+}
+
+// parseGlobal reads the leading global flags and returns the rest of the arguments.
+func parseGlobal(args []string) (globalOptions, []string, error) {
+	var options globalOptions
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") {
+		name, value, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
+		args = args[1:]
+
+		switch name {
+		case "json":
+			options.json = true
+			if hasValue && value != "true" {
+				options.json = false
+			}
+		case "help", "h":
+			options.help = true
+		case "agent":
+			if !hasValue {
+				if len(args) == 0 {
+					return options, nil, usageError("--agent needs a value: claude-code or codex")
+				}
+				value, args = args[0], args[1:]
+			}
+			if value == "" {
+				return options, nil, usageError("--agent needs a value: claude-code or codex")
+			}
+			options.agent = value
+		default:
+			return options, nil, usageError("unknown global flag --" + name)
+		}
+	}
+	return options, args, nil
+}
+
+// Run runs one client command. args starts with the command's name, such as issue. A command
+// line that cannot be understood prints the problem and a pointer to `sparrow help` on standard
+// error and returns an ExitError with status 2.
+func Run(ctx context.Context, args []string, env *Environment) error {
+	err := dispatch(ctx, args, env)
+	if errors.Is(err, errHelp) {
+		_, err = fmt.Fprintln(env.Stdout, Usage)
 		return err
 	}
 
-	r := &runner{client: c, stdin: stdin}
+	var usage usageError
+	if errors.As(err, &usage) {
+		fmt.Fprintln(env.Stderr, err)
+		return &ExitError{Code: usageExitCode, Err: err}
+	}
+	return err
+}
+
+// dispatch parses the global flags and runs the command.
+func dispatch(ctx context.Context, args []string, env *Environment) error {
+	options, args, err := parseGlobal(args)
+	if err != nil {
+		return err
+	}
+	if options.help || (len(args) > 0 && args[0] == "help") {
+		_, err := fmt.Fprintln(env.Stdout, Usage)
+		return err
+	}
+	if len(args) == 0 {
+		return usageError("a command is required")
+	}
+
+	if env.Executable != nil {
+		if executable, err := env.Executable(); err == nil {
+			removeOldExecutable(executable, runtime.GOOS)
+		}
+	}
+
+	r := &runner{env: env, stdin: env.Stdin, out: env.Stdout, errOut: env.Stderr, asJSON: options.json}
+	switch args[0] {
+	case "login":
+		return r.login(ctx, args[1:])
+	case "logout":
+		return r.logout(ctx, args[1:])
+	case "update":
+		return r.update(ctx, args[1:])
+	case "release":
+		return r.release(args[1:])
+	case "setup":
+		return r.setup(ctx, args[1:])
+	}
+
+	// Built-in commands answer --help without signing in; tools list their own flags.
+	if builtinCommands[args[0]] && len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+		return errHelp
+	}
+
+	r.conn, err = env.connect(options.agent)
+	if errors.Is(err, errNotSignedIn) && !builtinCommands[args[0]] {
+		return fmt.Errorf("unknown command %q, or you are not signed in (agent tool names are known only after signing in): %w", args[0], err)
+	}
+	if err != nil {
+		return err
+	}
+	r.client = r.conn.client
+
 	data, err := r.run(ctx, args)
 	if err != nil {
+		return err
+	}
+	if data == nil {
+		return nil
+	}
+	return r.print(data)
+}
+
+// print writes a JSON response: indented JSON with --json, readable text otherwise.
+func (r *runner) print(data json.RawMessage) error {
+	if !r.asJSON {
+		text, err := renderText(data)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(r.out, text)
 		return err
 	}
 
@@ -67,22 +228,39 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		return fmt.Errorf("format response: %w", err)
 	}
 	pretty.WriteByte('\n')
-	_, err = stdout.Write(pretty.Bytes())
+	_, err := r.out.Write(pretty.Bytes())
 	return err
 }
 
 type runner struct {
+	env    *Environment
+	conn   *connection
 	client *client
 	stdin  io.Reader
+	out    io.Writer
+	errOut io.Writer
+	asJSON bool
 }
 
+// run runs a command that needs the server. A nil result means the command printed its own output.
 func (r *runner) run(ctx context.Context, args []string) (json.RawMessage, error) {
-	if len(args) == 0 {
-		return nil, usageError("a command is required")
-	}
-	if args[0] == "fix-summary" {
+	switch args[0] {
+	case "whoami":
+		return r.whoami(ctx, args[1:])
+	case "mcp":
+		return nil, r.serveMCP(ctx, args[1:])
+	case "tools":
+		return r.listTools(ctx, args[1:])
+	case "fix-summary":
 		return r.fixSummary(ctx, args[1:])
+	case "issue", "plan", "review", "finding", "comment", "tool":
+		return r.runGroup(ctx, args)
 	}
+	return r.callTool(ctx, args[0], args[1:])
+}
+
+// runGroup runs the hand-written commands, which take a subcommand.
+func (r *runner) runGroup(ctx context.Context, args []string) (json.RawMessage, error) {
 	if len(args) < 2 {
 		return nil, usageError(args[0] + " needs a subcommand")
 	}
@@ -126,9 +304,11 @@ func (r *runner) run(ctx context.Context, args []string) (json.RawMessage, error
 	return nil, usageError("unknown command " + command)
 }
 
+// usageError is a command line that could not be understood. Its text is a short hint, not the
+// whole usage.
 type usageError string
 
-func (e usageError) Error() string { return string(e) + "\n\n" + Usage }
+func (e usageError) Error() string { return string(e) + "\nRun `sparrow help` for the commands." }
 
 func roundPath(key, round string) string {
 	return "/api/issues/" + url.PathEscape(key) + "/reviews/" + url.PathEscape(round)
@@ -138,15 +318,24 @@ func roundPath(key, round string) string {
 const anyCount = -1
 
 // parse reads flags that may appear before, between, or after the positional arguments, and
-// checks that exactly want positionals were given, unless want is anyCount.
+// checks that exactly want positionals were given, unless want is anyCount. A -- ends the flags:
+// everything after it is positional.
 func parse(flags *flag.FlagSet, args []string, want int) ([]string, error) {
 	flags.SetOutput(io.Discard)
 	var positional []string
 	for {
-		if err := flags.Parse(args); err != nil {
+		if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
+			return nil, errHelp
+		} else if err != nil {
 			return nil, usageError(err.Error())
 		}
-		args = flags.Args()
+
+		rest := flags.Args()
+		if endedByDoubleDash(flags, args, len(args)-len(rest)) {
+			positional = append(positional, rest...)
+			break
+		}
+		args = rest
 		if len(args) == 0 {
 			break
 		}
@@ -157,6 +346,22 @@ func parse(flags *flag.FlagSet, args []string, want int) ([]string, error) {
 		return nil, usageError(fmt.Sprintf("%s takes %d argument(s), got %d", flags.Name(), want, len(positional)))
 	}
 	return positional, nil
+}
+
+// endedByDoubleDash reports whether flag parsing stopped because it consumed a -- terminator,
+// as opposed to a -- that is the value of the flag before it. consumed is how many of args the
+// parser used.
+func endedByDoubleDash(flags *flag.FlagSet, args []string, consumed int) bool {
+	if consumed == 0 || args[consumed-1] != "--" {
+		return false
+	}
+	if consumed >= 2 && !strings.Contains(args[consumed-2], "=") && strings.HasPrefix(args[consumed-2], "-") {
+		if f := flags.Lookup(strings.TrimLeft(args[consumed-2], "-")); f != nil {
+			boolean, ok := f.Value.(interface{ IsBoolFlag() bool })
+			return ok && boolean.IsBoolFlag()
+		}
+	}
+	return true
 }
 
 // text returns inline text, or the contents of file when it is set, where - is standard input.

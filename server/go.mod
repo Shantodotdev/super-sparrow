@@ -5,13 +5,16 @@ go 1.27.3
 require (
 	filippo.io/age v1.3.1
 	github.com/google/uuid v1.6.0
+	github.com/zalando/go-keyring v0.2.8
 	modernc.org/sqlite v1.61.0
 )
 
 require (
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

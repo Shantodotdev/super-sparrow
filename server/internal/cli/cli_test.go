@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
@@ -68,11 +69,71 @@ func cliServer(t *testing.T) (map[string]string, *store.Store, store.Caller) {
 	return map[string]string{"SPARROW_URL": server.URL, "SPARROW_TOKEN": token.Secret, "SPARROW_MODEL": "gpt-test"}, st, person
 }
 
-// run runs a client command and decodes its JSON output into dst when given.
-func run(t *testing.T, env map[string]string, stdin string, dst any, args ...string) error {
+// memoryKeyring is a Keyring held in memory, so tests never touch the real keychain. A failing
+// keyring reports every operation as unavailable.
+type memoryKeyring struct {
+	values  map[string]string
+	failing bool
+}
+
+var errKeychainDown = errors.New("keychain unavailable")
+
+func (k *memoryKeyring) Get(service, user string) (string, error) {
+	if k.failing {
+		return "", errKeychainDown
+	}
+	if value, ok := k.values[service+"/"+user]; ok {
+		return value, nil
+	}
+	return "", errNoEntry
+}
+
+func (k *memoryKeyring) Set(service, user, secret string) error {
+	if k.failing {
+		return errKeychainDown
+	}
+	if k.values == nil {
+		k.values = map[string]string{}
+	}
+	k.values[service+"/"+user] = secret
+	return nil
+}
+
+func (k *memoryKeyring) Delete(service, user string) error {
+	if k.failing {
+		return errKeychainDown
+	}
+	if _, ok := k.values[service+"/"+user]; !ok {
+		return errNoEntry
+	}
+	delete(k.values, service+"/"+user)
+	return nil
+}
+
+// testEnvironment returns an environment with an in-memory keychain and a temporary config
+// directory. vars are the process environment.
+func testEnvironment(t *testing.T, vars map[string]string, stdin string) (*Environment, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
-	var stdout bytes.Buffer
-	err := Run(context.Background(), args, func(name string) string { return env[name] }, strings.NewReader(stdin), &stdout)
+	var stdout, stderr bytes.Buffer
+	configDir := t.TempDir()
+	return &Environment{
+		Getenv:     func(name string) string { return vars[name] },
+		Stdin:      strings.NewReader(stdin),
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		Version:    "dev",
+		Keyring:    &memoryKeyring{},
+		ConfigDir:  func() (string, error) { return configDir, nil },
+		Hostname:   func() (string, error) { return "test-host", nil },
+		HTTPClient: &http.Client{},
+	}, &stdout, &stderr
+}
+
+// run runs a client command with --json and decodes its JSON output into dst when given.
+func run(t *testing.T, vars map[string]string, stdin string, dst any, args ...string) error {
+	t.Helper()
+	env, stdout, _ := testEnvironment(t, vars, stdin)
+	err := Run(context.Background(), append([]string{"--json"}, args...), env)
 	if err == nil && dst != nil {
 		if decodeErr := json.Unmarshal(stdout.Bytes(), dst); decodeErr != nil {
 			t.Fatalf("decode %q: %v", stdout.String(), decodeErr)
@@ -177,8 +238,8 @@ func TestCLIReportsErrorsWithTheirField(t *testing.T) {
 }
 
 func TestCLINeedsItsSettings(t *testing.T) {
-	err := Run(context.Background(), []string{"issue", "get", "WP-1"}, func(string) string { return "" }, nil, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "SPARROW_URL is required") || !strings.Contains(err.Error(), "SPARROW_TOKEN is required") {
+	err := run(t, nil, "", nil, "issue", "get", "WP-1")
+	if err == nil || !strings.Contains(err.Error(), "sparrow login") || !strings.Contains(err.Error(), "SPARROW_TOKEN") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -207,7 +268,7 @@ func TestCLICallsAllAgentTools(t *testing.T) {
 		} `json:"tools"`
 	}
 	mustRun(t, env, "", &tools, "tool", "list")
-	if len(tools.Tools) != 29 {
+	if len(tools.Tools) != 33 {
 		t.Fatalf("listed %d tools", len(tools.Tools))
 	}
 	var issue struct {

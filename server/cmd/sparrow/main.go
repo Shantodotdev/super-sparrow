@@ -51,7 +51,7 @@ Server commands (read the server settings from the environment):
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintln(os.Stderr, "sparrow: a command is required\nRun `sparrow help` for the commands.")
 		os.Exit(2)
 	}
 
@@ -73,14 +73,20 @@ func main() {
 		err = restore(ctx, args)
 	case command == "version" && len(args) == 0:
 		fmt.Println(version)
-	case cli.IsCommand(command):
-		err = cli.Run(ctx, os.Args[1:], os.Getenv, os.Stdin, os.Stdout)
+	case command == "help" || command == "--help" || command == "-h":
+		fmt.Println(usage)
+	case cli.IsCommand(command) || strings.HasPrefix(command, "--"):
+		err = cli.Run(ctx, os.Args[1:], cli.DefaultEnvironment(version))
 	default:
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintf(os.Stderr, "sparrow: unknown command %q\nRun `sparrow help` for the commands.\n", command)
 		os.Exit(2)
 	}
 
 	if err != nil {
+		var exit *cli.ExitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.Code)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -293,6 +299,7 @@ func serve(ctx context.Context) error {
 			Version:             version,
 			WebDir:              cfg.WebDir,
 			ObjectOrigin:        "https://" + cfg.AttachmentsR2.AccountID + ".r2.cloudflarestorage.com",
+			CLIDir:              cfg.CLIDir,
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,
 		}),
 		// JSON request bodies are at most a megabyte, so a slow sender is cut off after the read
