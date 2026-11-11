@@ -35,6 +35,11 @@
     "createUpdaterArtifacts": true
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["super-sparrow"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBOTJEREQ2RDY1RDM4NTIKUldSU09GM1cxdDJTS2xadzZIMkhQYTBqOWRIc25ETjdFbFFjT2VSclVWZitOVWlwRUk0VHJET2YK",
       "endpoints": [

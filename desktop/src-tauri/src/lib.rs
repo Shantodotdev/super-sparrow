@@ -3,6 +3,7 @@
 //! another, opens the quick capture window over any application.
 
 mod capture;
+mod cli_login;
 mod server_url;
 mod settings;
 mod shortcut;
@@ -17,6 +18,7 @@ use tauri::{
     AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 
@@ -51,10 +53,12 @@ pub fn run() {
         .expect("the build must contain a valid PUBLIC_URL");
 
     tauri::Builder::default()
-        // A second launch, such as clicking the app again, shows the running app instead.
+        // A second launch, such as clicking the app again, shows the running app instead. With
+        // the deep-link feature it also hands a super-sparrow:// link to the running app.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app)
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![HIDDEN_ARGUMENT]),
@@ -112,6 +116,7 @@ pub fn run() {
                 eprintln!("{error}");
             }
             build_tray(&handle)?;
+            listen_for_links(&handle);
             // A development build would otherwise replace itself with the published release.
             if !cfg!(debug_assertions) {
                 updater::start(&handle);
@@ -120,6 +125,43 @@ pub fn run() {
         })
         .run(context)
         .expect("failed to start the Super Sparrow desktop app");
+}
+
+/// Opens the CLI approval page for super-sparrow:// links, both the one the app was launched
+/// with and those that arrive while it runs.
+fn listen_for_links(app: &AppHandle) {
+    // Installers register the scheme. A development build, or an AppImage on Linux, which no
+    // installer sets up, registers itself here.
+    #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+    if let Err(error) = app.deep_link().register_all() {
+        eprintln!("could not register super-sparrow:// links: {error}");
+    }
+
+    let handle = app.clone();
+    app.deep_link().on_open_url(move |event| {
+        for link in event.urls() {
+            open_link(&handle, &link);
+        }
+    });
+    if let Ok(Some(links)) = app.deep_link().get_current() {
+        for link in links {
+            open_link(app, &link);
+        }
+    }
+}
+
+/// Shows the main window on the approval page a link names, and ignores any other link.
+fn open_link(app: &AppHandle, link: &url::Url) {
+    let server = app.state::<Server>();
+    let Some(page) = cli_login::approval_page(link, &server.0) else {
+        return;
+    };
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        if let Err(error) = window.navigate(page) {
+            eprintln!("could not open the CLI approval page: {error}");
+        }
+    }
+    show_main(app);
 }
 
 /// Hides the capture window after a save or when the person closes it.
