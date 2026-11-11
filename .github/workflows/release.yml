@@ -73,9 +73,12 @@ jobs:
         if: matrix.platform == 'macos-latest'
         working-directory: desktop/src-tauri
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      # Reads the cache desktop-cache.yml saves on main; a tag's own cache would serve no later tag.
       - uses: swatinem/rust-cache@v2.9.3
         with:
           workspaces: desktop/src-tauri
+          shared-key: desktop-release
+          save-if: false
       - run: bun install --frozen-lockfile
       - name: Check the tag matches the app version
         shell: bash

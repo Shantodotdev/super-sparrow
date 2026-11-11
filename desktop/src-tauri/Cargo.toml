@@ -28,3 +28,20 @@ xcap = "=0.9.10"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 glib = "=0.18.5"
+
+# Smaller, faster installers. Panics still unwind: a failed screenshot must come back as an error.
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
+opt-level = "s"
+
+# Screenshots are encoded as PNG in Rust, so the encoder keeps full speed.
+[profile.release.package.png]
+opt-level = 3
+
+[profile.release.package.fdeflate]
+opt-level = 3
+
+[profile.release.package.crc32fast]
+opt-level = 3

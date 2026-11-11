@@ -95,7 +95,7 @@ Desktop icons are generated from the shared brand source at `web/public/icon-512
 3. Set the new version in `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`.
 4. Commit and merge the version change, then tag that commit and push the tag: `git tag v0.2.0 && git push origin v0.2.0`. The tag must match the version, or the workflow fails.
 
-Only a pushed `v*` tag releases the desktop app. Merging to `main` deploys the server but builds no installers and updates no installed apps.
+Only a pushed `v*` tag releases the desktop app. Merging to `main` deploys the server but builds no installers and updates no installed apps. A change under `desktop/` on `main` runs `.github/workflows/desktop-cache.yml`, which compiles the app on each platform and saves the Rust cache the release reads; a release tagged before that run finishes compiles from scratch.
 
 `.github/workflows/release.yml` then creates the GitHub Release with Linux server binaries for amd64 and arm64 and the built frontend they serve, and adds desktop installers for Linux, macOS (universal), and Windows. The release also carries signed update packages and `latest.json`. Installed apps check that file shortly after launch and every six hours, then download, install, and restart on their own, but only while the main window is hidden in the tray. Updates apply to the Windows installer, the macOS app, and the Linux AppImage; `.deb` and `.rpm` installs must be upgraded by hand. Development builds never update. Installers are not code-signed with Apple or Windows certificates, so macOS and Windows may warn on the first install; updates are still verified by the update signature.
 

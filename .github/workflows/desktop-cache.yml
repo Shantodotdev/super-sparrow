@@ -1,0 +1,55 @@
+name: Desktop release cache
+
+# Builds the desktop app on main so tag releases start from compiled dependencies. GitHub lets a
+# tag's workflow read caches saved on the default branch, but not caches saved by another tag.
+on:
+  push:
+    branches: [main]
+    paths:
+      - desktop/**
+      - .github/workflows/desktop-cache.yml
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-cache
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    env:
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+    name: Desktop (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-24.04
+            args: ""
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Install the Linux libraries Tauri builds against
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev libssl-dev libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev libayatana-appindicator3-dev
+      - name: Add both macOS targets for the universal build
+        if: matrix.platform == 'macos-latest'
+        working-directory: desktop/src-tauri
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: desktop/src-tauri
+          shared-key: desktop-release
+      - run: bun install --frozen-lockfile
+      # The same build the release runs, without installers, so the cached dependencies match.
+      - name: Build the app
+        working-directory: desktop
+        run: bunx tauri build --no-bundle ${{ matrix.args }}
