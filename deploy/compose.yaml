@@ -17,6 +17,7 @@ services:
       LISTEN_ADDR: 0.0.0.0:8090
       DATABASE_PATH: /data/sparrow.db
       WEB_DIR: /srv/web
+      CLI_DIR: /srv/cli
     # Only the reverse proxy on this host reaches the server.
     ports:
       - "127.0.0.1:8090:8090"

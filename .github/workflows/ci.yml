@@ -80,6 +80,29 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Fetch the latest signed CLI for the image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/cli
+          # No release, or one made before the CLI was signed, leaves the folder empty and the server answers 404 for the CLI.
+          if ! assets="$(gh release view --json assets --jq '.assets[].name' 2>"$RUNNER_TEMP/release-view.err")"; then
+            if grep -qi "release not found" "$RUNNER_TEMP/release-view.err"; then
+              echo "No release yet; the image ships without a CLI."
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/release-view.err" >&2
+            exit 1
+          fi
+          if ! grep -qx 'manifest.json.sig' <<<"$assets"; then
+            echo "The latest release has no signed CLI; the image ships without one."
+            exit 0
+          fi
+          gh release download --dir deploy/cli --clobber \
+            --pattern 'sparrow-linux-*' --pattern 'sparrow-darwin-*' --pattern 'sparrow-windows-*' \
+            --pattern 'manifest.json' --pattern 'manifest.json.sig'
+          ls -l deploy/cli
       - name: Build and publish the immutable server image
         id: image
         env:
