@@ -9,7 +9,7 @@ const notificationWindowMs = 2000;
 
 /**
  * Returns a function that takes live events and, in the desktop app, shows a native notification
- * for new findings and decisions made by others. Events arriving within two seconds
+ * for assignments and for changes by others on issues assigned to or created by the person. Events arriving within two seconds
  * share one notification. In a browser it does nothing.
  */
 export function desktopNotifier(client: QueryClient): {
@@ -33,6 +33,14 @@ export function desktopNotifier(client: QueryClient): {
     const notification = notificationFor(events, {
       isMine: (id) =>
         id === me.id || actors.some((actor) => actor.id === id && actor.owner_actor_id === me.id),
+      isMe: (id) => id === me.id,
+      ownsIssue: (id) => {
+        const issue = issues.find((item) => item.id === id);
+        return (
+          !!issue && (issue.assignee_actor_id === me.id || issue.created_by_actor_id === me.id)
+        );
+      },
+      issueTitle: (id) => issues.find((issue) => issue.id === id)?.title ?? "",
       issueKey: (id) => issues.find((issue) => issue.id === id)?.key ?? "",
       actorName: (id) => actors.find((actor) => actor.id === id)?.display_name ?? "",
     });
