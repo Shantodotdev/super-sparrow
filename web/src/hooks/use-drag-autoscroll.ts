@@ -36,8 +36,8 @@ export function useDragAutoscroll(
     let last = performance.now();
     let frame = 0;
 
-    const track = (event: DragEvent) => {
-      if (event.clientY !== 0) pointerY = event.clientY;
+    const track = (event: PointerEvent) => {
+      pointerY = event.clientY;
     };
 
     const targetVelocity = (): number => {
@@ -69,11 +69,11 @@ export function useDragAutoscroll(
       frame = requestAnimationFrame(step);
     };
 
-    document.addEventListener("dragover", track);
+    window.addEventListener("pointermove", track);
     frame = requestAnimationFrame(step);
 
     return () => {
-      document.removeEventListener("dragover", track);
+      window.removeEventListener("pointermove", track);
       cancelAnimationFrame(frame);
     };
   }, [active, anchor, topInset]);

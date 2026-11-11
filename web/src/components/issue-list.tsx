@@ -1,8 +1,8 @@
 import { useDragAutoscroll } from "../hooks/use-drag-autoscroll";
+import { useIssueDrag } from "../hooks/use-issue-drag";
 import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
-import { useRef, useState, type CSSProperties, type DragEvent } from "react";
-import { hideNativeDragImage } from "../lib/drag-preview";
+import { useRef, type CSSProperties } from "react";
 import { slugify } from "../lib/format";
 import {
   issuePriorityColor,
@@ -54,43 +54,10 @@ export function IssueList({
   const actorTitle = useActorTitle();
   const moveIssue = useMoveIssueStatus();
   const contextMenu = useIssueContextMenu();
-  const draggedRef = useRef<Issue | undefined>(undefined);
-  const dragOrigin = useRef({ x: 0, y: 0 });
   const listRef = useRef<HTMLDivElement>(null);
-  const [dragged, setDragged] = useState<Issue | undefined>();
-  const [dropTarget, setDropTarget] = useState<IssueStatus | undefined>();
+  const { dragged, dropTarget, origin, dragProps } = useIssueDrag(moveIssue);
 
   useDragAutoscroll(!!dragged, listRef, toolbarHeight);
-
-  const endDrag = () => {
-    draggedRef.current = undefined;
-    setDragged(undefined);
-    setDropTarget(undefined);
-  };
-
-  /** Makes a status group accept dropped issues and highlights it while one is over it. */
-  const dropHandlers = (status: IssueStatus) => ({
-    onDragEnter: (event: DragEvent<HTMLElement>) => {
-      if (draggedRef.current) event.preventDefault();
-    },
-    onDragOver: (event: DragEvent<HTMLElement>) => {
-      if (!draggedRef.current) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      if (dropTarget !== status) setDropTarget(status);
-    },
-    onDragLeave: (event: DragEvent<HTMLElement>) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-        setDropTarget((current) => (current === status ? undefined : current));
-      }
-    },
-    onDrop: (event: DragEvent<HTMLElement>) => {
-      event.preventDefault();
-      const issue = draggedRef.current;
-      if (issue && issue.status !== status) moveIssue(issue, status);
-      endDrag();
-    },
-  });
 
   return (
     <div
@@ -105,7 +72,7 @@ export function IssueList({
         const isCollapsed = collapsed.includes(status);
 
         return (
-          <section key={status} className="relative" {...dropHandlers(status)}>
+          <section key={status} className="relative" data-drop-status={status}>
             <span
               aria-hidden="true"
               className={`pointer-events-none absolute inset-0 z-2 rounded-[8px] border-2 transition-[border-color,background-color] duration-150 motion-reduce:transition-none ${
@@ -174,20 +141,8 @@ export function IssueList({
                             : ""
                       } grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease,opacity_160ms_ease] ${contextMenu.activeId ? "" : "hover:bg-[#18191a] focus-visible:bg-[#18191a]"} focus:outline-none motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]`}
                       key={issue.key}
-                      draggable
+                      {...dragProps(issue)}
                       onContextMenu={contextMenu.open(issue)}
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", issue.key);
-                        hideNativeDragImage(event);
-                        dragOrigin.current = { x: event.clientX, y: event.clientY };
-                        draggedRef.current = issue;
-                        // Restyling the row inside dragstart makes Chrome cancel the drag.
-                        window.setTimeout(() => {
-                          if (draggedRef.current === issue) setDragged(issue);
-                        }, 0);
-                      }}
-                      onDragEnd={endDrag}
                       data-shortcut-row
                       to="/$projectSlug/issues/$issue"
                       params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
@@ -242,7 +197,7 @@ export function IssueList({
         );
       })}
       {contextMenu.menu}
-      {dragged && <IssueDragPreview issue={dragged} origin={dragOrigin.current} />}
+      {dragged && <IssueDragPreview issue={dragged} origin={origin} />}
       {!issues.length && (
         <div className="mx-auto my-40 max-w-120 p-[24px] text-center text-[#93a0b2] [&_h2]:mx-0 [&_h2]:mt-[18px] [&_h2]:mb-2 [&_h2]:text-[#e9edf5]">
           <h2>No issues found</h2>

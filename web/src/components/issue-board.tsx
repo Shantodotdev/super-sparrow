@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useIssueDrag } from "../hooks/use-issue-drag";
 import { useMoveIssueStatus } from "../queries/issues";
 import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
@@ -6,6 +6,7 @@ import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status
 import { slugify } from "../lib/format";
 import type { Issue, IssueStatus } from "../lib/types";
 import { Icon } from "./icon";
+import { IssueDragPreview } from "./issue-drag-preview";
 import { useIssueContextMenu } from "./issue-context-menu";
 import { LabelChips } from "./label-chips";
 import { Person } from "./person";
@@ -21,15 +22,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
   const columns = issueStatuses.filter((status) => !statusFilter || status === statusFilter);
   const moveIssue = useMoveIssueStatus();
   const contextMenu = useIssueContextMenu();
-  const draggedRef = useRef<Issue | undefined>(undefined);
-  const [dragged, setDragged] = useState<Issue | undefined>();
-  const [dropTarget, setDropTarget] = useState<IssueStatus | undefined>();
-
-  const endDrag = () => {
-    draggedRef.current = undefined;
-    setDragged(undefined);
-    setDropTarget(undefined);
-  };
+  const { dragged, dropTarget, origin, dragProps } = useIssueDrag(moveIssue);
 
   return (
     <div
@@ -48,26 +41,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
             }`}
             key={status}
             aria-label={issueStatusLabel[status]}
-            onDragEnter={(event) => {
-              if (draggedRef.current) event.preventDefault();
-            }}
-            onDragOver={(event) => {
-              if (!draggedRef.current) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              if (dropTarget !== status) setDropTarget(status);
-            }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                setDropTarget((current) => (current === status ? undefined : current));
-              }
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              const issue = draggedRef.current;
-              if (issue && issue.status !== status) moveIssue(issue, status);
-              endDrag();
-            }}
+            data-drop-status={status}
           >
             <div className="flex items-center gap-[8px] px-[2px] pt-[2px] pb-4">
               <span
@@ -92,18 +66,8 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                     dragged?.id === issue.id ? "opacity-40" : ""
                   } ${contextMenu.activeId === issue.id ? "border-[#5873c7] bg-[#171d28]" : ""} ${contextMenu.activeId ? "" : "hover:border-[#5873c7] hover:bg-[#171d28] focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]"} focus:outline-none`}
                   key={issue.key}
-                  draggable
+                  {...dragProps(issue)}
                   onContextMenu={contextMenu.open(issue)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", issue.key);
-                    draggedRef.current = issue;
-                    // Restyling the card inside dragstart makes Chrome cancel the drag.
-                    window.setTimeout(() => {
-                      if (draggedRef.current === issue) setDragged(issue);
-                    }, 0);
-                  }}
-                  onDragEnd={endDrag}
                   data-shortcut-row
                   to="/$projectSlug/issues/$issue"
                   params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
@@ -136,6 +100,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
         );
       })}
       {contextMenu.menu}
+      {dragged && <IssueDragPreview issue={dragged} origin={origin} />}
     </div>
   );
 }

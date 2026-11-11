@@ -17,16 +17,12 @@ export function IssueDragPreview({ issue, origin }: IssueDragPreviewProps) {
       if (!element.current) return;
       element.current.style.transform = `translate3d(${x + cursorOffset}px, ${y + cursorOffset}px, 0) scale(1.05)`;
     };
-    // dragover reports the live pointer position; some browsers report 0,0 on the final events.
-    const follow = (event: globalThis.DragEvent) => {
-      if (event.clientX === 0 && event.clientY === 0) return;
-      place(event.clientX, event.clientY);
-    };
+    const follow = (event: PointerEvent) => place(event.clientX, event.clientY);
 
     place(origin.x, origin.y);
-    document.addEventListener("dragover", follow);
+    window.addEventListener("pointermove", follow);
 
-    return () => document.removeEventListener("dragover", follow);
+    return () => window.removeEventListener("pointermove", follow);
   }, [origin]);
 
   return (
