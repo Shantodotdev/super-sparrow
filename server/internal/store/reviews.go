@@ -298,6 +298,9 @@ func validateNewFinding(input NewFinding) (Finding, error) {
 	if finding.FilePath, err = optionalText("file_path", input.FilePath, maxPathLength); err != nil {
 		return finding, err
 	}
+	if !repositoryPath(finding.FilePath) {
+		return finding, invalid("file_path", "must be a path relative to the repository root, without .. or a leading /")
+	}
 	if input.Line < 0 {
 		return finding, invalid("line", "must be a positive line number")
 	}
@@ -448,6 +451,11 @@ func (s *Store) PostFixSummary(ctx context.Context, by Caller, input FixSummary)
 			}
 			if err != nil {
 				return err
+			}
+			// Only findings waiting to be fixed are reported, so a repeated summary adds no comment.
+			if current.Status != FindingFix {
+				return Refuse(ErrInvalidTransition, "finding %s of round %d is %s; a fix summary covers only findings decided fix",
+					current.Label(), current.RoundNumber, current.Status)
 			}
 
 			finding, err := changeFindingStatus(w, current, FindingChange{Status: FindingFixed})

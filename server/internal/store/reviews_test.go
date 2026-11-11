@@ -138,6 +138,21 @@ func TestFindingValidation(t *testing.T) {
 	}
 }
 
+func TestFindingFilePathStaysInTheRepository(t *testing.T) {
+	tm := newTeam(t)
+	r := tm.reviewed(t)
+
+	for _, path := range []string{"../etc/passwd", "src/../../secret", "/etc/passwd", `C:\Windows`, `src\..\..\x`} {
+		_, err := tm.store.AddFinding(tm.ctx, tm.agent, NewFinding{
+			ReviewRoundID: r.round.ID, Severity: SeverityNit, Title: "T", Problem: "P", Fix: "F", FilePath: path,
+		})
+		wantInvalid(t, err, "file_path")
+	}
+	got(tm.store.AddFinding(tm.ctx, tm.agent, NewFinding{
+		ReviewRoundID: r.round.ID, Severity: SeverityNit, Title: "T", Problem: "P", Fix: "F", FilePath: "web/src/a..b.ts", Line: 3,
+	})).must(t)
+}
+
 func TestFindingTransitions(t *testing.T) {
 	statuses := []FindingStatus{FindingOpen, FindingFix, FindingWontfix, FindingLater, FindingFixed, FindingVerified}
 	paths := map[FindingStatus][]FindingStatus{

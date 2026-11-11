@@ -236,3 +236,20 @@ func TestVacuumIntoWritesACopy(t *testing.T) {
 		t.Error("VacuumInto overwrote an existing file")
 	}
 }
+
+func TestPostFixSummaryRefusesAFindingAlreadyFixed(t *testing.T) {
+	tm := newTeam(t)
+	r := tm.reviewed(t)
+	got(tm.store.ChangeFindingStatus(tm.ctx, tm.member, r.finding.ID, FindingChange{Status: FindingFix})).must(t)
+	summary := FixSummary{IssueID: r.issue.ID, Summary: "Fixed.", FindingIDs: []string{r.finding.ID}}
+	if _, _, err := tm.store.PostFixSummary(tm.ctx, tm.agent, summary); err != nil {
+		t.Fatalf("PostFixSummary: %v", err)
+	}
+	before := tm.eventCount(t)
+
+	_, _, err := tm.store.PostFixSummary(tm.ctx, tm.agent, summary)
+	wantErr(t, err, ErrInvalidTransition)
+	if tm.eventCount(t) != before {
+		t.Error("a repeated fix summary recorded events")
+	}
+}

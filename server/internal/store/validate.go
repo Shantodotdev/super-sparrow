@@ -32,7 +32,6 @@ const DefaultPageLimit = 50
 var (
 	labelColorPattern = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 	projectKeyPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,9}$`)
-	agentNamePattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 )
 
 // requiredText trims value and checks that it is present and at most max characters long.
@@ -153,4 +152,21 @@ func TypeMismatch(field string, expected reflect.Type) *ValidationError {
 		description = "a list"
 	}
 	return &ValidationError{Field: field, Message: "must be " + description}
+}
+
+// repositoryPath reports whether path is empty or relative to the repository root: no leading slash
+// or drive letter, and no .. step out of the repository.
+func repositoryPath(path string) bool {
+	if path == "" {
+		return true
+	}
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") || (len(path) > 1 && path[1] == ':') {
+		return false
+	}
+	for _, step := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if step == ".." {
+			return false
+		}
+	}
+	return true
 }
