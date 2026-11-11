@@ -12,7 +12,7 @@ func hashOf(value string) []byte {
 }
 
 func newSession(secret string) NewSession {
-	return NewSession{Hash: hashOf(secret), DeviceLabel: "Firefox on Linux"}
+	return NewSession{Hash: hashOf(secret), DeviceLabel: "Firefox on Linux", Client: ClientBrowser}
 }
 
 func TestSignInCodeIsStoredOnlyForActiveTeammates(t *testing.T) {

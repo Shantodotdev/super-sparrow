@@ -125,11 +125,30 @@ func TestDisablingAPersonRevokesTheirTokens(t *testing.T) {
 }
 
 func TestAgentDisplayNameIsTheTool(t *testing.T) {
-	for agentName, want := range map[string]string{"claude-code": "Claude Code", "codex": "Codex", "aider": "aider"} {
+	for agentName, want := range map[string]string{"claude-code": "Claude Code", "codex": "Codex"} {
 		if name := agentDisplayName(agentName); name != want {
 			t.Errorf("agentDisplayName(%q) = %q, want %q", agentName, name, want)
 		}
 	}
+}
+
+func TestOnlyKnownAgentsAreAllowed(t *testing.T) {
+	tm := newTeam(t)
+
+	_, err := tm.store.CreateAgentToken(tm.ctx, tm.member, newToken("aider", "secret-aider"))
+	wantInvalid(t, err, "agent_name")
+	_, err = tm.store.AgentForOwner(tm.ctx, tm.member.ActorID, "aider")
+	wantInvalid(t, err, "agent_name")
+
+	first := got(tm.store.AgentForOwner(tm.ctx, tm.member.ActorID, "codex")).must(t)
+	again := got(tm.store.AgentForOwner(tm.ctx, tm.member.ActorID, "codex")).must(t)
+	if first.ID != again.ID || first.OwnerActorID != tm.member.ActorID || first.DisplayName != "Codex" {
+		t.Fatalf("AgentForOwner = %+v then %+v", first, again)
+	}
+
+	agent := got(tm.store.GetActor(tm.ctx, tm.agent.ActorID)).must(t)
+	_, err = tm.store.AgentForOwner(tm.ctx, agent.ID, "codex")
+	wantErr(t, err, ErrForbidden)
 }
 
 func TestCreateFirstOwner(t *testing.T) {

@@ -34,6 +34,7 @@ func newActorView(actor store.Actor) actorView {
 
 type sessionView struct {
 	ID          string    `json:"id"`
+	Client      string    `json:"client"`
 	DeviceLabel string    `json:"device_label"`
 	Current     bool      `json:"current"`
 	LastSeenAt  time.Time `json:"last_seen_at"`
@@ -43,7 +44,7 @@ type sessionView struct {
 
 func newSessionView(session store.Session, currentID string) sessionView {
 	return sessionView{
-		ID: session.ID, DeviceLabel: session.DeviceLabel, Current: session.ID == currentID,
+		ID: session.ID, Client: string(session.Client), DeviceLabel: session.DeviceLabel, Current: session.ID == currentID,
 		LastSeenAt: session.LastSeenAt, ExpiresAt: session.ExpiresAt, CreatedAt: session.CreatedAt,
 	}
 }

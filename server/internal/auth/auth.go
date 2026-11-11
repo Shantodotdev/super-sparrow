@@ -29,9 +29,13 @@ import (
 const (
 	// TokenPrefix starts every agent token, so secret scanners can recognize them.
 	TokenPrefix = "ssp_"
+	// CLISessionPrefix starts the secret of every signed-in CLI, which the CLI sends as a bearer
+	// token. Browser session IDs have no prefix, since they only travel in a cookie.
+	CLISessionPrefix = "ssc_"
 
 	codeRequestsPerEmail = 5
 	codeRequestsPerIP    = 20
+	cliLoginsPerIP       = 30
 	wrongCodesPerIP      = 20
 	codeRequestWindow    = time.Hour
 	wrongCodeWindow      = time.Hour
@@ -63,7 +67,9 @@ type Service struct {
 	// wrongCodes counts wrong sign-in codes per client address. Right codes are not counted, so
 	// a team signing in from behind one office address never uses it up.
 	wrongCodes *ratelimit.Limiter
-	sending    sync.WaitGroup
+	// cliLogins counts CLI sign-in requests per client address, apart from emailed codes.
+	cliLogins *ratelimit.Limiter
+	sending   sync.WaitGroup
 }
 
 // New returns a Service. publicURL is the address people open, used in emails. codeKey is the
@@ -80,6 +86,7 @@ func New(st *store.Store, mailer email.Sender, publicURL *url.URL, codeKey []byt
 		perEmail:   ratelimit.New(codeRequestsPerEmail, codeRequestWindow, now),
 		perIP:      ratelimit.New(codeRequestsPerIP, codeRequestWindow, now),
 		wrongCodes: ratelimit.New(wrongCodesPerIP, wrongCodeWindow, now),
+		cliLogins:  ratelimit.New(cliLoginsPerIP, codeRequestWindow, now),
 	}
 }
 
@@ -119,7 +126,8 @@ func (s *Service) RequestCode(ctx context.Context, address, clientIP string) err
 }
 
 // SignIn is the result of a correct sign-in code: the person and their new session. Secret is
-// the session ID for the cookie; it is not stored and cannot be read again.
+// the session ID for the cookie, or the CLI's bearer token; it is not stored and cannot be read
+// again.
 type SignIn struct {
 	Actor   store.Actor
 	Session store.Session
@@ -131,7 +139,10 @@ type SignIn struct {
 // a person's codes, so each client address may enter only a few wrong codes an hour; otherwise
 // anyone who knows teammates' emails could keep them all from signing in. Right codes do not
 // count, so people signing in from one shared address do not use up each other's tries.
-func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, clientIP string) (SignIn, error) {
+//
+// client says whether the session is for a browser cookie or a signed-in CLI. A CLI secret starts
+// with CLISessionPrefix.
+func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, clientIP string, client store.Client) (SignIn, error) {
 	normalized := strings.ToLower(strings.TrimSpace(address))
 	code = strings.ReplaceAll(strings.TrimSpace(code), " ", "")
 	if len(code) != 6 || strings.Trim(code, "0123456789") != "" {
@@ -145,9 +156,12 @@ func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, cl
 	if err != nil {
 		return SignIn{}, err
 	}
+	if client == store.ClientCLI {
+		secret = CLISessionPrefix + secret
+	}
 
 	actor, session, err := s.store.VerifySignInCode(ctx, normalized, s.hashCode(normalized, code),
-		store.NewSession{Hash: Hash(secret), DeviceLabel: deviceLabel})
+		store.NewSession{Hash: Hash(secret), DeviceLabel: deviceLabel, Client: client})
 	if errors.Is(err, store.ErrInvalidCode) {
 		s.wrongCodes.Record(clientIP)
 	}
@@ -158,12 +172,33 @@ func (s *Service) VerifyCode(ctx context.Context, address, code, deviceLabel, cl
 	return SignIn{Actor: actor, Session: session, Secret: secret}, nil
 }
 
-// AuthenticateSession checks a session ID from a cookie.
+// AuthenticateSession checks a session ID from a cookie. A CLI session is refused here, so its
+// secret cannot be used as a browser cookie.
 func (s *Service) AuthenticateSession(ctx context.Context, secret string) (store.AuthenticatedSession, error) {
 	if len(secret) != secretLength {
 		return store.AuthenticatedSession{}, store.ErrUnauthenticated
 	}
-	return s.store.AuthenticateSession(ctx, Hash(secret))
+	return s.authenticateSession(ctx, secret, store.ClientBrowser)
+}
+
+// AuthenticateCLISession checks a signed-in CLI's bearer token. A browser session is refused here.
+func (s *Service) AuthenticateCLISession(ctx context.Context, token string) (store.AuthenticatedSession, error) {
+	if !strings.HasPrefix(token, CLISessionPrefix) || len(token) != len(CLISessionPrefix)+secretLength {
+		return store.AuthenticatedSession{}, store.ErrUnauthenticated
+	}
+	return s.authenticateSession(ctx, token, store.ClientCLI)
+}
+
+// authenticateSession checks a session secret and that it was made for client.
+func (s *Service) authenticateSession(ctx context.Context, secret string, client store.Client) (store.AuthenticatedSession, error) {
+	checked, err := s.store.AuthenticateSession(ctx, Hash(secret))
+	if err != nil {
+		return store.AuthenticatedSession{}, err
+	}
+	if checked.Session.Client != client {
+		return store.AuthenticatedSession{}, store.ErrUnauthenticated
+	}
+	return checked, nil
 }
 
 // AuthenticateToken checks an agent token from an Authorization header.

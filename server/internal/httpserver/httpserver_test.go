@@ -96,7 +96,7 @@ func newFixture(t *testing.T) *fixture {
 }
 
 // request sends a request with an optional JSON body and credential. A credential starting with
-// ssp_ is sent as a bearer token, anything else as the session cookie.
+// ssp_, ssc_, or sst_ is sent as a bearer token, anything else as the session cookie.
 func (f *fixture) request(method, path, credential string, body any) *httptest.ResponseRecorder {
 	f.t.Helper()
 
@@ -112,7 +112,7 @@ func (f *fixture) request(method, path, credential string, body any) *httptest.R
 	request := httptest.NewRequest(method, path, reader)
 	request.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0")
 	switch {
-	case strings.HasPrefix(credential, auth.TokenPrefix):
+	case strings.HasPrefix(credential, auth.TokenPrefix), strings.HasPrefix(credential, auth.CLISessionPrefix):
 		request.Header.Set("Authorization", "Bearer "+credential)
 	case credential != "":
 		request.AddCookie(&http.Cookie{Name: "__Host-sparrow_session", Value: credential})

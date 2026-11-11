@@ -49,6 +49,16 @@ func (a Actor) Active() bool { return a.DisabledAt == nil }
 // IsOwner reports whether the actor is an active owner.
 func (a Actor) IsOwner() bool { return a.Kind == ActorHuman && a.Role == RoleOwner && a.Active() }
 
+// Client is how a caller reached the server: the desktop app's session cookie, a signed-in CLI,
+// or an agent token. A person may run agent tools only through the CLI.
+type Client string
+
+const (
+	ClientBrowser    Client = "browser"
+	ClientCLI        Client = "cli"
+	ClientAgentToken Client = "agent_token"
+)
+
 // Caller identifies who is making a change. The server builds it from the authenticated session
 // or agent token, never from request input.
 type Caller struct {
@@ -56,6 +66,8 @@ type Caller struct {
 	// ReportedModel is the model an agent says it runs. It is recorded on events as reported,
 	// because the server cannot verify it.
 	ReportedModel string
+	// Client is how the caller reached the server. The zero value is no client.
+	Client Client
 }
 
 // Project groups issues under a key such as WP.
@@ -301,6 +313,7 @@ func Change[T any](value T) Field[T] { return Field[T]{Set: true, Value: value} 
 type Session struct {
 	ID          string
 	ActorID     string
+	Client      Client
 	DeviceLabel string
 	LastSeenAt  time.Time
 	ExpiresAt   time.Time

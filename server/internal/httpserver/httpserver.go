@@ -47,6 +47,8 @@ type Options struct {
 	ObjectOrigin string
 	// GitHubWebhookSecret checks GitHub webhook signatures; "" turns the webhook off.
 	GitHubWebhookSecret string
+	// CLIDir is the folder of the signed CLI release to offer for download, or "" to offer none.
+	CLIDir string
 }
 
 type server struct {
@@ -59,10 +61,13 @@ type server struct {
 	cookieName     string
 	trustedProxies []netip.Prefix
 	perToken       *ratelimit.Limiter
-	stop           <-chan struct{}
-	mcp            *mcp.Server
-	webhookSecret  string
-	mux            *http.ServeMux
+	// perPollIP limits how often one address may check on CLI sign-in requests.
+	perPollIP     *ratelimit.Limiter
+	stop          <-chan struct{}
+	mcp           *mcp.Server
+	cliDir        string
+	webhookSecret string
+	mux           *http.ServeMux
 }
 
 // New returns the server's HTTP handler, with request logging and panic recovery around every
@@ -78,9 +83,11 @@ func New(opts Options) http.Handler {
 		cookieName:     "sparrow_session",
 		trustedProxies: opts.TrustedProxies,
 		perToken:       ratelimit.New(tokenRequestsPerMinute, time.Minute, opts.Now),
+		perPollIP:      ratelimit.New(tokenRequestsPerMinute, time.Minute, opts.Now),
 		stop:           opts.Stop,
 		mcp:            mcp.New(opts.Store, opts.PublicURL, opts.Logger, opts.Version),
 		webhookSecret:  opts.GitHubWebhookSecret,
+		cliDir:         opts.CLIDir,
 		mux:            http.NewServeMux(),
 	}
 	// Over HTTPS the __Host- prefix makes browsers refuse the cookie from any other host or path.
@@ -92,6 +99,12 @@ func New(opts Options) http.Handler {
 
 	s.route("POST /api/auth/code", public, s.requestCode)
 	s.route("POST /api/auth/verify", public, s.verifyCode)
+	s.route("POST /api/auth/cli/verify", public, s.verifyCLICode)
+	s.route("POST /api/auth/cli/login", public, s.startCLILogin)
+	s.route("POST /api/auth/cli/login/poll", public, s.pollCLILogin)
+	s.route("GET /api/auth/cli/requests/{code}", humanOnly, s.getCLILogin)
+	s.route("POST /api/auth/cli/requests/{code}/approve", humanOnly, s.approveCLILogin)
+	s.route("POST /api/auth/cli/requests/{code}/deny", humanOnly, s.denyCLILogin)
 	s.route("POST /api/auth/sign-out", humanOnly, s.signOut)
 	s.route("GET /api/me", signedIn, s.me)
 	s.route("PATCH /api/me", humanOnly, s.updateProfile)
@@ -161,11 +174,13 @@ func New(opts Options) http.Handler {
 	s.route("GET /api/events", signedIn, s.listEvents)
 	s.route("GET /api/events/stream", signedIn, s.streamEvents)
 
-	// The MCP endpoint takes agent tokens only. It offers no server-to-client stream and keeps no
-	// sessions, so GET and DELETE are refused as the transport allows.
-	s.route("POST /mcp", agentOnly, s.serveMCP)
+	// The MCP endpoint takes agent tokens and signed-in CLIs. It offers no server-to-client stream
+	// and keeps no sessions, so GET and DELETE are refused as the transport allows.
+	s.route("POST /mcp", toolCaller, s.serveMCP)
 	s.mux.HandleFunc("GET /mcp", methodNotAllowed)
 	s.mux.HandleFunc("DELETE /mcp", methodNotAllowed)
+
+	s.route("GET /cli/{file}", public, s.serveCLIFile)
 
 	if s.webhookSecret != "" {
 		s.route("POST /api/webhooks/github", public, s.githubWebhook)

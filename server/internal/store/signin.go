@@ -28,13 +28,15 @@ const (
 	maxDeviceLabel    = 100
 )
 
-const sessionColumns = `id, actor_id, device_label, last_seen_at, expires_at, revoked_at, created_at, updated_at`
+const sessionColumns = `id, actor_id, client, device_label, last_seen_at, expires_at, revoked_at, created_at, updated_at`
 
 // NewSession describes the session a successful sign-in creates. The caller makes the session
 // secret and passes only its hash.
 type NewSession struct {
 	Hash        []byte
 	DeviceLabel string
+	// Client is ClientBrowser for a cookie session or ClientCLI for a signed-in CLI.
+	Client Client
 }
 
 // AuthenticatedSession is a session that passed its checks, with the person it belongs to.
@@ -119,6 +121,9 @@ func (s *Store) VerifySignInCode(ctx context.Context, email string, codeHash []b
 	if len(input.Hash) != hashLength {
 		return Actor{}, Session{}, fmt.Errorf("session hash must be %d bytes", hashLength)
 	}
+	if input.Client != ClientBrowser && input.Client != ClientCLI {
+		return Actor{}, Session{}, fmt.Errorf("session client must be browser or cli, not %q", input.Client)
+	}
 
 	var actor Actor
 	var session Session
@@ -164,21 +169,8 @@ func (s *Store) VerifySignInCode(ctx context.Context, email string, codeHash []b
 			return err
 		}
 
-		session = Session{
-			ID: newID(), ActorID: actor.ID, DeviceLabel: label,
-			LastSeenAt: now, ExpiresAt: now.Add(SessionLifetime), CreatedAt: now, UpdatedAt: now,
-		}
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO sessions (id, actor_id, session_hash, device_label, last_seen_at, expires_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			session.ID, actor.ID, input.Hash, label, stamp, session.ExpiresAt.Format(timeLayout), stamp, stamp)
-		if err != nil {
-			return fmt.Errorf("create session: %w", err)
-		}
-
-		w := &writeTx{tx: tx, ctx: ctx, caller: actor, now: now}
-		return w.event("", TargetActor, actor.ID, "session.created",
-			map[string]any{"session_id": session.ID, "device_label": label})
+		session, err = createSession(ctx, tx, now, actor, input.Client, input.Hash, label, nil)
+		return err
 	})
 	if err != nil {
 		return Actor{}, Session{}, err
@@ -360,12 +352,41 @@ func (s *Store) RevokeAllSessions(ctx context.Context, by Caller) (int, error) {
 	return int(count), err
 }
 
+// createSession stores a session for actor and records its session.created event. extra adds
+// fields to the event's data.
+func createSession(ctx context.Context, tx *sql.Tx, now time.Time, actor Actor, client Client, hash []byte, label string,
+	extra map[string]any) (Session, error) {
+	stamp := now.Format(timeLayout)
+	session := Session{
+		ID: newID(), ActorID: actor.ID, Client: client, DeviceLabel: label,
+		LastSeenAt: now, ExpiresAt: now.Add(SessionLifetime), CreatedAt: now, UpdatedAt: now,
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO sessions (id, actor_id, client, session_hash, device_label, last_seen_at, expires_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		session.ID, actor.ID, client, hash, label, stamp, session.ExpiresAt.Format(timeLayout), stamp, stamp)
+	if err != nil {
+		return Session{}, fmt.Errorf("create session: %w", err)
+	}
+
+	data := map[string]any{"session_id": session.ID, "device_label": label, "client": client}
+	for name, value := range extra {
+		data[name] = value
+	}
+	w := &writeTx{tx: tx, ctx: ctx, caller: actor, now: now}
+	if err := w.event("", TargetActor, actor.ID, "session.created", data); err != nil {
+		return Session{}, err
+	}
+	return session, nil
+}
+
 func scanSession(row scanner) (Session, error) {
 	var session Session
 	var lastSeen, expires, created, updated string
 	var revoked sql.NullString
 
-	err := row.Scan(&session.ID, &session.ActorID, &session.DeviceLabel, &lastSeen, &expires, &revoked, &created, &updated)
+	err := row.Scan(&session.ID, &session.ActorID, &session.Client, &session.DeviceLabel, &lastSeen, &expires, &revoked, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, notFound("session")
 	}

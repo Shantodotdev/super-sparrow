@@ -10,8 +10,13 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
-// modelHeader is where an agent names the model it runs.
-const modelHeader = "Sparrow-Model"
+const (
+	// modelHeader is where an agent names the model it runs.
+	modelHeader = "Sparrow-Model"
+	// agentHeader is where a signed-in CLI says it runs inside an agent, such as claude-code, so
+	// the request acts as that person's agent instead of the person.
+	agentHeader = "Sparrow-Agent"
+)
 
 // access is who may call a route.
 type access int
@@ -21,12 +26,15 @@ const (
 	signedIn
 	humanOnly
 	ownerOnly
-	agentOnly
+	// toolCaller is an agent token or a signed-in CLI, the callers of the MCP endpoint.
+	toolCaller
 )
 
-// identity is who made a request, taken from their session cookie or agent token.
+// identity is who made a request, taken from their session cookie, signed-in CLI, or agent token.
 type identity struct {
-	actor     store.Actor
+	actor store.Actor
+	// client is how the request was authenticated.
+	client    store.Client
 	sessionID string
 	tokenID   string
 	// reportedModel is the model an agent names in the Sparrow-Model header. It is recorded on
@@ -35,7 +43,7 @@ type identity struct {
 }
 
 func (id identity) caller() store.Caller {
-	return store.Caller{ActorID: id.actor.ID, ReportedModel: id.reportedModel}
+	return store.Caller{ActorID: id.actor.ID, ReportedModel: id.reportedModel, Client: id.client}
 }
 
 type identityKey struct{}
@@ -76,8 +84,12 @@ func (s *server) authorize(w http.ResponseWriter, r *http.Request, level access,
 		return forbiddenRequest("only a person can do this, not an agent")
 	case level == ownerOnly && !id.actor.IsOwner():
 		return forbiddenRequest("only an owner can do this")
-	case level == agentOnly && id.tokenID == "":
-		return forbiddenRequest("send an agent token as a bearer token; create one in settings")
+	// Owner actions add people and change roles, so a CLI session, which agents run, cannot do
+	// them; they need the desktop app.
+	case level == ownerOnly && id.client != store.ClientBrowser:
+		return forbiddenRequest("owners do this in the desktop app, not from the CLI")
+	case level == toolCaller && id.client != store.ClientAgentToken && id.client != store.ClientCLI:
+		return forbiddenRequest("sign in with the sparrow CLI, or send an agent token as a bearer token")
 	}
 
 	return handler(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
@@ -91,15 +103,23 @@ func (s *server) identify(w http.ResponseWriter, r *http.Request) (identity, err
 		if !ok || !strings.EqualFold(scheme, "Bearer") {
 			return identity{}, store.ErrUnauthenticated
 		}
+		token = strings.TrimSpace(token)
 
-		checked, err := s.auth.AuthenticateToken(r.Context(), strings.TrimSpace(token))
+		if strings.HasPrefix(token, auth.CLISessionPrefix) {
+			return s.identifyCLI(r, token)
+		}
+
+		checked, err := s.auth.AuthenticateToken(r.Context(), token)
 		if err != nil {
 			return identity{}, err
 		}
 		if ok, retry := s.perToken.Allow(checked.Token.ID); !ok {
 			return identity{}, &auth.RateLimitError{RetryAfter: retry}
 		}
-		return identity{actor: checked.Actor, tokenID: checked.Token.ID, reportedModel: strings.TrimSpace(r.Header.Get(modelHeader))}, nil
+		return identity{
+			actor: checked.Actor, client: store.ClientAgentToken, tokenID: checked.Token.ID,
+			reportedModel: strings.TrimSpace(r.Header.Get(modelHeader)),
+		}, nil
 	}
 
 	cookie, err := r.Cookie(s.cookieName)
@@ -114,7 +134,37 @@ func (s *server) identify(w http.ResponseWriter, r *http.Request) (identity, err
 	if checked.Renewed {
 		s.setSessionCookie(w, cookie.Value, checked.Session.ExpiresAt)
 	}
-	return identity{actor: checked.Actor, sessionID: checked.Session.ID}, nil
+	return identity{actor: checked.Actor, client: store.ClientBrowser, sessionID: checked.Session.ID}, nil
+}
+
+// identifyCLI resolves a signed-in CLI. Without an agent header the request is the person's own.
+// With one, it acts as that person's agent, which the server cannot verify: the CLI says it runs
+// inside that agent. Signed-in CLIs share the per-token rate limit, keyed by session.
+func (s *server) identifyCLI(r *http.Request, token string) (identity, error) {
+	checked, err := s.auth.AuthenticateCLISession(r.Context(), token)
+	if err != nil {
+		return identity{}, err
+	}
+	if ok, retry := s.perToken.Allow(checked.Session.ID); !ok {
+		return identity{}, &auth.RateLimitError{RetryAfter: retry}
+	}
+
+	id := identity{actor: checked.Actor, client: store.ClientCLI, sessionID: checked.Session.ID}
+	agentName := strings.TrimSpace(r.Header.Get(agentHeader))
+	if agentName == "" {
+		return id, nil
+	}
+	if !store.KnownAgentName(agentName) {
+		return identity{}, &store.ValidationError{Field: agentHeader, Message: "must be claude-code or codex"}
+	}
+
+	agent, err := s.store.AgentForOwner(r.Context(), checked.Actor.ID, agentName)
+	if err != nil {
+		return identity{}, err
+	}
+	id.actor = agent
+	id.reportedModel = strings.TrimSpace(r.Header.Get(modelHeader))
+	return id, nil
 }
 
 func (s *server) setSessionCookie(w http.ResponseWriter, secret string, expires time.Time) {

@@ -80,6 +80,7 @@ type writeTx struct {
 	tx     *sql.Tx
 	ctx    context.Context
 	caller Actor
+	client Client
 	model  string
 	now    time.Time
 }
@@ -87,7 +88,8 @@ type writeTx struct {
 // write runs fn in a transaction as the caller and commits when fn succeeds.
 func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error) error {
 	if s.transaction != nil {
-		if by.ActorID != s.transaction.caller.ID || strings.TrimSpace(by.ReportedModel) != s.transaction.model {
+		if by.ActorID != s.transaction.caller.ID || strings.TrimSpace(by.ReportedModel) != s.transaction.model ||
+			by.Client != s.transaction.client {
 			return forbidden("transaction caller cannot change")
 		}
 		return fn(s.transaction)
@@ -115,7 +117,7 @@ func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error)
 		return forbidden("caller is disabled")
 	}
 
-	w := &writeTx{tx: tx, ctx: ctx, caller: caller, model: model, now: s.now().UTC().Truncate(time.Millisecond)}
+	w := &writeTx{tx: tx, ctx: ctx, caller: caller, client: by.Client, model: model, now: s.now().UTC().Truncate(time.Millisecond)}
 	if err := fn(w); err != nil {
 		return err
 	}

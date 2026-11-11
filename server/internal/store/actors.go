@@ -97,8 +97,8 @@ func (s *Store) CreateAgent(ctx context.Context, by Caller, input NewAgent) (Act
 	if err != nil {
 		return Actor{}, err
 	}
-	if !agentNamePattern.MatchString(input.AgentName) {
-		return Actor{}, invalid("agent_name", "must be lowercase letters, digits, and dashes, such as claude-code")
+	if !KnownAgentName(input.AgentName) {
+		return Actor{}, invalid("agent_name", agentNameError)
 	}
 
 	actor := Actor{ID: newID(), Kind: ActorAgent, DisplayName: name, AgentName: input.AgentName}

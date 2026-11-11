@@ -68,6 +68,9 @@ type Config struct {
 	// WebDir is the folder of the built frontend the server serves. It is "" in development, where
 	// the web dev server serves the frontend.
 	WebDir string
+	// CLIDir is the folder of signed CLI releases the server offers for download. It is "" in
+	// development when no release is served.
+	CLIDir string
 	// GitHubWebhookSecret checks GitHub webhook signatures. It is "" when the webhook is off,
 	// which only development allows.
 	GitHubWebhookSecret string
@@ -194,6 +197,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	problems = append(problems, err)
 
+	cliDir, err := optional("CLI_DIR")
+	if err == nil && cliDir != "" {
+		cfg.CLIDir, err = parseCLIDir(cliDir)
+	}
+	problems = append(problems, err)
+
 	webhookSecret, err := optional("GITHUB_WEBHOOK_SECRET")
 	if err == nil && webhookSecret != "" && len(webhookSecret) < minWebhookSecretLength {
 		err = fmt.Errorf("GITHUB_WEBHOOK_SECRET must be at least %d characters", minWebhookSecretLength)
@@ -299,6 +308,19 @@ func parseWebDir(value string) (string, error) {
 	}
 	if info, err := os.Stat(filepath.Join(dir, "_shell.html")); err != nil || info.IsDir() {
 		return "", fmt.Errorf("WEB_DIR must be the built frontend's folder, web/dist/client, with its _shell.html; %s has none (run make build-web)", dir)
+	}
+	return dir, nil
+}
+
+// parseCLIDir checks that the folder of CLI releases exists. It may be empty: the release folder
+// is filled from the latest signed release, and a server before the first one offers no CLI.
+func parseCLIDir(value string) (string, error) {
+	dir, err := filepath.Abs(value)
+	if err != nil {
+		return "", fmt.Errorf("CLI_DIR is not a usable path: %w", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("CLI_DIR must be a folder; %s is not one", dir)
 	}
 	return dir, nil
 }
