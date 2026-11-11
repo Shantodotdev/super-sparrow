@@ -1,6 +1,8 @@
+import { useDragAutoscroll } from "../hooks/use-drag-autoscroll";
 import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
-import type { CSSProperties } from "react";
+import { useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { hideNativeDragImage } from "../lib/drag-preview";
 import { slugify } from "../lib/format";
 import {
   issuePriorityColor,
@@ -11,10 +13,12 @@ import {
   statusIcon,
 } from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
+import { useMoveIssueStatus } from "../queries/issues";
 import { useActor } from "../queries/project";
 import { Avatar } from "./avatar";
 import { useActorTitle } from "./person";
 import { Icon } from "./icon";
+import { IssueDragPreview } from "./issue-drag-preview";
 import { LabelChips } from "./label-chips";
 
 const groupBackground: Record<IssueStatus, string> = {
@@ -47,20 +51,67 @@ export function IssueList({
   const projectSlug = useProjectSlugs();
   const actor = useActor();
   const actorTitle = useActorTitle();
+  const moveIssue = useMoveIssueStatus();
+  const draggedRef = useRef<Issue | undefined>(undefined);
+  const dragOrigin = useRef({ x: 0, y: 0 });
+  const listRef = useRef<HTMLDivElement>(null);
+  const [dragged, setDragged] = useState<Issue | undefined>();
+  const [dropTarget, setDropTarget] = useState<IssueStatus | undefined>();
+
+  useDragAutoscroll(!!dragged, listRef, toolbarHeight);
+
+  const endDrag = () => {
+    draggedRef.current = undefined;
+    setDragged(undefined);
+    setDropTarget(undefined);
+  };
+
+  /** Makes a status group accept dropped issues and highlights it while one is over it. */
+  const dropHandlers = (status: IssueStatus) => ({
+    onDragEnter: (event: DragEvent<HTMLElement>) => {
+      if (draggedRef.current) event.preventDefault();
+    },
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      if (!draggedRef.current) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (dropTarget !== status) setDropTarget(status);
+    },
+    onDragLeave: (event: DragEvent<HTMLElement>) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        setDropTarget((current) => (current === status ? undefined : current));
+      }
+    },
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      const issue = draggedRef.current;
+      if (issue && issue.status !== status) moveIssue(issue, status);
+      endDrag();
+    },
+  });
 
   return (
     <div
+      ref={listRef}
       className="scrollbar-thin [scrollbar-color:#465062_transparent] px-[26px] pt-0 pb-[50px] [view-transition-name:issue-view-content] max-[700px]:px-[16px] max-[700px]:pt-0 max-[700px]:pb-[16px] [&_>_section+section]:mt-[8px]"
       style={{ "--issues-toolbar-height": `${toolbarHeight}px` } as CSSProperties}
     >
       {issueStatuses.map((status) => {
         const rows = issues.filter((issue) => issue.status === status);
-        if (!rows.length) return null;
+        if (!rows.length && !dragged) return null;
 
         const isCollapsed = collapsed.includes(status);
 
         return (
-          <section key={status}>
+          <section key={status} className="relative" {...dropHandlers(status)}>
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute inset-0 z-2 rounded-[8px] border-2 transition-[border-color,background-color] duration-150 motion-reduce:transition-none ${
+                dropTarget === status && dragged?.status !== status
+                  ? "border-[#5873c7] bg-[#5873c7]/5"
+                  : "border-transparent"
+              }`}
+            />
             <div
               className={`group/heading sticky top-(--issues-toolbar-height,0px) z-1 flex w-full items-center rounded-[8px] ${groupBackground[status]}`}
             >
@@ -109,8 +160,29 @@ export function IssueList({
                     : `Created by ${creatorTitle}`;
                   return (
                     <Link
-                      className="ml-[24px] grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease] hover:bg-[#18191a] focus:outline-none focus-visible:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]"
+                      className={`ml-[24px] grid ${
+                        dragged
+                          ? dragged.id === issue.id
+                            ? "bg-[#1e222a]"
+                            : dropTarget === status
+                              ? "opacity-35"
+                              : ""
+                          : ""
+                      } grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease,opacity_160ms_ease] hover:bg-[#18191a] focus:outline-none focus-visible:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]`}
                       key={issue.key}
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", issue.key);
+                        hideNativeDragImage(event);
+                        dragOrigin.current = { x: event.clientX, y: event.clientY };
+                        draggedRef.current = issue;
+                        // Restyling the row inside dragstart makes Chrome cancel the drag.
+                        window.setTimeout(() => {
+                          if (draggedRef.current === issue) setDragged(issue);
+                        }, 0);
+                      }}
+                      onDragEnd={endDrag}
                       data-shortcut-row
                       to="/$projectSlug/issues/$issue"
                       params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}
@@ -164,6 +236,7 @@ export function IssueList({
           </section>
         );
       })}
+      {dragged && <IssueDragPreview issue={dragged} origin={dragOrigin.current} />}
       {!issues.length && (
         <div className="mx-auto my-40 max-w-120 p-[24px] text-center text-[#93a0b2] [&_h2]:mx-0 [&_h2]:mt-[18px] [&_h2]:mb-2 [&_h2]:text-[#e9edf5]">
           <h2>No issues found</h2>

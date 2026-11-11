@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+import { useMoveIssueStatus } from "../queries/issues";
 import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
 import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status";
@@ -16,6 +18,16 @@ type IssueBoardProps = {
 export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
   const projectSlug = useProjectSlugs();
   const columns = issueStatuses.filter((status) => !statusFilter || status === statusFilter);
+  const moveIssue = useMoveIssueStatus();
+  const draggedRef = useRef<Issue | undefined>(undefined);
+  const [dragged, setDragged] = useState<Issue | undefined>();
+  const [dropTarget, setDropTarget] = useState<IssueStatus | undefined>();
+
+  const endDrag = () => {
+    draggedRef.current = undefined;
+    setDragged(undefined);
+    setDropTarget(undefined);
+  };
 
   return (
     <div
@@ -27,9 +39,33 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
 
         return (
           <section
-            className="flex min-h-0 flex-[0_0_270px] flex-col rounded-[10px] border border-[#222831] bg-[#0d0f12] p-[12px]"
+            className={`flex min-h-0 flex-[0_0_270px] flex-col rounded-[10px] border bg-[#0d0f12] p-[12px] transition-[border-color,background-color] duration-150 ${
+              dropTarget === status && dragged?.status !== status
+                ? "border-[#5873c7] bg-[#11151d]"
+                : "border-[#222831]"
+            }`}
             key={status}
             aria-label={issueStatusLabel[status]}
+            onDragEnter={(event) => {
+              if (draggedRef.current) event.preventDefault();
+            }}
+            onDragOver={(event) => {
+              if (!draggedRef.current) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              if (dropTarget !== status) setDropTarget(status);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setDropTarget((current) => (current === status ? undefined : current));
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const issue = draggedRef.current;
+              if (issue && issue.status !== status) moveIssue(issue, status);
+              endDrag();
+            }}
           >
             <div className="flex items-center gap-[8px] px-[2px] pt-[2px] pb-4">
               <span
@@ -50,8 +86,21 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
             >
               {rows.map((issue) => (
                 <Link
-                  className="flex w-full flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left hover:border-[#5873c7] hover:bg-[#171d28] focus:outline-none focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]"
+                  className={`flex w-full cursor-grab flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left transition-opacity duration-150 active:cursor-grabbing ${
+                    dragged?.id === issue.id ? "opacity-40" : ""
+                  } hover:border-[#5873c7] hover:bg-[#171d28] focus:outline-none focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]`}
                   key={issue.key}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", issue.key);
+                    draggedRef.current = issue;
+                    // Restyling the card inside dragstart makes Chrome cancel the drag.
+                    window.setTimeout(() => {
+                      if (draggedRef.current === issue) setDragged(issue);
+                    }, 0);
+                  }}
+                  onDragEnd={endDrag}
                   data-shortcut-row
                   to="/$projectSlug/issues/$issue"
                   params={{ projectSlug: projectSlug(issue.project_id), issue: issue.key }}

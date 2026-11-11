@@ -2,7 +2,7 @@ import { useMutation, useQueryClient, queryOptions } from "@tanstack/react-query
 import type { NewIssueValues } from "../components/new-issue-modal";
 import { useToast } from "../components/toast";
 import { apiGet, apiWrite } from "../lib/api";
-import type { ChecklistItem, Issue } from "../lib/types";
+import type { ChecklistItem, Issue, IssueStatus } from "../lib/types";
 import { allIssuesQuery } from "./project-resources";
 import { cacheCreatedIssue } from "./issue-cache";
 
@@ -104,4 +104,41 @@ export function usePatchIssue(key: string) {
     onError: (error) => notify(error.message),
   });
   return mutation;
+}
+
+/** Moves an issue to another status, showing the move at once and rolling it back if the server refuses. */
+export function useMoveIssueStatus() {
+  const client = useQueryClient();
+  const { notify } = useToast();
+  const isIssueList = (key: readonly unknown[]) => key[0] === "issues";
+  const mutation = useMutation({
+    mutationFn: ({ issue, status }: { issue: Issue; status: IssueStatus }) =>
+      apiWrite<{ issue: Issue }>(`/api/issues/${encodeURIComponent(issue.key)}`, "PATCH", {
+        status,
+      }),
+    onMutate: async ({ issue, status }) => {
+      await client.cancelQueries({ predicate: (query) => isIssueList(query.queryKey) });
+      const previous = client.getQueriesData<Issue[]>({
+        predicate: (query) => isIssueList(query.queryKey),
+      });
+      client.setQueriesData<Issue[]>(
+        { predicate: (query) => isIssueList(query.queryKey) },
+        (current) => current?.map((item) => (item.id === issue.id ? { ...item, status } : item)),
+      );
+
+      return { previous };
+    },
+    onError: (error, _variables, context) => {
+      context?.previous.forEach(([key, data]) => client.setQueryData(key, data));
+      notify(error.message);
+    },
+    onSettled: (_data, _error, { issue }) => {
+      void client.invalidateQueries({ predicate: (query) => isIssueList(query.queryKey) });
+      void client.invalidateQueries({ queryKey: issueQuery(issue.key).queryKey });
+      void client.invalidateQueries({ queryKey: ["milestones"] });
+      void client.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+
+  return (issue: Issue, status: IssueStatus) => mutation.mutate({ issue, status });
 }
