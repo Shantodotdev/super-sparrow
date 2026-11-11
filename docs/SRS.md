@@ -93,14 +93,14 @@ The issue page orders its tabs Plan, Review rounds, Findings, Activity, Comments
 ### Identity and history
 
 - FR-13: Every write records its actor. The interface shows the actor's name and an agent badge.
-- FR-14: Each person creates their own agent tokens. A token belongs to one agent actor owned by that person, expires after 90 days, and can be renewed or revoked.
+- FR-14: Each person signs in the CLI by approving it in the desktop app, and the CLI acts as the person or as one of their agents. For machines without a person, each person creates their own agent tokens. A token belongs to one agent actor owned by that person, expires after 90 days, and can be renewed or revoked.
 - FR-15: Every change writes an event. Issues and findings show their event history.
 
 ### Agent interface
 
-- FR-16: The MCP server exposes these tools: `get_issue_for_branch`, `get_issue`, `get_plan`, `update_plan_checklist`, `start_review_round`, `add_finding`, `finish_review_round`, `list_open_findings`, `set_finding_status`, `mark_duplicate`, `add_comment`, `list_comments`, `post_fix_summary`, `create_issue`, `list_projects`, `list_issues`, `update_plan`, `list_subissues`, `create_subissue`, `update_subissue`, `list_review_rounds`, `get_review_round`, `get_finding`, `list_labels`, `create_label`, `update_label`, `set_labels`, `list_attachments`, and `get_attachment`. Findings include a bounded discussion page unless explicitly omitted. List tools support cursors, writes accept actor-scoped retry keys, and plan/description edits require revisions. [MCP.md](MCP.md) defines the complete tool behavior.
+- FR-16: The MCP server exposes these tools: `get_issue_for_branch`, `get_issue`, `get_plan`, `update_plan_checklist`, `start_review_round`, `add_finding`, `finish_review_round`, `list_open_findings`, `set_finding_status`, `mark_duplicate`, `add_comment`, `list_comments`, `post_fix_summary`, `create_issue`, `list_projects`, `list_issues`, `update_plan`, `list_subissues`, `create_subissue`, `update_subissue`, `list_review_rounds`, `get_review_round`, `get_finding`, `list_labels`, `create_label`, `update_label`, `set_labels`, `list_attachments`, `get_attachment`, `update_issue`, `list_my_issues`, `add_findings`, and `submit_review`. Findings include a bounded discussion page unless explicitly omitted. List tools support cursors, writes accept actor-scoped retry keys, and plan/description edits require revisions. [MCP.md](MCP.md) defines the complete tool behavior.
 - FR-17: Tool inputs are validated. Invalid inputs return a clear error that names the field. Tool results include structured JSON, and failures include stable error codes.
-- FR-18: The CLI covers the same operations for scripts and agents without a configured MCP connection, including generic `tool list` and `tool call` commands.
+- FR-18: The CLI covers the same operations for scripts and agents without a configured MCP connection, including generic `tool list` and `tool call` commands and one command per tool. `sparrow setup` connects Claude Code and Codex, and `sparrow mcp` serves the tools to them over stdio.
 
 Successful write results and optional retry receipts are stored with their events in the same SQLite transaction. Retry keys are scoped to the authenticated agent and refuse changed requests.
 
@@ -147,11 +147,11 @@ Super Sparrow serves one team. There is no public signup and no password.
 
 ### Agents
 
-- Each person creates their own agent tokens in settings, one per agent and machine, such as "Shanto · Claude Code · laptop". The token is shown once.
-- Tokens start with `ssp_` so secret scanners can recognize them. Only a SHA-256 hash is stored.
-- A token expires after 90 days. Settings shows its expiry and last use, and the person can renew or revoke it.
-- Claude Code, Codex, and the CLI send the token as a bearer token on the MCP endpoint and the API. The token creation form offers a secret-free prompt for permanent, user-scoped client setup using an OS credential store and a local HTTP credential helper. The token is supplied through private local input, never in agent chat, setup prompts, or committed configuration. The CLI reads `SPARROW_TOKEN` from its execution environment.
-- Every action through a token is recorded as that agent, owned by that person. An agent's name is its tool, such as "Claude Code"; its owner is stored and shown separately, so the interface and the agent tools can show "Claude Code" with "Shanto" as its owner.
+- On a person's own computer, agents connect through the signed-in `sparrow` CLI, and no token is made or pasted. `sparrow login` starts a sign-in request and opens a `super-sparrow://cli-login?code=…` link; the desktop app shows the request with its eight-letter code, device name, and address, warns when the address differs from the app's, and the person approves or denies it. The CLI checks every two seconds and receives its `ssc_` session once, which it keeps in the OS keychain (an owner-only file when no keychain exists). A request expires after 10 minutes. Only a person in the desktop app can approve: CLI sessions, agents, and agent tokens are refused. `sparrow login --email` signs in with an emailed code instead.
+- CLI sessions last 30 days after their last use, like the app's, and are listed and ended with the person's other sessions.
+- `sparrow setup` signs in when needed and registers `sparrow --agent claude-code mcp` with Claude Code and `sparrow --agent codex mcp` with Codex at user scope. `sparrow mcp` is a local stdio MCP server that forwards each message to `/mcp` with the CLI session and a `Sparrow-Agent` header, so the work is recorded as that person's agent.
+- Agent tokens are for machines without a person, such as CI or a remote server. Each person creates them in settings, one per agent and machine. The token is shown once, starts with `ssp_` so secret scanners can recognize it, and only its SHA-256 hash is stored. It expires after 90 days; settings shows its expiry and last use, and the person can renew or revoke it. Such a machine sets `SPARROW_URL` and `SPARROW_TOKEN` for the CLI, or sends the token as a bearer token.
+- Every action through a token, or through a CLI session naming an agent, is recorded as that agent, owned by that person. An agent's name is its tool, such as "Claude Code"; its owner is stored and shown separately, so the interface and the agent tools can show "Claude Code" with "Shanto" as its owner.
 - An agent may name the model it runs in a `Sparrow-Model` header, which events record as reported.
 - Agents read project history, but not events about people, sessions, or tokens, which hold email addresses and device names.
 
@@ -159,7 +159,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 
 - Owners add and disable teammates, delete projects, and can revoke anyone's tokens.
 - Members do all day-to-day work and manage their own tokens.
-- Agents can read and write issues, plans, reviews, findings, and comments. They cannot create tokens, manage people, or delete projects.
+- Agents can read and write issues, plans, reviews, findings, and comments. They cannot create tokens, approve CLI sign-ins, manage people, or delete projects. Owner actions need the desktop app, not a CLI session.
 - Actor identity comes from the session or token, never from request input.
 - Rate limits apply per token.
 

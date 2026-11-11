@@ -262,24 +262,18 @@ One blocking finding.
 
 ## Connecting agents
 
-Each person creates a token per agent and machine in Settings. The Create agent token form provides a **Copy setup prompt** action after creation, tailored to Claude Code or Codex and the current server address. The prompt contains instructions and endpoint metadata, never the token secret. Tokens are shown once; the server retains only their hashes and cannot return the secret later.
+On a person's own computer, agents connect through the `sparrow` CLI, and nobody creates or pastes a token:
 
-The prompt asks the user's agent to configure permanent, user-scoped access on their machine:
+1. Download the CLI for your platform from `PUBLIC_URL/cli/` (for example `/cli/sparrow-linux-amd64`) and put it on `PATH` as `sparrow`. Release builds know their server; `sparrow update` installs later signed releases.
+2. Run `sparrow setup`. It opens the desktop app on **Settings → Connect CLI** with a code; check that the code matches the terminal, then choose **Approve**. Without the app link (over SSH, for example) open that page yourself and type the code.
+3. Setup registers `sparrow --agent claude-code mcp` with Claude Code (`claude mcp add --scope user super-sparrow`) and `sparrow --agent codex mcp` with Codex (`codex mcp add super-sparrow`), replacing an earlier `super-sparrow` entry, and checks that each answers as that person's agent. Restart agents that were already running.
 
-- Read the official client documentation and confirm the installed client supports HTTP credential helpers.
-- Accept the token through a private local input and store it in the user's persistent OS credential store, scoped to the endpoint and client.
-- Create a local helper outside the repository that reads the stored credential and emits the Authorization header directly to the MCP client. Never capture its raw output in agent logs.
-- Configure Claude Code at user scope using `headersHelper` in its user configuration (normally `~/.claude.json`), or Codex using `http_headers_helper` in its user configuration (normally `~/.codex/config.toml`). Preserve unrelated configuration and use absolute helper paths.
-- Verify MCP discovery and `list_projects` without exposing the token or changing project data. Report any client restart required.
+The CLI keeps its session in the OS keychain, or an owner-only file where no keychain exists. The session lasts 30 days after its last use and appears with the person's other sessions in Settings, where it can be ended. `sparrow logout` ends it too. `sparrow login --email ADDRESS` signs in with an emailed code instead of the app.
 
-This setup persists across terminal closure, application restarts, and reboot; it does not require session environment exports or shell-profile changes. It requires local client execution, supported client versions, and an available OS credential store. If private input, helper support, or secure storage is unavailable, the agent must report the missing prerequisite rather than substitute plaintext storage or a temporary setup. The generated prompt does not itself install or verify the connection; the user's agent performs those steps.
+Agents run as the person's own Claude Code or Codex actor. `sparrow mcp` forwards every MCP message to `/mcp` with the session and the agent's name; the agent never sees the session token. An agent may also send `Sparrow-Model: <model>` (`SPARROW_MODEL` for the CLI) to record the model on its changes. The server records the value as reported; it cannot verify it.
 
-Configuration persistence does not remove token expiry. A person renews the token in Super Sparrow before its 90-day expiry or creates a replacement and updates its credential-store entry. Agents must not create, renew, or revoke tokens themselves. Never put credentials in a repository or a setup prompt.
+### Machines without a person
 
-For client configuration details, see the official [Claude Code MCP guide](https://code.claude.com/docs/en/mcp) and [Codex MCP guide](https://developers.openai.com/codex/mcp).
+CI jobs and remote servers that no one signs in on use an agent token. Create one in Settings, one per agent and machine. It is shown once, expires after 90 days, and can be renewed or revoked there. Give the machine `SPARROW_URL` and `SPARROW_TOKEN`, from the machine's secret store, never from a repository or a chat. Agents must not create, renew, or revoke tokens themselves.
 
-See [MCP.md](MCP.md) for the tool workflow, pagination, retry keys, structured errors, and connection verification. `sparrow tool list` and `sparrow tool call list_projects --arguments '{}'` check the endpoint using `SPARROW_URL` and `SPARROW_TOKEN`; discovery in the actual agent client also verifies its configuration.
-
-An agent may also send `Sparrow-Model: <model>` to record the model it runs on its changes. The server records the value as reported; it cannot verify it.
-
-Scripts and agents without MCP use the CLI. It runs the same operations through the HTTP API with `SPARROW_URL` and `SPARROW_TOKEN`, and `sparrow help` lists its commands.
+See [MCP.md](MCP.md) for the tool workflow, pagination, retry keys, structured errors, and connection verification. `sparrow tools` lists the tools and `sparrow help` lists every command.

@@ -72,7 +72,7 @@ curl -b /tmp/sparrow-cookie http://127.0.0.1:8090/api/me
 
 [API.md](API.md) lists every endpoint. Agents connect to the MCP endpoint at `/mcp` with an agent token, and [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents) shows the configuration for Claude Code and Codex.
 
-The same `sparrow` binary is also the command-line client. With `SPARROW_URL` and `SPARROW_TOKEN` set, `server/bin/sparrow issue for-branch` finds the issue for the current git branch, and `server/bin/sparrow help` lists every command.
+The same `sparrow` binary is also the command-line client. `server/bin/sparrow setup --url http://localhost:3000` (your `PUBLIC_URL`) signs in by approval in the desktop app (run `make dev-desktop`) and connects Claude Code and Codex to the local server through `sparrow mcp`. Then `server/bin/sparrow issue for-branch` finds the issue for the current git branch, and `server/bin/sparrow help` lists every command. A machine without a person sets `SPARROW_URL` and `SPARROW_TOKEN` (an agent token) instead.
 
 ## Quick capture and the desktop app
 

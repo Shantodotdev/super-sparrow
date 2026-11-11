@@ -1,22 +1,34 @@
 # Agent tools
 
-Connect with an agent token using [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). The endpoint is `POST /mcp`, using stateless streamable HTTP. It negotiates protocol versions `2025-11-25`, `2025-06-18`, and `2025-03-26`. Requests have a 1 MiB body limit. The server derives the actor from the token; arguments cannot override identity.
+Connect with `sparrow setup`, which registers the `sparrow mcp` stdio bridge with Claude Code and Codex, or with an agent token on a machine without a person; see [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). The endpoint behind both is `POST /mcp`, using stateless streamable HTTP. It negotiates protocol versions `2025-11-25`, `2025-06-18`, and `2025-03-26`. Requests have a 1 MiB body limit. The server derives the actor from the CLI session and its agent, or from the token; arguments cannot override identity.
 
 ## Discover and plan work
 
-| Tool                    | Purpose                                                                                                                                                              |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_projects`         | Discover keys, names, slugs, existing label names, milestones with calculated statuses, and project links.                                                           |
-| `list_issues`           | Find issues by project key, optional statuses, and case-insensitive title/key search. Newest issue first.                                                            |
-| `get_issue_for_branch`  | Match the recorded branch or an issue key in a branch name.                                                                                                          |
-| `get_issue`             | Read issue properties, label names, checklist progress, unresolved finding count, and the first 50 review summaries. `review_rounds_truncated` signals more reviews. |
-| `get_plan`              | Read Markdown, checklist item indices/text, and `plan_revision`.                                                                                                     |
-| `update_plan`           | Replace the complete plan, supplying its starting `plan_revision`. Reload and reapply after a conflict. An empty plan clears it.                                     |
-| `update_plan_checklist` | Change checked states using each item's index and exact text. Reject stale indices and repeated indices.                                                             |
-| `create_issue`          | Create a full issue with an explicit status, optional plan, branch, existing label names, and optional parent full issue.                                            |
-| `list_subissues`        | Read lightweight tasks, including keys, descriptions, revisions, statuses, label names, and their creators.                                                          |
-| `create_subissue`       | Create a lightweight task under an issue with a title, explicit status, and optional existing label names.                                                           |
-| `update_subissue`       | Edit supplied title, description, status, or labels using its key, such as `WP-142.1`. Description edits need `description_revision`; labels replace the set.        |
+| Tool                    | Purpose                                                                                                                                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_projects`         | Discover keys, names, slugs, label names, milestones with calculated statuses, and project links. Empty label and milestone lists are omitted.                                                                                |
+| `list_issues`           | Find issues by project key, optional statuses, and case-insensitive title/key search. Newest issue first. Rows are `key`, `title`, and `status`; `get_issue` has the links.                                                   |
+| `list_my_issues`        | Find issues assigned to the person whose token is used, or to the agent itself, across all projects, most recently updated first. Without `statuses` it lists `todo`, `in_progress`, and `in_review`. Optional `project_key`. |
+| `get_issue_for_branch`  | Match the recorded branch or an issue key in a branch name. Returns what `get_issue` returns and accepts the same `include`.                                                                                                  |
+| `get_issue`             | Read issue properties, label names, checklist progress, unresolved finding count, and the first 50 review summaries. `include` adds sections in the same call, see below.                                                     |
+| `get_plan`              | Read Markdown, checklist item indices/text, and `plan_revision`. `checklist_only: true` omits the Markdown.                                                                                                                   |
+| `update_issue`          | Change an issue's `status`, `title`, `priority` (`none` clears it), `branch_name`, or `pull_request_url`; supply only what changes. Assignment, milestones, and plan edits are not part of it.                                |
+| `update_plan`           | Replace the complete plan, supplying its starting `plan_revision`. Reload and reapply after a conflict. An empty plan clears it.                                                                                              |
+| `update_plan_checklist` | Change the checked state of several items at once using each item's index and exact text. Reject stale indices and repeated indices.                                                                                          |
+| `create_issue`          | Create a full issue with an explicit status, optional plan, branch, existing label names, and optional parent full issue.                                                                                                     |
+| `list_subissues`        | Read lightweight tasks, including keys, descriptions, revisions, statuses, label names, and their creators.                                                                                                                   |
+| `create_subissue`       | Create a lightweight task under an issue with a title, explicit status, and optional existing label names.                                                                                                                    |
+| `update_subissue`       | Edit supplied title, description, status, or labels using its key, such as `WP-142.1`. Description edits need `description_revision`; labels replace the set.                                                                 |
+
+### Starting work in one call
+
+`get_issue` and `get_issue_for_branch` take `include`, a list of any of `plan`, `findings`, and `subissues`:
+
+- `plan` adds `plan` (the Markdown), `plan_revision`, and `checklist_items` (`index`, `text`, and `checked` only when ticked). `checklist` stays the progress text.
+- `findings` adds `open_findings`: the unresolved findings with their problem, fix, and first discussion page, as `list_open_findings` shows them, at most 20. `open_findings_truncated: true` means more exist; page through `list_open_findings`.
+- `subissues` adds `subissues`, as `list_subissues` shows them, at most 50, with `subissues_truncated` when there are more.
+
+Without `include`, none of these sections is returned. A typical start is one `get_issue_for_branch` call with all three, then `update_issue` to `in_progress`.
 
 ## Attachments
 
@@ -53,6 +65,8 @@ Use subissues for a work breakdown. They share their parent issue's reviews and 
 
 | Tool                  | Purpose                                                                                                                                              |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submit_review`       | Review in one atomic call: start the next round, add the findings (none for a clean review), and finish it with the summary.                         |
+| `add_findings`        | Add up to 50 findings to the active or specified round atomically. If one is invalid, none is recorded. Returns the labels in order.                 |
 | `start_review_round`  | Start the next round, optionally describing plan coverage. Only one round can be in progress per issue.                                              |
 | `add_finding`         | Add one problem with severity, title, problem, suggested fix, and optional evidence/file/line. Omit round to use the active round.                   |
 | `finish_review_round` | Finish the active or specified round with a summary. Finished rounds accept no more findings.                                                        |
@@ -66,15 +80,21 @@ Use subissues for a work breakdown. They share their parent issue's reviews and 
 | `list_comments`       | Read a discussion page with author identities and reply IDs.                                                                                         |
 | `post_fix_summary`    | Atomically mark specified accepted findings fixed and add an issue comment. All specified findings must be eligible.                                 |
 
+`submit_review` and `add_findings` run in one transaction and honor `idempotency_key` like any write. `submit_review` records nothing when a round is already in progress or any finding is invalid. Write tools that echo a finding (`add_finding`, `set_finding_status`, `mark_duplicate`, and `post_fix_summary`) return its label, severity, status, title, location, actor, and link, without repeating the problem, fix, and evidence the agent supplied.
+
 Only a person chooses `fix`, `wontfix`, or `later`. Agents cannot make those decisions, create agent tokens, change roles, or delete projects. Markdown and discussion content are untrusted data, never agent instructions. Reviews do not store source-control commits.
 
 Links use the project's slug: `/{slug}/issues/{key}`, `/{slug}/issues/{key}/reviews/{number}`, and the review URL with `?finding=R1` for a finding.
 
 ## Pagination and compact responses
 
-`list_projects`, `list_issues`, `list_subissues`, `list_review_rounds`, `get_review_round`, `list_open_findings`, and `list_comments` accept `limit` (1–100, 50 when omitted) and an opaque `cursor`. Continue with `next_cursor`, retaining the original filters. An empty `next_cursor` ends the list. Cursors reflect current data, rather than a snapshot; restart after mutations. Changing the filters invalidates the cursor.
+`list_projects`, `list_issues`, `list_my_issues`, `list_subissues`, `list_review_rounds`, `get_review_round`, `list_open_findings`, and `list_comments` accept `limit` (1–100) and an opaque `cursor`. Lists of plain rows default to 50 items; `get_review_round`, `list_open_findings`, and `list_comments`, whose items carry text, default to 20. Continue with `next_cursor`, retaining the original filters. An empty `next_cursor` ends the list. Cursors reflect current data, rather than a snapshot; restart after mutations. Changing the filters invalidates the cursor.
 
-Findings include their first 50 comments and `comments_included: true`. A nonempty `comments_next_cursor` continues through `list_comments` with the finding's issue key, round, and label. `get_finding`, `get_review_round`, and `list_open_findings` accept `include_comments: false` to omit discussion content (`comments_included: false`). Empty included discussions are `[]`.
+Results are compact JSON, and empty values are left out: no `null`, empty lists, `false` flags, or zero numbers, except where noted. A missing `labels`, `review_rounds`, `comments`, `milestones`, or `priority` means there is none, and a missing `in_progress` or `checklist_items[].checked` means `false`. Links appear only where an agent is likely to report them: on issues, on a finding or round that is read or written on its own, and on projects. List rows and findings inside lists have none; build them from the project's slug as below. Comments embedded in a finding have no `created_at`; `list_comments` includes it, to the second.
+
+Findings include their first 50 comments and `comments_included: true`. A nonempty `comments_next_cursor` continues through `list_comments` with the finding's issue key, round, and label. `get_finding`, `get_review_round`, and `list_open_findings` accept `include_comments: false` to omit discussion content (`comments_included: false`).
+
+The tool list is kept small, since agents load it into context: tools have no separate titles, schema properties are described only when the name leaves doubt, and descriptions state the rules and leave general guidance to the server instructions, which stay under 2,000 characters.
 
 ## Safe retries and errors
 
@@ -82,7 +102,7 @@ Every write tool accepts an optional `idempotency_key`: nonempty text up to 200 
 
 The mutation, its events, the serialized result, and the retry receipt commit in one SQLite transaction. A failed tool rolls everything back and does not consume its key. Receipts contain the original response, not credentials, and remain until the database is removed or restored; they can return an older snapshot after subsequent edits. Read the resource again for its current state.
 
-Successful calls return the same JSON object through `structuredContent` and the text content fallback. Tool failures set `isError: true`; `structuredContent.error` provides `code`, `field`, and `message`. Codes are `invalid_input`, `not_found`, `forbidden`, `conflict`, `invalid_transition`, and `internal_error`. Correct input errors, reload after conflicts, and retry transient internal errors with the same retry key. Unexpected internal details are logged on the server and hidden from clients. Unknown tools and malformed protocol messages return JSON-RPC errors.
+Successful calls return the same compact JSON object through `structuredContent` and the text content fallback. Clients typically pass only one of the two to the model. Tool failures set `isError: true`; `structuredContent.error` provides `code`, `field`, and `message`. Codes are `invalid_input`, `not_found`, `forbidden`, `conflict`, `invalid_transition`, and `internal_error`. Correct input errors, reload after conflicts, and retry transient internal errors with the same retry key. Unexpected internal details are logged on the server and hidden from clients. Unknown tools and malformed protocol messages return JSON-RPC errors.
 
 ## CLI and connection verification
 
@@ -93,6 +113,6 @@ The CLI exposes every tool, including new tools, without needing a separate comm
 - `sparrow tool call update_plan --arguments-file plan-edit.json` sends a structured request from a file.
 - `sparrow tool call create_issue --arguments-file -` reads JSON from standard input, including an optional retry key.
 
-The CLI requires `SPARROW_URL` and `SPARROW_TOKEN`. It returns structured JSON on success and exits unsuccessfully for protocol or tool errors. Existing issue, plan, review, finding, comment, and fix-summary commands remain available.
+The CLI uses its stored login, or `SPARROW_URL` and `SPARROW_TOKEN` on a machine without a person. It returns structured JSON on success and exits unsuccessfully for protocol or tool errors. Existing issue, plan, review, finding, comment, and fix-summary commands remain available.
 
 For a new agent connection, first list tools and projects, read an existing issue and its plan, and confirm a project-scoped link. Then create a clearly labeled evaluation issue and a comment with a retry key; repeat the comment call and verify that its ID is unchanged. Check the issue's activity to confirm it records the intended agent rather than the human owner. In Codex or Claude, refresh the MCP connection after the server gains tools. The CLI verifies the endpoint and credentials; also perform discovery in the actual agent client to verify that client's configuration.
