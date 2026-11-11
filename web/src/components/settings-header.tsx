@@ -32,6 +32,9 @@ export function SettingsHeader() {
         <Link to="/settings/sessions" activeProps={{ className: "selected" }}>
           <Icon name="monitor" /> &nbsp; Signed-in devices
         </Link>
+        <Link to="/settings/cli" activeProps={{ className: "selected" }}>
+          <Icon name="terminal" /> &nbsp; Connect CLI
+        </Link>
         <Link to="/settings/shortcuts" activeProps={{ className: "selected" }}>
           <Icon name="keyboard" /> &nbsp; Keyboard shortcuts
         </Link>

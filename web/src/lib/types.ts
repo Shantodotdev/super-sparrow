@@ -181,6 +181,25 @@ export type AgentToken = {
 /** What creating a token returns: the token and its secret, which the API never sends again. */
 export type NewAgentToken = { token: AgentToken; secret: string };
 
+/** A signed-in device; `client` says whether it is the app or the CLI. */
+export type Session = {
+  id: string;
+  device_label: string;
+  client: "browser" | "cli";
+  current: boolean;
+  last_seen_at: string;
+  expires_at: string;
+};
+
+/** A `sparrow login` waiting for a person to approve or deny it. */
+export type CliLoginRequest = {
+  device_label: string;
+  requested_from: string;
+  same_address: boolean;
+  expires_at: string;
+  created_at: string;
+};
+
 /** A file attached to an issue; `url` is where the file itself is served. */
 export type Attachment = {
   id: string;

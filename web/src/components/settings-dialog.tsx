@@ -1,6 +1,5 @@
 import { Check, Copy } from "lucide-react";
 import { agentIcons } from "./avatar";
-import { AgentMcpSetup } from "./agent-mcp-setup";
 import { Input } from "./input";
 import { useRef, useState, type FormEvent } from "react";
 import { agentTools } from "../data/team";
@@ -125,10 +124,10 @@ export function SettingsDialog({ kind, onClose }: SettingsDialogProps) {
               {copied ? "Token copied" : ""}
             </span>
           </div>
-          <AgentMcpSetup
-            agentName={selectedAgent}
-            endpoint={new URL("/mcp", window.location.origin).href}
-          />
+          <p className="muted mt-[16px] mb-0! text-[13px] text-[#a2aec2]">
+            Use this token only on a machine nobody signs in on, such as CI or a remote server. On
+            your own computer, run sparrow setup instead.
+          </p>
           <div className="mt-[22px] flex justify-end">
             <button className={primaryClass} type="button" onClick={close}>
               Done

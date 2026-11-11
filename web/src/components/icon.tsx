@@ -33,6 +33,7 @@ import {
   SquareCheck,
   Tag,
   Target,
+  Terminal,
   TriangleAlert,
   Users,
 } from "lucide-react";
@@ -72,6 +73,7 @@ const icons = {
   "square-check": SquareCheck,
   tag: Tag,
   target: Target,
+  terminal: Terminal,
   "triangle-alert": TriangleAlert,
   users: Users,
 } as const;

@@ -31,7 +31,10 @@ export function TokensPanel({ tokens, onCreate, onRevoke }: TokensPanelProps) {
       <div className="mb-[20px] flex items-start justify-between gap-[20px] [&_p]:mt-[3px]">
         <div>
           <h2>Agent tokens</h2>
-          <p className="muted text-[#a2aec2]">Manage the tokens your agents use to connect.</p>
+          <p className="muted text-[#a2aec2]">
+            For machines without a person, such as CI or remote servers. On your own computer, run{" "}
+            <code className="font-mono text-[#d3dbe8]">sparrow setup</code> instead.
+          </p>
         </div>
         <button
           className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"

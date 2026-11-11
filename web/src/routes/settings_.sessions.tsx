@@ -4,15 +4,8 @@ import { apiGet, apiWrite } from "../lib/api";
 import { formatDate } from "../lib/format";
 import { SettingsHeader } from "../components/settings-header";
 import { useToast } from "../components/toast";
+import type { Session } from "../lib/types";
 import { clearQueryCache } from "../queries/persistence";
-
-type Session = {
-  id: string;
-  device_label: string;
-  current: boolean;
-  last_seen_at: string;
-  expires_at: string;
-};
 
 export const Route = createFileRoute("/settings_/sessions")({
   staticData: { section: "settings" },
@@ -50,6 +43,7 @@ function SessionsPage() {
           >
             <div>
               <strong>{session.device_label}</strong>
+              {` · ${session.client === "cli" ? "CLI" : "App"}`}
               {session.current && " · Current"}
               <p>
                 Last seen {formatDate(session.last_seen_at)} · Expires{" "}
