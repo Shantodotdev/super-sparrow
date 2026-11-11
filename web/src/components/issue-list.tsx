@@ -172,7 +172,7 @@ export function IssueList({
                           : contextMenu.activeId === issue.id
                             ? "bg-[#18191a]"
                             : ""
-                      } grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease,opacity_160ms_ease] hover:bg-[#18191a] focus:outline-none focus-visible:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]`}
+                      } grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease,opacity_160ms_ease] ${contextMenu.activeId ? "" : "hover:bg-[#18191a] focus-visible:bg-[#18191a]"} focus:outline-none motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]`}
                       key={issue.key}
                       draggable
                       onContextMenu={contextMenu.open(issue)}

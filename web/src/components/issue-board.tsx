@@ -90,7 +90,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                 <Link
                   className={`flex w-full cursor-grab flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left transition-opacity duration-150 active:cursor-grabbing ${
                     dragged?.id === issue.id ? "opacity-40" : ""
-                  } ${contextMenu.activeId === issue.id ? "border-[#5873c7] bg-[#171d28]" : ""} hover:border-[#5873c7] hover:bg-[#171d28] focus:outline-none focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]`}
+                  } ${contextMenu.activeId === issue.id ? "border-[#5873c7] bg-[#171d28]" : ""} ${contextMenu.activeId ? "" : "hover:border-[#5873c7] hover:bg-[#171d28] focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]"} focus:outline-none`}
                   key={issue.key}
                   draggable
                   onContextMenu={contextMenu.open(issue)}
