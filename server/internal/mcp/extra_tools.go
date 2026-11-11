@@ -5,82 +5,73 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
-	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
 func (s *Server) extraTools() []tool {
-	status := enum("Issue status.", "backlog", "todo", "in_progress", "in_review", "done", "canceled")
+	status := enum("", issueStatuses...)
 	return []tool{
 		{
 			name:        "list_projects",
-			title:       "List projects",
-			description: "Discover project keys, names, slugs, existing labels, and milestones with calculated statuses before creating or finding issues.",
+			description: "List project keys, names, slugs, label names, and milestones with calculated statuses.",
 			schema:      object(nil, map[string]any{}),
 			readOnly:    true,
-			run:         bind(s.listProjects),
+			run:         bind((*Server).listProjects),
 		},
 		{
 			name:        "list_issues",
-			title:       "List project issues",
-			description: "Discover issues in a project, newest first. Filter by statuses and search text. Follow next_cursor with the same filters.",
-			schema:      object([]string{"project_key"}, map[string]any{"project_key": text("Project key from list_projects."), "statuses": array("Allowed statuses.", status), "search": text("Case-insensitive title or key search.")}),
+			description: "List a project's issues, newest first, as key, title, and status. Filter by statuses and search text. get_issue returns an issue's details and links.",
+			schema:      object([]string{"project_key"}, map[string]any{"project_key": text(""), "statuses": array("Only these statuses.", status), "search": text("Case-insensitive title or key search.")}),
 			readOnly:    true,
-			run:         bind(s.listIssues),
+			run:         bind((*Server).listIssues),
 		},
 		{
 			name:        "update_plan",
-			title:       "Edit an issue's plan",
-			description: "Replace a plan using plan_revision from get_plan. A stale revision is refused; reload and reapply the edit. Checklist ticks have a separate tool.",
-			schema:      object([]string{"issue_key", "plan", "plan_revision"}, map[string]any{"issue_key": issueKey, "plan": text("Complete plan markdown. An empty string clears it."), "plan_revision": integer("Starting revision from get_plan.", 1)}),
-			run:         bind(s.updatePlan),
+			description: "Replace a plan, naming the plan_revision from get_plan. A stale revision is refused: reload and reapply. To tick checklist items use update_plan_checklist.",
+			schema:      object([]string{"issue_key", "plan", "plan_revision"}, map[string]any{"issue_key": issueKey, "plan": text("Complete plan markdown; empty clears it."), "plan_revision": integer("Revision the edit started from.", 1)}),
+			run:         bind((*Server).updatePlan),
 		},
 		{
 			name:        "list_subissues",
-			title:       "List subissues",
-			description: "List the lightweight subissues of an issue, including descriptions and their revisions.",
+			description: "List an issue's lightweight subissues with descriptions and description revisions.",
 			schema:      object([]string{"issue_key"}, map[string]any{"issue_key": issueKey}),
 			readOnly:    true,
-			run:         bind(s.listSubissues),
+			run:         bind((*Server).listSubissues),
 		},
 		{
 			name:        "create_subissue",
-			title:       "Create a subissue",
-			description: "Create a lightweight task under an issue. It shares its parent's reviews and discussions. Use this rather than create_issue for a work breakdown. Labels must already exist in the issue's project.",
-			schema:      object([]string{"issue_key", "title", "status"}, map[string]any{"issue_key": issueKey, "title": text("Subissue title."), "description": text("Task description in markdown."), "status": status, "labels": array("Names of existing labels in the project.", text("A label name."))}),
-			run:         bind(s.createSubissue),
+			description: "Create a lightweight task under an issue, sharing the parent's reviews and discussions. Use it for a work breakdown rather than create_issue.",
+			schema:      object([]string{"issue_key", "title", "status"}, map[string]any{"issue_key": issueKey, "title": text(""), "description": text(""), "status": status, "labels": array("Existing label names.", text(""))}),
+			run:         bind((*Server).createSubissue),
 		},
 		{
 			name:        "update_subissue",
-			title:       "Edit a subissue",
-			description: "Update supplied fields of a subissue. Description edits require description_revision from list_subissues. Stale edits are refused. Labels replace the current set.",
-			schema:      object([]string{"issue_key", "subissue_key"}, map[string]any{"issue_key": issueKey, "subissue_key": text("Key from list_subissues, such as WP-142.1."), "title": text("New title."), "description": text("Complete description markdown."), "description_revision": integer("Starting description revision.", 1), "status": status, "labels": array("Names of existing labels in the project; an empty list removes them all.", text("A label name."))}),
-			run:         bind(s.updateSubissue),
+			description: "Update the supplied fields of a subissue. A description edit needs description_revision from list_subissues; stale edits are refused. Labels replace the set.",
+			schema:      object([]string{"issue_key", "subissue_key"}, map[string]any{"issue_key": issueKey, "subissue_key": text("Key such as WP-142.1."), "title": text(""), "description": text("Complete markdown."), "description_revision": integer("Revision the edit started from.", 1), "status": status, "labels": array("Existing label names; empty removes all.", text(""))}),
+			run:         bind((*Server).updateSubissue),
 		},
 		{
 			name:        "get_review_round",
-			title:       "Get a review round",
-			description: "Get the review summary, plan coverage, reviewer, timestamps, and a page of findings, including resolved findings and duplicates.",
-			schema:      object([]string{"issue_key", "round"}, map[string]any{"issue_key": issueKey, "round": integer("Round number.", 1), "include_comments": boolean("Include the first discussion page for each finding; true when omitted.")}),
+			description: "Get a round's summary, coverage, reviewer, timing, and a page of its findings in every status, including resolved ones and duplicates.",
+			schema:      object([]string{"issue_key", "round"}, map[string]any{"issue_key": issueKey, "round": integer("", 1), "include_comments": boolean("Include each finding's first discussion page; true if omitted.")}),
 			readOnly:    true,
-			run:         bind(s.getReviewRound),
+			run:         bind((*Server).getReviewRound),
 		},
 		{
 			name:        "get_finding",
-			title:       "Get a finding",
-			description: "Read a finding in any status, including duplicates and resolved findings, with its discussion. Follow comments_next_cursor using list_comments.",
-			schema:      object([]string{"issue_key", "round", "finding"}, map[string]any{"issue_key": issueKey, "round": integer("Round number.", 1), "finding": findingLabel, "include_comments": boolean("Include discussion; true when omitted.")}),
+			description: "Get one finding in any status, with its discussion. comments_next_cursor continues through list_comments.",
+			schema:      object([]string{"issue_key", "round", "finding"}, map[string]any{"issue_key": issueKey, "round": integer("", 1), "finding": findingLabel, "include_comments": boolean("Include the discussion; true if omitted.")}),
 			readOnly:    true,
-			run:         bind(s.getFinding),
+			run:         bind((*Server).getFinding),
 		},
 		{
 			name:        "list_review_rounds",
-			title:       "List review rounds",
-			description: "List an issue's review rounds and summaries. Use get_review_round to read the findings and review details.",
+			description: "List an issue's review rounds with summaries. get_review_round reads a round's findings.",
 			schema:      object([]string{"issue_key"}, map[string]any{"issue_key": issueKey}),
 			readOnly:    true,
-			run:         bind(s.listReviewRounds),
+			run:         bind((*Server).listReviewRounds),
 		},
 	}
 }
@@ -94,7 +85,7 @@ type projectArgs struct {
 }
 
 func (s *Server) listProjects(ctx context.Context, _ store.Caller, args pageArgs) (any, error) {
-	limit, offset, hash, err := args.bounds("projects")
+	limit, offset, hash, err := args.bounds("projects", pageSizeRows)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +100,7 @@ func (s *Server) listProjects(ctx context.Context, _ store.Caller, args pageArgs
 		if err != nil {
 			return nil, err
 		}
-		labelOutputs := []string{}
+		var labelOutputs []string
 		for _, label := range labels {
 			labelOutputs = append(labelOutputs, label.Name)
 		}
@@ -117,19 +108,26 @@ func (s *Server) listProjects(ctx context.Context, _ store.Caller, args pageArgs
 		if err != nil {
 			return nil, fmt.Errorf("list milestones for project %s: %w", p.Key, err)
 		}
-		milestoneOutputs := []map[string]any{}
+		var milestoneOutputs []map[string]any
 		for _, milestone := range milestones {
 			milestoneOutputs = append(milestoneOutputs, map[string]any{
 				"id": milestone.ID, "name": milestone.Name, "position": milestone.Position, "status": milestone.Status,
 			})
 		}
-		outputs = append(outputs, map[string]any{"key": p.Key, "name": p.Name, "slug": p.Slug, "labels": labelOutputs, "milestones": milestoneOutputs, "url": strings.TrimRight(s.publicURL.String(), "/") + "/" + p.Slug + "/issues"})
+		project := map[string]any{"key": p.Key, "name": p.Name, "slug": p.Slug, "url": strings.TrimRight(s.publicURL.String(), "/") + "/" + p.Slug + "/issues"}
+		if len(labelOutputs) > 0 {
+			project["labels"] = labelOutputs
+		}
+		if len(milestoneOutputs) > 0 {
+			project["milestones"] = milestoneOutputs
+		}
+		outputs = append(outputs, project)
 	}
 	return map[string]any{"projects": outputs, "next_cursor": cursor}, nil
 }
 
 func (s *Server) listIssues(ctx context.Context, _ store.Caller, args projectArgs) (any, error) {
-	limit, offset, hash, err := args.pageArgs.bounds([]any{"issues", args.ProjectKey, args.Statuses, args.Search})
+	limit, offset, hash, err := args.pageArgs.bounds([]any{"issues", args.ProjectKey, args.Statuses, args.Search}, pageSizeRows)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +157,7 @@ func (s *Server) listIssues(ctx context.Context, _ store.Caller, args projectArg
 					cursor = nextCursor(hash, before)
 					return map[string]any{"issues": outputs, "next_cursor": cursor}, nil
 				}
-				outputs = append(outputs, map[string]any{"key": issue.Key(), "title": issue.Title, "status": issue.Status, "url": s.issueURL(issue)})
+				outputs = append(outputs, issueRow(issue))
 			}
 			before = issue.Number
 		}
@@ -168,6 +166,11 @@ func (s *Server) listIssues(ctx context.Context, _ store.Caller, args projectArg
 		}
 	}
 	return map[string]any{"issues": outputs, "next_cursor": cursor}, nil
+}
+
+// issueRow is one line of an issue list: enough to choose an issue, with no links.
+func issueRow(issue store.Issue) map[string]any {
+	return map[string]any{"key": issue.Key(), "title": issue.Title, "status": issue.Status}
 }
 
 func (s *Server) updatePlan(ctx context.Context, caller store.Caller, args struct {
@@ -183,17 +186,17 @@ func (s *Server) updatePlan(ctx context.Context, caller store.Caller, args struc
 	if err != nil {
 		return nil, err
 	}
-	return planOutput{IssueKey: issue.Key(), Title: issue.Title, Plan: issue.Plan, Revision: issue.PlanRevision, Checklist: checklist.Items(issue.Plan)}, nil
+	return newPlanOutput(issue, false), nil
 }
 
 // subissueOutput exposes stable keys and the revision needed for safe description edits.
 type subissueOutput struct {
 	Key         string            `json:"key"`
 	Title       string            `json:"title"`
-	Description string            `json:"description"`
+	Description string            `json:"description,omitempty"`
 	Revision    int               `json:"description_revision"`
 	Status      store.IssueStatus `json:"status"`
-	Labels      []string          `json:"labels"`
+	Labels      []string          `json:"labels,omitempty"`
 	CreatedBy   *actorOutput      `json:"created_by"`
 }
 
@@ -229,7 +232,7 @@ func (s *Server) listSubissues(ctx context.Context, _ store.Caller, args struct 
 	if err != nil {
 		return nil, err
 	}
-	limit, offset, hash, err := args.bounds([]string{"subissues", issue.ID})
+	limit, offset, hash, err := args.bounds([]string{"subissues", issue.ID}, pageSizeRows)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +334,7 @@ func (s *Server) getReviewRound(ctx context.Context, _ store.Caller, args review
 	if err != nil {
 		return nil, err
 	}
-	limit, offset, hash, err := args.bounds([]any{"round", round.ID})
+	limit, offset, hash, err := args.bounds([]any{"round", round.ID}, pageSizeDiscussion)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +343,7 @@ func (s *Server) getReviewRound(ctx context.Context, _ store.Caller, args review
 		return nil, err
 	}
 	findings, cursor := pageSlice(findings, limit, offset, hash)
-	outputs, err := s.findingOutputs(ctx, issue, findings, args.IncludeComments == nil || *args.IncludeComments)
+	outputs, err := s.findingOutputs(ctx, issue, findings, findingView{Comments: args.IncludeComments == nil || *args.IncludeComments, Detail: true})
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +351,17 @@ func (s *Server) getReviewRound(ctx context.Context, _ store.Caller, args review
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"issue_key": issue.Key(), "round": s.newRoundOutput(issue, round, nil), "plan_coverage": round.PlanCoverage, "reviewer": reviewer, "started_at": round.CreatedAt, "finished_at": round.FinishedAt, "findings": outputs, "next_cursor": cursor}, nil
+	result := map[string]any{
+		"issue_key": issue.Key(), "round": s.newRoundOutput(issue, round, nil, true), "reviewer": reviewer,
+		"started_at": round.CreatedAt.UTC().Format(time.RFC3339), "findings": outputs, "next_cursor": cursor,
+	}
+	if round.PlanCoverage != "" {
+		result["plan_coverage"] = round.PlanCoverage
+	}
+	if round.FinishedAt != nil {
+		result["finished_at"] = round.FinishedAt.UTC().Format(time.RFC3339)
+	}
+	return result, nil
 }
 
 func (s *Server) getFinding(ctx context.Context, _ store.Caller, args struct {
@@ -365,7 +378,7 @@ func (s *Server) getFinding(ctx context.Context, _ store.Caller, args struct {
 	if err != nil {
 		return nil, err
 	}
-	outputs, err := s.findingOutputs(ctx, issue, []store.Finding{finding}, args.IncludeComments == nil || *args.IncludeComments)
+	outputs, err := s.findingOutputs(ctx, issue, []store.Finding{finding}, findingView{Comments: args.IncludeComments == nil || *args.IncludeComments, Detail: true, Link: true})
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +393,7 @@ func (s *Server) listReviewRounds(ctx context.Context, _ store.Caller, args stru
 	if err != nil {
 		return nil, err
 	}
-	limit, offset, hash, err := args.bounds([]string{"rounds", issue.ID})
+	limit, offset, hash, err := args.bounds([]string{"rounds", issue.ID}, pageSizeRows)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +404,7 @@ func (s *Server) listReviewRounds(ctx context.Context, _ store.Caller, args stru
 	rounds, cursor := pageSlice(rounds, limit, offset, hash)
 	outputs := []roundOutput{}
 	for _, round := range rounds {
-		outputs = append(outputs, s.newRoundOutput(issue, round, nil))
+		outputs = append(outputs, s.newRoundOutput(issue, round, nil, false))
 	}
 	return map[string]any{"issue_key": issue.Key(), "review_rounds": outputs, "next_cursor": cursor}, nil
 }

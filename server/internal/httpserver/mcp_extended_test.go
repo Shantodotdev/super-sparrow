@@ -316,8 +316,8 @@ func TestMCPManagesAndAppliesLabels(t *testing.T) {
 		t.Fatalf("subissue %+v", sub)
 	}
 	sub = a.toolObject("set_labels", map[string]any{"issue_key": "WP-1", "subissue_key": "wp-1.1", "labels": []string{}})
-	if !reflect.DeepEqual(sub["labels"], []any{}) {
-		t.Fatalf("cleared subissue %+v", sub)
+	if _, ok := sub["labels"]; ok {
+		t.Fatalf("cleared subissue %+v still lists labels", sub)
 	}
 	sub = a.toolObject("update_subissue", map[string]any{"issue_key": "WP-1", "subissue_key": "WP-1.1", "labels": []string{"Beta"}})
 	if !reflect.DeepEqual(sub["labels"], []any{"Beta"}) {

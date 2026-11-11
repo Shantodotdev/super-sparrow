@@ -19,258 +19,248 @@ import (
 // tool is one MCP tool: its description for the agent and the function that runs it.
 type tool struct {
 	name        string
-	title       string
 	description string
 	schema      map[string]any
 	readOnly    bool
-	run         func(ctx context.Context, caller store.Caller, args json.RawMessage) (any, error)
+	// run takes the server to work through, so a write can run on a store scoped to its
+	// transaction without rebuilding the tool list.
+	run func(s *Server, ctx context.Context, caller store.Caller, args json.RawMessage) (any, error)
 }
 
 func (s *Server) toolList() []tool {
 	return append([]tool{
 		{
-			name:  "get_issue_for_branch",
-			title: "Find the issue for a branch",
-			description: "Find the issue a git branch belongs to. Pass the current branch, from `git branch --show-current`. " +
-				"It matches the branch recorded on an issue, or an issue key inside the name, as in feat/wp-142-meta-comments. " +
-				"Returns the issue's key, status, review rounds, and how many findings are unresolved. Call get_plan next for its plan.",
-			schema:   object([]string{"branch"}, map[string]any{"branch": text("The git branch name.")}),
+			name: "get_issue_for_branch",
+			description: "Find the issue for a git branch (from `git branch --show-current`): the recorded branch, or an issue key in the name, as in feat/wp-142-meta. " +
+				"Returns what get_issue returns, including its include options.",
+			schema:   object([]string{"branch"}, map[string]any{"branch": text(""), "include": includeOption}),
 			readOnly: true,
-			run:      bind(s.getIssueForBranch),
+			run:      bind((*Server).getIssueForBranch),
 		},
 		{
-			name:  "get_issue",
-			title: "Get an issue",
-			description: "Get an issue by its key, such as WP-142: its title, status, branch, pull request, checklist progress, " +
-				"review rounds, and how many findings are unresolved. Call get_plan for the plan itself.",
-			schema:   object([]string{"issue_key"}, map[string]any{"issue_key": issueKey}),
+			name: "get_issue",
+			description: "Get an issue by key: title, status, branch, pull request, checklist progress, review rounds, unresolved finding count. " +
+				"include adds the plan with checklist items (plan), unresolved findings with discussions (findings), or subissues (subissues) in the same call.",
+			schema:   object([]string{"issue_key"}, map[string]any{"issue_key": issueKey, "include": includeOption}),
 			readOnly: true,
-			run:      bind(s.getIssue),
+			run:      bind((*Server).getIssue),
 		},
 		{
-			name:  "get_plan",
-			title: "Get an issue's plan",
-			description: "Get an issue's plan, which is its description in markdown, and its checklist. Each checklist item has " +
-				"an index; pass it to update_plan_checklist to tick the item.",
-			schema:   object([]string{"issue_key"}, map[string]any{"issue_key": issueKey}),
+			name: "get_plan",
+			description: "Get an issue's plan markdown, plan_revision, and checklist items. Pass an item's index and text to update_plan_checklist. " +
+				"checklist_only omits the markdown.",
+			schema: object([]string{"issue_key"}, map[string]any{
+				"issue_key":      issueKey,
+				"checklist_only": boolean("Return only the checklist items and revision."),
+			}),
 			readOnly: true,
-			run:      bind(s.getPlan),
+			run:      bind((*Server).getPlan),
 		},
 		{
-			name:  "update_plan_checklist",
-			title: "Tick plan checklist items",
-			description: "Tick or untick items in an issue's plan checklist, by the index and text get_plan reports. Only those " +
-				"lines change, so edits others made to the plan are kept. If the plan was edited since you read it and the item " +
-				"is no longer at that index, nothing changes and the error says where it is now. Returns the updated checklist.",
+			name: "update_plan_checklist",
+			description: "Tick or untick several plan checklist items at once, by the index and text get_plan reports. Only those lines change. " +
+				"If an item is no longer at its index, nothing changes and the error says where it is. Returns the updated checklist.",
 			schema: object([]string{"issue_key", "items"}, map[string]any{
 				"issue_key": issueKey,
-				"items": array("The items to change.", object([]string{"index", "checked", "text"}, map[string]any{
-					"index":   integer("The item's index from get_plan.", 0),
-					"checked": boolean("true to tick the item, false to untick it."),
-					"text":    text("The item's text from get_plan, which shows the change is for that item."),
+				"items": array("Items to change.", object([]string{"index", "checked", "text"}, map[string]any{
+					"index":   integer("", 0),
+					"checked": boolean("true to tick, false to untick."),
+					"text":    text("As get_plan shows it."),
 				})),
 			}),
-			run: bind(s.updatePlanChecklist),
+			run: bind((*Server).updatePlanChecklist),
 		},
 		{
-			name:  "start_review_round",
-			title: "Start a review round",
-			description: "Start the next review round of an issue before adding findings. " +
-				"An issue has one round in progress at a time; finish it with finish_review_round. " +
-				"Returns the round's number and its page.",
+			name: "start_review_round",
+			description: "Start the next review round of an issue. Only one round can be in progress; finish it with finish_review_round. " +
+				"To review in a single call, use submit_review.",
 			schema: object([]string{"issue_key"}, map[string]any{
 				"issue_key":     issueKey,
-				"plan_coverage": text("Which parts of the plan this review checked, in a sentence or two."),
+				"plan_coverage": text("Which parts of the plan this review checked."),
 			}),
-			run: bind(s.startReviewRound),
+			run: bind((*Server).startReviewRound),
 		},
 		{
-			name:  "add_finding",
-			title: "Add a finding",
-			description: "Add one finding to the review round in progress. Each finding is one problem with its own status and " +
-				"discussion, so add separate findings for separate problems. Severity is blocking (must be fixed before merging), " +
-				"should_fix, or nit. Give the file and line when the problem is in one place. Returns the finding's label, such as R3. " +
-				"Leave round out to use the round in progress.",
-			schema: object([]string{"issue_key", "severity", "title", "problem", "fix"}, map[string]any{
+			name: "add_finding",
+			description: "Add one finding (one problem) to the round in progress, or to `round`. Severity: blocking (fix before merging), should_fix, or nit. " +
+				"Give file_path and line when the problem is in one place. Returns the label, such as R3. For several findings use add_findings.",
+			schema: object([]string{"issue_key", "severity", "title", "problem", "fix"}, findingFields(map[string]any{
 				"issue_key": issueKey,
-				"round":     integer("The round number. Leave it out to use the round in progress.", 1),
-				"severity":  enum("How much the problem matters.", "blocking", "should_fix", "nit"),
-				"title":     text("A one-line summary of the problem."),
-				"problem":   text("What is wrong and why it matters, in markdown."),
-				"fix":       text("How to fix it, in markdown."),
-				"evidence":  text("What shows the problem: a failing case, a log, or a quote from the code."),
-				"file_path": text("The file the problem is in, relative to the repository root."),
-				"line":      integer("The line in file_path.", 1),
-			}),
-			run: bind(s.addFinding),
+				"round":     integer("Round number; the round in progress if omitted.", 1),
+			})),
+			run: bind((*Server).addFinding),
 		},
 		{
-			name:  "finish_review_round",
-			title: "Finish a review round",
-			description: "Finish the review round in progress with a summary of the review. A finished round takes no more " +
-				"findings. Returns the round with how many findings it has of each severity.",
+			name:        "finish_review_round",
+			description: "Finish the round in progress with a summary. A finished round takes no more findings. Returns the round with its finding counts by severity.",
 			schema: object([]string{"issue_key", "summary"}, map[string]any{
 				"issue_key": issueKey,
-				"round":     integer("The round number. Leave it out to use the round in progress.", 1),
-				"summary":   text("The review's overall verdict and summary, in markdown."),
+				"round":     integer("Round number; the round in progress if omitted.", 1),
+				"summary":   text("Overall verdict, in markdown."),
 			}),
-			run: bind(s.finishReviewRound),
+			run: bind((*Server).finishReviewRound),
 		},
 		{
-			name:  "list_open_findings",
-			title: "List unresolved findings",
-			description: "List an issue's unresolved findings across all of its review rounds, most severe first, without " +
-				"duplicates. By default it lists findings waiting for a decision (open), decided to be fixed (fix), and fixed but " +
-				"not yet verified (fixed). Each finding includes its discussion. When addressing a review, work on the findings with " +
-				"status fix, and follow what the discussion says about how to fix them.",
+			name: "list_open_findings",
+			description: "List an issue's unresolved findings across rounds, most severe first, without duplicates; by default open, fix, and fixed. " +
+				"Each has its discussion, which may say how to fix it. Work on the findings with status fix.",
 			schema: object([]string{"issue_key"}, map[string]any{
 				"issue_key":        issueKey,
-				"include_comments": boolean("Include the first discussion page; true when omitted. Use false for a compact list."),
-				"statuses": array("Only list findings with these statuses.",
-					enum("A finding status.", "open", "fix", "wontfix", "later", "fixed", "verified")),
+				"include_comments": boolean("Include each finding's first discussion page; true if omitted."),
+				"statuses": array("Only these statuses.",
+					enum("", "open", "fix", "wontfix", "later", "fixed", "verified")),
 			}),
 			readOnly: true,
-			run:      bind(s.listOpenFindings),
+			run:      bind((*Server).listOpenFindings),
 		},
 		{
-			name:  "set_finding_status",
-			title: "Set a finding's status",
-			description: "Move a finding to a new status. Agents can mark a finding fixed once a person decided to fix it, " +
-				"mark a fixed finding verified after checking the fix, or move a fixed finding back to fix when " +
-				"the fix did not hold. Only a person decides fix, wontfix, or later, so those are refused for agents. To report " +
-				"several fixes with an explanation, use post_fix_summary instead.",
+			name: "set_finding_status",
+			description: "Mark a person-approved finding fixed, a fixed one verified after checking it, or a fixed one back to fix when the fix failed. " +
+				"Only a person decides fix, wontfix, or later. For several fixes use post_fix_summary.",
 			schema: object([]string{"issue_key", "round", "finding", "status"}, map[string]any{
 				"issue_key": issueKey,
-				"round":     integer("The finding's round number.", 1),
+				"round":     integer("", 1),
 				"finding":   findingLabel,
-				"status":    enum("The new status.", "open", "fix", "wontfix", "later", "fixed", "verified"),
-				"reason":    text("Why, when a person decides wontfix or later."),
+				"status":    enum("New status.", "open", "fix", "wontfix", "later", "fixed", "verified"),
+				"reason":    text("Why, for wontfix or later."),
 			}),
-			run: bind(s.setFindingStatus),
+			run: bind((*Server).setFindingStatus),
 		},
 		{
-			name:  "mark_duplicate",
-			title: "Mark a finding as a duplicate",
-			description: "Mark a finding as a duplicate of an earlier finding on the same issue that reports the same problem, " +
-				"such as one another reviewer already found in an earlier round. Duplicates are left out of list_open_findings, so " +
-				"the problem is decided and fixed once, through the original. A finding that others duplicate cannot itself be " +
-				"marked. Pass clear: true instead of the original to remove the mark.",
+			name: "mark_duplicate",
+			description: "Mark a finding as a duplicate of an earlier finding on the same issue, so the problem is decided and fixed once through the original. " +
+				"Duplicates are left out of list_open_findings. clear: true removes the mark.",
 			schema: object([]string{"issue_key", "round", "finding"}, map[string]any{
 				"issue_key":            issueKey,
-				"round":                integer("The duplicate finding's round number.", 1),
-				"finding":              text("The duplicate finding's label within its round, such as R3."),
-				"duplicate_of_round":   integer("The original finding's round number.", 1),
-				"duplicate_of_finding": text("The original finding's label within its round, such as R1."),
-				"clear":                boolean("true to remove the mark instead of setting one."),
+				"round":                integer("The duplicate's round.", 1),
+				"finding":              findingLabel,
+				"duplicate_of_round":   integer("The original's round.", 1),
+				"duplicate_of_finding": text("The original's label, such as R1."),
+				"clear":                boolean("true to remove the mark instead."),
 			}),
-			run: bind(s.markDuplicate),
+			run: bind((*Server).markDuplicate),
 		},
 		{
-			name:  "add_comment",
-			title: "Add a comment",
-			description: "Add a markdown comment to an issue, or to one finding when round and finding are given. Pass " +
-				"parent_comment_id to reply to a comment.",
+			name:        "add_comment",
+			description: "Comment on an issue, or on a finding when round and finding are given. parent_comment_id replies to a comment.",
 			schema: object([]string{"issue_key", "body"}, map[string]any{
 				"issue_key":         issueKey,
-				"body":              text("The comment, in markdown."),
-				"round":             integer("The finding's round number, to comment on a finding.", 1),
+				"body":              text(""),
+				"round":             integer("Finding's round, to comment on a finding.", 1),
 				"finding":           findingLabel,
-				"parent_comment_id": text("The ID of the comment this replies to."),
+				"parent_comment_id": text("Comment id to reply to."),
 			}),
-			run: bind(s.addComment),
+			run: bind((*Server).addComment),
 		},
 		{
-			name:  "list_comments",
-			title: "List comments",
-			description: "List the discussion on an issue, or on one finding when round and finding are given, oldest first. " +
-				"Read a finding's discussion before fixing it: the developer may say there how they want it fixed. Each comment " +
-				"has an id; pass it to add_comment as parent_comment_id to reply.",
+			name: "list_comments",
+			description: "List the discussion on an issue, or on a finding when round and finding are given, oldest first. " +
+				"Read a finding's discussion before fixing it. Pass a comment id to add_comment as parent_comment_id to reply.",
 			schema: object([]string{"issue_key"}, map[string]any{
 				"issue_key": issueKey,
-				"round":     integer("The finding's round number, to list a finding's comments.", 1),
+				"round":     integer("Finding's round, to list a finding's comments.", 1),
 				"finding":   findingLabel,
 			}),
 			readOnly: true,
-			run:      bind(s.listComments),
+			run:      bind((*Server).listComments),
 		},
 		{
-			name:  "post_fix_summary",
-			title: "Report a fix",
-			description: "Report the fixes you made for a review: it marks each listed finding fixed and " +
-				"adds the summary as a comment on the issue, all at once. Each finding must have been decided fix by a person; " +
-				"if one is not, nothing is recorded and the error names it. Describe the changes and the findings they address.",
+			name: "post_fix_summary",
+			description: "Mark each listed finding fixed and add the summary as an issue comment, atomically. Each finding must be decided fix by a person, " +
+				"or nothing is recorded and the error names it.",
 			schema: object([]string{"issue_key", "summary", "findings"}, map[string]any{
 				"issue_key": issueKey,
 				"summary":   text("What you changed and how it fixes each finding, in markdown."),
-				"findings": array("The findings these changes fix.", object([]string{"round", "finding"}, map[string]any{
-					"round":   integer("The finding's round number.", 1),
+				"findings": array("Findings fixed.", object([]string{"round", "finding"}, map[string]any{
+					"round":   integer("", 1),
 					"finding": findingLabel,
 				})),
 			}),
-			run: bind(s.postFixSummary),
+			run: bind((*Server).postFixSummary),
 		},
 		{
-			name:  "create_issue",
-			title: "Create an issue",
-			description: "Create an issue in a project, such as a follow-up for work outside the current issue. The plan is the " +
-				"issue's description in markdown; use `- [ ]` items for its checklist. Use status backlog for work nobody has " +
-				"scheduled. Labels must already exist in the project; see list_labels and create_label. Returns the new issue's key.",
+			name: "create_issue",
+			description: "Create an issue, such as a follow-up outside the current issue. The plan is markdown; use `- [ ]` items for a checklist. " +
+				"Labels must exist (list_labels, create_label). Returns the issue with its key.",
 			schema: object([]string{"project_key", "title", "status"}, map[string]any{
-				"project_key":      text("The project's key, such as WP."),
-				"title":            text("The issue's title."),
-				"status":           enum("Where the issue starts.", "backlog", "todo", "in_progress", "in_review", "done", "canceled"),
-				"plan":             text("The plan, in markdown."),
-				"parent_issue_key": text("A parent full issue for a linked follow-up. For lightweight work breakdowns, use create_subissue instead."),
-				"branch_name":      text("The git branch for this issue, if one exists."),
-				"labels":           array("Names of existing labels in the project; create missing ones with create_label.", text("A label name.")),
+				"project_key":      text(""),
+				"title":            text(""),
+				"status":           enum("Starting status; backlog for unscheduled work.", issueStatuses...),
+				"plan":             text(""),
+				"parent_issue_key": text("Parent full issue for a linked follow-up. For a work breakdown use create_subissue."),
+				"branch_name":      text(""),
+				"labels":           array("Existing label names.", text("")),
 			}),
-			run: bind(s.createIssue),
+			run: bind((*Server).createIssue),
 		},
-	}, slices.Concat(s.extraTools(), s.labelTools(), s.attachmentTools())...)
+	}, slices.Concat(s.extraTools(), s.labelTools(), s.attachmentTools(), s.workflowTools())...)
 }
 
 // Schemas, kept small so each tool's input reads clearly.
 
 var (
-	issueKey     = text("The issue's key, such as WP-142.")
-	findingLabel = text("The finding's label within its round, such as R3.")
+	issueKey      = map[string]any{"type": "string"}
+	findingLabel  = text("Label such as R3.")
+	issueStatuses = []string{"backlog", "todo", "in_progress", "in_review", "done", "canceled"}
+	includeOption = array("Extra sections to return in the same call.", enum("", "plan", "findings", "subissues"))
 )
 
+// findingFields adds the fields that describe one finding to a tool's properties.
+func findingFields(properties map[string]any) map[string]any {
+	properties["severity"] = enum("blocking, should_fix, or nit.", "blocking", "should_fix", "nit")
+	properties["title"] = text("")
+	properties["problem"] = text("What is wrong and why it matters, in markdown.")
+	properties["fix"] = text("How to fix it, in markdown.")
+	properties["evidence"] = text("Failing case, log, or code quote.")
+	properties["file_path"] = text("File, relative to the repository root.")
+	properties["line"] = integer("", 1)
+	return properties
+}
+
 func object(required []string, properties map[string]any) map[string]any {
-	if required == nil {
-		required = []string{}
+	schema := map[string]any{"type": "object", "properties": properties}
+	if len(required) > 0 {
+		schema["required"] = required
 	}
-	return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
+	return schema
+}
+
+// described adds a description to a property schema unless it is empty.
+func described(schema map[string]any, description string) map[string]any {
+	if description != "" {
+		schema["description"] = description
+	}
+	return schema
 }
 
 func text(description string) map[string]any {
-	return map[string]any{"type": "string", "description": description}
+	return described(map[string]any{"type": "string"}, description)
 }
 
 func enum(description string, values ...string) map[string]any {
-	return map[string]any{"type": "string", "description": description, "enum": values}
+	return described(map[string]any{"type": "string", "enum": values}, description)
 }
 
 func integer(description string, minimum int) map[string]any {
-	return map[string]any{"type": "integer", "description": description, "minimum": minimum}
+	return described(map[string]any{"type": "integer", "minimum": minimum}, description)
 }
 
 func boolean(description string) map[string]any {
-	return map[string]any{"type": "boolean", "description": description}
+	return described(map[string]any{"type": "boolean"}, description)
 }
 
 func array(description string, items map[string]any) map[string]any {
-	return map[string]any{"type": "array", "description": description, "items": items}
+	return described(map[string]any{"type": "array", "items": items}, description)
 }
 
 // bind decodes a tool's arguments into its argument type before calling it.
-func bind[T any](fn func(ctx context.Context, caller store.Caller, args T) (any, error)) func(context.Context, store.Caller, json.RawMessage) (any, error) {
-	return func(ctx context.Context, caller store.Caller, raw json.RawMessage) (any, error) {
+func bind[T any](fn func(s *Server, ctx context.Context, caller store.Caller, args T) (any, error)) func(*Server, context.Context, store.Caller, json.RawMessage) (any, error) {
+	return func(s *Server, ctx context.Context, caller store.Caller, raw json.RawMessage) (any, error) {
 		var args T
 		if err := decodeArgs(raw, &args); err != nil {
 			return nil, err
 		}
-		return fn(ctx, caller, args)
+		return fn(s, ctx, caller, args)
 	}
 }
 
@@ -299,27 +289,52 @@ func decodeArgs(raw json.RawMessage, dst any) error {
 	return &store.ValidationError{Field: "arguments", Message: "must be a JSON object"}
 }
 
-// Outputs. They name actors and link to pages, so an agent can report what it did.
+// Outputs. They name actors and link to pages, so an agent can report what it did. Empty values
+// are omitted, and links appear only where an agent is likely to report them.
 
 type issueOutput struct {
-	Key                   string        `json:"key"`
-	Title                 string        `json:"title"`
-	Status                string        `json:"status"`
-	URL                   string        `json:"url"`
-	BranchName            string        `json:"branch_name,omitempty"`
-	PullRequestURL        string        `json:"pull_request_url,omitempty"`
-	Checklist             string        `json:"checklist"`
-	Labels                []string      `json:"labels"`
-	ReviewRounds          []roundOutput `json:"review_rounds"`
-	UnresolvedFindings    int           `json:"unresolved_findings"`
-	ReviewRoundsTruncated bool          `json:"review_rounds_truncated"`
+	Key                   string           `json:"key"`
+	Title                 string           `json:"title"`
+	Status                string           `json:"status"`
+	Priority              string           `json:"priority,omitempty"`
+	URL                   string           `json:"url"`
+	BranchName            string           `json:"branch_name,omitempty"`
+	PullRequestURL        string           `json:"pull_request_url,omitempty"`
+	Checklist             string           `json:"checklist"`
+	Labels                []string         `json:"labels,omitempty"`
+	ReviewRounds          []roundOutput    `json:"review_rounds,omitempty"`
+	UnresolvedFindings    int              `json:"unresolved_findings"`
+	ReviewRoundsTruncated bool             `json:"review_rounds_truncated,omitempty"`
+	Plan                  *string          `json:"plan,omitempty"`
+	PlanRevision          int              `json:"plan_revision,omitempty"`
+	ChecklistItems        []checklistItem  `json:"checklist_items,omitempty"`
+	OpenFindings          []findingOutput  `json:"open_findings,omitempty"`
+	OpenFindingsTruncated bool             `json:"open_findings_truncated,omitempty"`
+	Subissues             []subissueOutput `json:"subissues,omitempty"`
+	SubissuesTruncated    bool             `json:"subissues_truncated,omitempty"`
+}
+
+// checklistItem is a checklist item as agents see it: checked is left out while false.
+type checklistItem struct {
+	Index   int    `json:"index"`
+	Text    string `json:"text"`
+	Checked bool   `json:"checked,omitempty"`
+}
+
+func checklistItems(plan string) []checklistItem {
+	items := checklist.Items(plan)
+	outputs := make([]checklistItem, 0, len(items))
+	for _, item := range items {
+		outputs = append(outputs, checklistItem{Index: item.Index, Text: item.Text, Checked: item.Checked})
+	}
+	return outputs
 }
 
 type roundOutput struct {
 	Round      int            `json:"round"`
-	InProgress bool           `json:"in_progress"`
+	InProgress bool           `json:"in_progress,omitempty"`
 	Summary    string         `json:"summary,omitempty"`
-	URL        string         `json:"url"`
+	URL        string         `json:"url,omitempty"`
 	Findings   map[string]int `json:"findings_by_severity,omitempty"`
 }
 
@@ -329,32 +344,44 @@ type findingOutput struct {
 	Severity           string          `json:"severity"`
 	Status             string          `json:"status"`
 	Title              string          `json:"title"`
-	Problem            string          `json:"problem"`
-	Fix                string          `json:"fix"`
+	Problem            string          `json:"problem,omitempty"`
+	Fix                string          `json:"fix,omitempty"`
 	Evidence           string          `json:"evidence,omitempty"`
 	FilePath           string          `json:"file_path,omitempty"`
 	Line               int             `json:"line,omitempty"`
 	DecisionReason     string          `json:"decision_reason,omitempty"`
-	FoundBy            *actorOutput    `json:"found_by"`
+	FoundBy            *actorOutput    `json:"found_by,omitempty"`
 	DecidedBy          *actorOutput    `json:"decided_by,omitempty"`
 	FixedBy            *actorOutput    `json:"fixed_by,omitempty"`
 	VerifiedBy         *actorOutput    `json:"verified_by,omitempty"`
 	FollowUpIssue      string          `json:"follow_up_issue,omitempty"`
 	DuplicateOf        string          `json:"duplicate_of,omitempty"`
-	URL                string          `json:"url"`
-	Comments           []commentOutput `json:"comments"`
+	URL                string          `json:"url,omitempty"`
+	Comments           []commentOutput `json:"comments,omitempty"`
 	CommentsNextCursor string          `json:"comments_next_cursor,omitempty"`
 	CommentsIncluded   bool            `json:"comments_included"`
 }
 
 // commentOutput is one comment in a discussion. ReplyTo is the ID of the comment it answers.
+// CreatedAt is left out of discussions embedded in findings.
 type commentOutput struct {
 	ID        string       `json:"id"`
 	Author    *actorOutput `json:"author"`
 	ReplyTo   string       `json:"reply_to,omitempty"`
 	Body      string       `json:"body"`
-	CreatedAt time.Time    `json:"created_at"`
+	CreatedAt string       `json:"created_at,omitempty"`
 	Edited    bool         `json:"edited,omitempty"`
+}
+
+// findingView chooses how much of each finding findingOutputs includes.
+type findingView struct {
+	// Comments includes a bounded first page of each finding's discussion.
+	Comments bool
+	// Detail includes the problem, fix, and evidence text. A write that echoes a finding the
+	// agent just sent leaves it out.
+	Detail bool
+	// Link includes the finding's page URL.
+	Link bool
 }
 
 func (s *Server) issueURL(issue store.Issue) string {
@@ -365,8 +392,20 @@ func (s *Server) roundURL(issue store.Issue, round int) string {
 	return fmt.Sprintf("%s/reviews/%d", s.issueURL(issue), round)
 }
 
+// maxIssueSection bounds the review rounds, findings, and subissues that get_issue includes. A
+// longer list sets its truncated flag, and the list tools page through it.
+const maxIssueSection = 50
+
+// maxIncludedFindings bounds the findings get_issue includes with their discussions.
+const maxIncludedFindings = 20
+
 func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOutput, error) {
-	rounds, err := s.store.ListAgentRounds(ctx, issue.ID, 51, 0)
+	return s.issueView(ctx, issue, nil)
+}
+
+// issueView describes an issue and adds the sections named by include: plan, findings, or subissues.
+func (s *Server) issueView(ctx context.Context, issue store.Issue, include []string) (issueOutput, error) {
+	rounds, err := s.store.ListAgentRounds(ctx, issue.ID, maxIssueSection+1, 0)
 	if err != nil {
 		return issueOutput{}, err
 	}
@@ -384,24 +423,62 @@ func (s *Server) newIssueOutput(ctx context.Context, issue store.Issue) (issueOu
 	}
 
 	output := issueOutput{
-		Key: issue.Key(), Title: issue.Title, Status: string(issue.Status), URL: s.issueURL(issue),
+		Key: issue.Key(), Title: issue.Title, Status: string(issue.Status), Priority: issue.Priority, URL: s.issueURL(issue),
 		BranchName: issue.BranchName, PullRequestURL: issue.PullRequestURL,
 		Checklist: fmt.Sprintf("%d of %d items done", done, len(items)), Labels: labels,
-		ReviewRounds: make([]roundOutput, 0, len(rounds)), UnresolvedFindings: issue.UnresolvedFindings,
+		UnresolvedFindings: issue.UnresolvedFindings,
 	}
-	if len(rounds) > 50 {
+	if len(rounds) > maxIssueSection {
 		output.ReviewRoundsTruncated = true
-		rounds = rounds[:50]
+		rounds = rounds[:maxIssueSection]
 	}
 	for _, round := range rounds {
-		output.ReviewRounds = append(output.ReviewRounds, s.newRoundOutput(issue, round, nil))
+		output.ReviewRounds = append(output.ReviewRounds, s.newRoundOutput(issue, round, nil, false))
+	}
+
+	if slices.Contains(include, "plan") {
+		plan := issue.Plan
+		output.Plan, output.PlanRevision, output.ChecklistItems = &plan, issue.PlanRevision, checklistItems(issue.Plan)
+	}
+	if slices.Contains(include, "findings") {
+		findings, err := s.store.ListAgentFindings(ctx, issue.ID, "", store.UnresolvedFindingStatuses, true, maxIncludedFindings+1, 0)
+		if err != nil {
+			return issueOutput{}, err
+		}
+		if len(findings) > maxIncludedFindings {
+			output.OpenFindingsTruncated = true
+			findings = findings[:maxIncludedFindings]
+		}
+		if output.OpenFindings, err = s.findingOutputs(ctx, issue, findings, findingView{Comments: true, Detail: true}); err != nil {
+			return issueOutput{}, err
+		}
+	}
+	if slices.Contains(include, "subissues") {
+		subs, err := s.store.ListAgentSubissues(ctx, issue.ID, maxIssueSection+1, 0)
+		if err != nil {
+			return issueOutput{}, err
+		}
+		if len(subs) > maxIssueSection {
+			output.SubissuesTruncated = true
+			subs = subs[:maxIssueSection]
+		}
+		for _, sub := range subs {
+			subOutput, err := s.subissueOutput(ctx, issue, sub)
+			if err != nil {
+				return issueOutput{}, err
+			}
+			output.Subissues = append(output.Subissues, subOutput)
+		}
 	}
 	return output, nil
 }
 
-func (s *Server) newRoundOutput(issue store.Issue, round store.ReviewRound, findings []store.Finding) roundOutput {
-	output := roundOutput{
-		Round: round.Number, InProgress: round.FinishedAt == nil, Summary: round.Summary, URL: s.roundURL(issue, round.Number),
+// newRoundOutput describes a round. link adds its page URL; findings, when given, adds the
+// finding counts by severity.
+func (s *Server) newRoundOutput(issue store.Issue, round store.ReviewRound, findings []store.Finding, link bool) roundOutput {
+	output := roundOutput{Round: round.Number, InProgress: round.FinishedAt == nil, Summary: round.Summary}
+	if link {
+		output.URL = s.roundURL(issue, round.Number)
 	}
 	if findings != nil {
 		output.Findings = map[string]int{}
@@ -456,20 +533,27 @@ func (n *actorNames) name(ctx context.Context, id string) (*actorOutput, error) 
 	return output, nil
 }
 
-func (s *Server) newFindingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding) ([]findingOutput, error) {
-	return s.findingOutputs(ctx, issue, findings, true)
+// echoFindingOutputs describes findings an agent just changed: who did what and the new status,
+// without the text the agent supplied.
+func (s *Server) echoFindingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding) ([]findingOutput, error) {
+	return s.findingOutputs(ctx, issue, findings, findingView{Link: true})
 }
 
-// findingOutputs optionally includes a bounded first discussion page for each finding.
-func (s *Server) findingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding, includeComments bool) ([]findingOutput, error) {
+// findingOutputs describes findings as view directs.
+func (s *Server) findingOutputs(ctx context.Context, issue store.Issue, findings []store.Finding, view findingView) ([]findingOutput, error) {
 	names := newActorNames(s.store)
 	outputs := make([]findingOutput, 0, len(findings))
 
 	for _, f := range findings {
 		output := findingOutput{
 			Round: f.RoundNumber, Finding: f.Label(), Severity: string(f.Severity), Status: string(f.Status),
-			Title: f.Title, Problem: f.Problem, Fix: f.Fix, Evidence: f.Evidence, FilePath: f.FilePath, Line: f.Line,
-			DecisionReason: f.DecisionReason, URL: s.roundURL(issue, f.RoundNumber) + "?finding=" + f.Label(),
+			Title: f.Title, FilePath: f.FilePath, Line: f.Line, DecisionReason: f.DecisionReason,
+		}
+		if view.Detail {
+			output.Problem, output.Fix, output.Evidence = f.Problem, f.Fix, f.Evidence
+		}
+		if view.Link {
+			output.URL = s.roundURL(issue, f.RoundNumber) + "?finding=" + f.Label()
 		}
 
 		var err error
@@ -496,15 +580,15 @@ func (s *Server) findingOutputs(ctx context.Context, issue store.Issue, findings
 			output.FollowUpIssue = followUp.Key()
 		}
 
-		output.CommentsIncluded = includeComments
-		if includeComments {
+		output.CommentsIncluded = view.Comments
+		if view.Comments {
 			comments, err := s.store.ListAgentComments(ctx, "", f.ID, 51, 0)
 			if err != nil {
 				return nil, err
 			}
-			_, _, hash, _ := (pageArgs{}).bounds([]string{"comments", issue.ID, f.ID})
+			_, _, hash, _ := (pageArgs{}).bounds([]string{"comments", issue.ID, f.ID}, pageSizeRows)
 			comments, output.CommentsNextCursor = pageSlice(comments, 50, 0, hash)
-			if output.Comments, err = newCommentOutputs(ctx, names, comments); err != nil {
+			if output.Comments, err = newCommentOutputs(ctx, names, comments, false); err != nil {
 				return nil, err
 			}
 		}
@@ -514,19 +598,19 @@ func (s *Server) findingOutputs(ctx context.Context, issue store.Issue, findings
 	return outputs, nil
 }
 
-// newCommentOutputs names each comment's author. It always returns a list, so an empty
-// discussion reads as [] rather than null.
-func newCommentOutputs(ctx context.Context, names *actorNames, comments []store.Comment) ([]commentOutput, error) {
+// newCommentOutputs names each comment's author. withTime adds when each was written.
+func newCommentOutputs(ctx context.Context, names *actorNames, comments []store.Comment, withTime bool) ([]commentOutput, error) {
 	outputs := make([]commentOutput, 0, len(comments))
 	for _, comment := range comments {
 		author, err := names.name(ctx, comment.AuthorActorID)
 		if err != nil {
 			return nil, err
 		}
-		outputs = append(outputs, commentOutput{
-			ID: comment.ID, Author: author, ReplyTo: comment.ParentCommentID, Body: comment.Body,
-			CreatedAt: comment.CreatedAt, Edited: comment.EditedAt != nil,
-		})
+		output := commentOutput{ID: comment.ID, Author: author, ReplyTo: comment.ParentCommentID, Body: comment.Body, Edited: comment.EditedAt != nil}
+		if withTime {
+			output.CreatedAt = comment.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		outputs = append(outputs, output)
 	}
 	return outputs, nil
 }
@@ -600,7 +684,8 @@ func (s *Server) commentedFinding(ctx context.Context, issue store.Issue, round 
 // The tools.
 
 func (s *Server) getIssueForBranch(ctx context.Context, _ store.Caller, args struct {
-	Branch string `json:"branch"`
+	Branch  string   `json:"branch"`
+	Include []string `json:"include"`
 }) (any, error) {
 	issue, err := s.store.FindIssueForBranch(ctx, args.Branch)
 	if errors.Is(err, store.ErrNotFound) {
@@ -609,37 +694,47 @@ func (s *Server) getIssueForBranch(ctx context.Context, _ store.Caller, args str
 	if err != nil {
 		return nil, err
 	}
-	return s.newIssueOutput(ctx, issue)
+	return s.issueView(ctx, issue, args.Include)
 }
 
 func (s *Server) getIssue(ctx context.Context, _ store.Caller, args struct {
-	IssueKey string `json:"issue_key"`
+	IssueKey string   `json:"issue_key"`
+	Include  []string `json:"include"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
 		return nil, err
 	}
-	return s.newIssueOutput(ctx, issue)
+	return s.issueView(ctx, issue, args.Include)
 }
 
 type planOutput struct {
-	IssueKey  string           `json:"issue_key"`
-	Title     string           `json:"title"`
-	Plan      string           `json:"plan"`
-	Revision  int              `json:"plan_revision"`
-	Checklist []checklist.Item `json:"checklist"`
+	IssueKey  string          `json:"issue_key"`
+	Title     string          `json:"title"`
+	Plan      *string         `json:"plan,omitempty"`
+	Revision  int             `json:"plan_revision"`
+	Checklist []checklistItem `json:"checklist"`
+}
+
+// newPlanOutput describes an issue's plan; checklistOnly leaves out the markdown.
+func newPlanOutput(issue store.Issue, checklistOnly bool) planOutput {
+	output := planOutput{IssueKey: issue.Key(), Title: issue.Title, Revision: issue.PlanRevision, Checklist: checklistItems(issue.Plan)}
+	if !checklistOnly {
+		plan := issue.Plan
+		output.Plan = &plan
+	}
+	return output
 }
 
 func (s *Server) getPlan(ctx context.Context, _ store.Caller, args struct {
-	IssueKey string `json:"issue_key"`
+	IssueKey      string `json:"issue_key"`
+	ChecklistOnly bool   `json:"checklist_only"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
 		return nil, err
 	}
-	return planOutput{
-		IssueKey: issue.Key(), Title: issue.Title, Plan: issue.Plan, Revision: issue.PlanRevision, Checklist: checklist.Items(issue.Plan),
-	}, nil
+	return newPlanOutput(issue, args.ChecklistOnly), nil
 }
 
 func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, args struct {
@@ -670,7 +765,7 @@ func (s *Server) updatePlanChecklist(ctx context.Context, caller store.Caller, a
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"issue_key": issue.Key(), "checklist": checklist.Items(issue.Plan)}, nil
+	return map[string]any{"issue_key": issue.Key(), "checklist": checklistItems(issue.Plan)}, nil
 }
 
 func (s *Server) startReviewRound(ctx context.Context, caller store.Caller, args struct {
@@ -688,7 +783,7 @@ func (s *Server) startReviewRound(ctx context.Context, caller store.Caller, args
 	if err != nil {
 		return nil, err
 	}
-	return s.newRoundOutput(issue, round, nil), nil
+	return s.newRoundOutput(issue, round, nil, true), nil
 }
 
 func (s *Server) addFinding(ctx context.Context, caller store.Caller, args struct {
@@ -719,7 +814,7 @@ func (s *Server) addFinding(ctx context.Context, caller store.Caller, args struc
 		return nil, err
 	}
 
-	outputs, err := s.newFindingOutputs(ctx, issue, []store.Finding{finding})
+	outputs, err := s.echoFindingOutputs(ctx, issue, []store.Finding{finding})
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +846,7 @@ func (s *Server) finishReviewRound(ctx context.Context, caller store.Caller, arg
 	if err != nil {
 		return nil, err
 	}
-	return s.newRoundOutput(issue, round, findings), nil
+	return s.newRoundOutput(issue, round, findings, true), nil
 }
 
 func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args struct {
@@ -764,7 +859,7 @@ func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args stru
 	if err != nil {
 		return nil, err
 	}
-	limit, offset, hash, err := args.bounds([]any{"open_findings", issue.ID, args.Statuses})
+	limit, offset, hash, err := args.bounds([]any{"open_findings", issue.ID, args.Statuses}, pageSizeDiscussion)
 	if err != nil {
 		return nil, err
 	}
@@ -780,7 +875,7 @@ func (s *Server) listOpenFindings(ctx context.Context, _ store.Caller, args stru
 		return nil, err
 	}
 	findings, cursor := pageSlice(findings, limit, offset, hash)
-	outputs, err := s.findingOutputs(ctx, issue, findings, args.IncludeComments == nil || *args.IncludeComments)
+	outputs, err := s.findingOutputs(ctx, issue, findings, findingView{Comments: args.IncludeComments == nil || *args.IncludeComments, Detail: true})
 	if err != nil {
 		return nil, err
 	}
@@ -813,7 +908,7 @@ func (s *Server) setFindingStatus(ctx context.Context, caller store.Caller, args
 		return nil, err
 	}
 
-	outputs, err := s.newFindingOutputs(ctx, issue, []store.Finding{finding})
+	outputs, err := s.echoFindingOutputs(ctx, issue, []store.Finding{finding})
 	if err != nil {
 		return nil, err
 	}
@@ -863,7 +958,7 @@ func (s *Server) markDuplicate(ctx context.Context, caller store.Caller, args st
 	if err != nil {
 		return nil, err
 	}
-	outputs, err := s.newFindingOutputs(ctx, issue, []store.Finding{finding})
+	outputs, err := s.echoFindingOutputs(ctx, issue, []store.Finding{finding})
 	if err != nil {
 		return nil, err
 	}
@@ -923,7 +1018,7 @@ func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
 		about = fmt.Sprintf("%s round %d %s", issue.Key(), finding.RoundNumber, finding.Label())
 	}
 
-	limit, offset, hash, err := args.bounds([]string{"comments", issue.ID, findingID})
+	limit, offset, hash, err := args.bounds([]string{"comments", issue.ID, findingID}, pageSizeDiscussion)
 	if err != nil {
 		return nil, err
 	}
@@ -932,7 +1027,7 @@ func (s *Server) listComments(ctx context.Context, _ store.Caller, args struct {
 		return nil, err
 	}
 	comments, cursor := pageSlice(comments, limit, offset, hash)
-	outputs, err := newCommentOutputs(ctx, newActorNames(s.store), comments)
+	outputs, err := newCommentOutputs(ctx, newActorNames(s.store), comments, true)
 	if err != nil {
 		return nil, err
 	}
@@ -968,7 +1063,7 @@ func (s *Server) postFixSummary(ctx context.Context, caller store.Caller, args s
 		return nil, err
 	}
 
-	outputs, err := s.newFindingOutputs(ctx, issue, fixed)
+	outputs, err := s.echoFindingOutputs(ctx, issue, fixed)
 	if err != nil {
 		return nil, err
 	}

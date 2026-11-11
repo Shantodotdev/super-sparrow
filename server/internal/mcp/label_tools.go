@@ -16,41 +16,37 @@ func (s *Server) labelTools() []tool {
 	return []tool{
 		{
 			name:        "list_labels",
-			title:       "List labels",
 			description: "List a project's labels with their colors, in name order.",
-			schema:      object([]string{"project_key"}, map[string]any{"project_key": text("Project key from list_projects.")}),
+			schema:      object([]string{"project_key"}, map[string]any{"project_key": text("")}),
 			readOnly:    true,
-			run:         bind(s.listLabels),
+			run:         bind((*Server).listLabels),
 		},
 		{
-			name:  "create_label",
-			title: "Create a label",
+			name: "create_label",
 			description: "Create a label in a project so issues and subissues can use it. Names are unique within a project. " +
 				"Without a color the label gets the default blue.",
 			schema: object([]string{"project_key", "name"}, map[string]any{
-				"project_key": text("Project key from list_projects."), "name": text("The label's name, up to 50 characters."), "color": color,
+				"project_key": text(""), "name": text("The label's name, up to 50 characters."), "color": color,
 			}),
-			run: bind(s.createLabel),
+			run: bind((*Server).createLabel),
 		},
 		{
 			name:        "update_label",
-			title:       "Edit a label",
 			description: "Rename or recolor a label. Issues and subissues that use it keep it.",
 			schema: object([]string{"project_key", "name"}, map[string]any{
-				"project_key": text("Project key from list_projects."), "name": text("The label's current name."),
+				"project_key": text(""), "name": text("The label's current name."),
 				"new_name": text("The new name."), "color": color,
 			}),
-			run: bind(s.updateLabel),
+			run: bind((*Server).updateLabel),
 		},
 		{
-			name:  "set_labels",
-			title: "Set labels on an issue or subissue",
+			name: "set_labels",
 			description: "Replace the labels of an issue, or of one of its subissues when subissue_key is given. " +
 				"Labels must already exist in the issue's project; create missing ones with create_label.",
 			schema: object([]string{"issue_key", "labels"}, map[string]any{
 				"issue_key": issueKey, "subissue_key": text("A subissue key from list_subissues, such as WP-142.1."), "labels": labelNames,
 			}),
-			run: bind(s.setLabels),
+			run: bind((*Server).setLabels),
 		},
 	}
 }

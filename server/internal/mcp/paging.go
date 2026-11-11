@@ -17,11 +17,19 @@ type pageArgs struct {
 	Cursor string `json:"cursor"`
 }
 
-// bounds validates the page size and decodes a cursor for exactly this query scope.
-func (p pageArgs) bounds(scope any) (int, int, string, error) {
+// Default page sizes, used when a list tool gets no limit. Tools whose rows carry discussions
+// default to smaller pages; a cursor continues any list.
+const (
+	pageSizeRows       = 50
+	pageSizeDiscussion = 20
+)
+
+// bounds validates the page size and decodes a cursor for exactly this query scope. fallback is
+// the page size when the caller sent no limit.
+func (p pageArgs) bounds(scope any, fallback int) (int, int, string, error) {
 	raw, _ := json.Marshal(scope)
 	hash := fmt.Sprintf("%x", sha256.Sum256(raw))
-	limit := 50
+	limit := fallback
 	if p.Limit != nil {
 		limit = *p.Limit
 	}

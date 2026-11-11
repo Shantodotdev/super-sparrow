@@ -100,7 +100,8 @@ func TestMCPHandshakeAndToolList(t *testing.T) {
 		names = append(names, tool["name"].(string))
 	}
 	want := "get_issue_for_branch,get_issue,get_plan,update_plan_checklist,start_review_round,add_finding," +
-		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue,list_projects,list_issues,update_plan,list_subissues,create_subissue,update_subissue,get_review_round,get_finding,list_review_rounds,list_labels,create_label,update_label,set_labels,list_attachments,get_attachment"
+		"finish_review_round,list_open_findings,set_finding_status,mark_duplicate,add_comment,list_comments,post_fix_summary,create_issue,list_projects,list_issues,update_plan,list_subissues,create_subissue,update_subissue,get_review_round,get_finding,list_review_rounds,list_labels,create_label,update_label,set_labels,list_attachments,get_attachment," +
+		"update_issue,list_my_issues,add_findings,submit_review"
 	if strings.Join(names, ",") != want {
 		t.Fatalf("tools %v", names)
 	}
@@ -243,6 +244,73 @@ func TestMCPToolsRunTheReviewLoopAsTheAgent(t *testing.T) {
 		"comment.added,finding.status_changed,comment.added,finding.status_changed,issue.created"
 	if strings.Join(kinds, ",") != want {
 		t.Fatalf("agent events %v", kinds)
+	}
+}
+
+func TestMCPWorkflowToolsRecordTheAgent(t *testing.T) {
+	a := newAPITeam(t)
+	created := a.project()
+
+	// The person's issue is found through the agent's token, moved, and reviewed in single calls.
+	agent := a.agentActor()
+	if _, err := a.store.UpdateIssue(context.Background(), store.Caller{ActorID: agent.OwnerActorID}, created.ID, store.IssueUpdate{AssigneeActorID: store.Change(agent.OwnerActorID)}); err != nil {
+		t.Fatal(err)
+	}
+	var mine struct {
+		Issues []struct {
+			Key string `json:"key"`
+		} `json:"issues"`
+	}
+	a.mustTool("list_my_issues", map[string]any{}, &mine)
+	if len(mine.Issues) != 1 || mine.Issues[0].Key != "WP-1" {
+		t.Fatalf("my issues %+v", mine)
+	}
+
+	a.mustTool("update_issue", map[string]any{"issue_key": "WP-1", "status": "in_progress", "idempotency_key": "start-work"}, nil)
+	var review struct {
+		Round struct {
+			Round int `json:"round"`
+		} `json:"round"`
+		Findings []string `json:"findings"`
+	}
+	args := map[string]any{
+		"issue_key": "WP-1", "summary": "Two problems.", "idempotency_key": "whole-review",
+		"findings": []map[string]any{
+			{"severity": "blocking", "title": "Race", "problem": "P", "fix": "F", "file_path": "a.go", "line": 4},
+			{"severity": "nit", "title": "Name", "problem": "P", "fix": "F"},
+		},
+	}
+	a.mustTool("submit_review", args, &review)
+	if review.Round.Round != 1 || strings.Join(review.Findings, ",") != "R1,R2" {
+		t.Fatalf("review %+v", review)
+	}
+	a.mustTool("submit_review", args, &review)
+	if review.Round.Round != 1 {
+		t.Fatalf("a retried review answered %+v", review)
+	}
+
+	var issue struct {
+		OpenFindings []struct {
+			Finding string `json:"finding"`
+		} `json:"open_findings"`
+		Plan      string `json:"plan"`
+		Checklist string `json:"checklist"`
+	}
+	a.mustTool("get_issue", map[string]any{"issue_key": "WP-1", "include": []string{"plan", "findings"}}, &issue)
+	if len(issue.OpenFindings) != 2 || !strings.Contains(issue.Plan, "Migration") || issue.Checklist != "0 of 2 items done" {
+		t.Fatalf("issue with sections %+v", issue)
+	}
+
+	events, err := a.store.ListEvents(context.Background(), store.EventFilter{ActorID: agent.ID, ProjectEventsOnly: true, Limit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, event := range events {
+		kinds = append(kinds, event.Kind)
+	}
+	if got, want := strings.Join(kinds, ","), "issue.created,issue.status_changed,review_round.started,finding.added,finding.added,review_round.finished"; got != want {
+		t.Fatalf("agent events %s, want %s", got, want)
 	}
 }
 
