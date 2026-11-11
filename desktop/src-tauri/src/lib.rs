@@ -205,8 +205,7 @@ fn apply_shortcut(app: &AppHandle, label: &str, paused: bool) -> Result<(), Stri
     if let Ok(item) = app.state::<CaptureMenu>().0.lock()
         && let Some(item) = item.as_ref()
     {
-        let accelerator = label.replace("Meta+", "Super+");
-        item.set_accelerator((!paused).then_some(accelerator.as_str()))
+        item.set_accelerator(menu_accelerator(label, paused).as_deref())
             .map_err(|error| error.to_string())?;
     }
     if let Some(tray) = app.tray_by_id("main") {
@@ -223,6 +222,16 @@ fn active_shortcut(app: &AppHandle) -> (String, bool) {
         .lock()
         .map(|current| current.clone())
         .unwrap_or_else(|_| (shortcut::DEFAULT_SHORTCUT.to_string(), true))
+}
+
+/// Returns the accelerator the tray's capture item shows, or None when it shows none. Windows
+/// menus cannot show the Windows key, and the menu library refuses to build an item that names
+/// it, so on Windows a Meta binding is left off the menu; the tooltip still names it.
+fn menu_accelerator(label: &str, paused: bool) -> Option<String> {
+    if paused || (cfg!(target_os = "windows") && label.split('+').any(|part| part == "Meta")) {
+        return None;
+    }
+    Some(label.replace("Meta+", "Super+"))
 }
 
 /// Shortens text to at most max characters, ending it with an ellipsis when cut.
@@ -331,14 +340,14 @@ fn hide_on_close(window: &WebviewWindow) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let (label, paused) = active_shortcut(app);
-    let native_label = label.replace("Meta+", "Super+");
+    let accelerator = menu_accelerator(&label, paused);
     let open = MenuItem::with_id(app, "open", "Open Super Sparrow", true, None::<&str>)?;
     let capture = MenuItem::with_id(
         app,
         "capture",
         "Quick capture",
         true,
-        (!paused).then_some(native_label.as_str()),
+        accelerator.as_deref(),
     )?;
     let shortcut_settings =
         MenuItem::with_id(app, "shortcuts", "Keyboard shortcuts…", true, None::<&str>)?;
@@ -437,7 +446,7 @@ fn sanitize(origin: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{tooltip, truncate};
+    use super::{menu_accelerator, tooltip, truncate};
 
     #[test]
     fn truncate_keeps_short_text_and_cuts_long_text_by_characters() {
@@ -453,5 +462,22 @@ mod tests {
             "Super Sparrow · Ctrl+Shift+Q to capture"
         );
         assert!(tooltip("Ctrl+Q", true).contains("paused"));
+    }
+
+    #[test]
+    fn menu_accelerator_leaves_out_paused_and_windows_key_bindings() {
+        assert_eq!(
+            menu_accelerator("Ctrl+Shift+Q", false).as_deref(),
+            Some("Ctrl+Shift+Q")
+        );
+        assert_eq!(menu_accelerator("Ctrl+Shift+Q", true), None);
+        assert_eq!(menu_accelerator("Meta+Shift+Q", true), None);
+
+        let meta = menu_accelerator("Meta+Shift+Q", false);
+        if cfg!(target_os = "windows") {
+            assert_eq!(meta, None);
+        } else {
+            assert_eq!(meta.as_deref(), Some("Super+Shift+Q"));
+        }
     }
 }
