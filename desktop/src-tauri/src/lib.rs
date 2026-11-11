@@ -309,6 +309,9 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .visible(show)
+        // Tauri's file-drop handler swallows the page's own drag and drop, which moves
+        // issues between statuses, and crashes WebKitGTK on Linux.
+        .disable_drag_drop_handler()
         .build()?;
     hide_on_close(&main);
     Ok(())
@@ -334,6 +337,7 @@ fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWind
         .skip_taskbar(true)
         .center()
         .focused(true)
+        .disable_drag_drop_handler()
         .build()?;
     hide_on_close(&window);
     Ok(window)
