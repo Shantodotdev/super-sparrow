@@ -19,6 +19,7 @@ import { Avatar } from "./avatar";
 import { useActorTitle } from "./person";
 import { Icon } from "./icon";
 import { IssueDragPreview } from "./issue-drag-preview";
+import { useIssueContextMenu } from "./issue-context-menu";
 import { LabelChips } from "./label-chips";
 
 const groupBackground: Record<IssueStatus, string> = {
@@ -52,6 +53,7 @@ export function IssueList({
   const actor = useActor();
   const actorTitle = useActorTitle();
   const moveIssue = useMoveIssueStatus();
+  const contextMenu = useIssueContextMenu();
   const draggedRef = useRef<Issue | undefined>(undefined);
   const dragOrigin = useRef({ x: 0, y: 0 });
   const listRef = useRef<HTMLDivElement>(null);
@@ -167,10 +169,13 @@ export function IssueList({
                             : dropTarget === status
                               ? "opacity-35"
                               : ""
-                          : ""
+                          : contextMenu.activeId === issue.id
+                            ? "bg-[#18191a]"
+                            : ""
                       } grid min-h-[45px] w-[calc(100%-24px)] grid-cols-[20px_20px_90px_minmax(210px,1fr)_230px_60px] items-center gap-[15px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left text-[13px] [transition:background-color_160ms_ease,opacity_160ms_ease] hover:bg-[#18191a] focus:outline-none focus-visible:bg-[#18191a] motion-reduce:[transition:none] max-[1100px]:grid-cols-[20px_20px_90px_minmax(180px,1fr)_170px_60px] max-[700px]:min-w-[660px] [&_.label-chip]:text-[13px]`}
                       key={issue.key}
                       draggable
+                      onContextMenu={contextMenu.open(issue)}
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData("text/plain", issue.key);
@@ -236,6 +241,7 @@ export function IssueList({
           </section>
         );
       })}
+      {contextMenu.menu}
       {dragged && <IssueDragPreview issue={dragged} origin={dragOrigin.current} />}
       {!issues.length && (
         <div className="mx-auto my-40 max-w-120 p-[24px] text-center text-[#93a0b2] [&_h2]:mx-0 [&_h2]:mt-[18px] [&_h2]:mb-2 [&_h2]:text-[#e9edf5]">

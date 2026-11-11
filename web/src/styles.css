@@ -197,3 +197,44 @@
     @apply w-full rounded-xl px-3 py-2;
   }
 }
+
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes context-menu-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes context-submenu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+.context-menu {
+  transform-origin: top left;
+  animation: context-menu-in 120ms ease-out;
+}
+
+.context-menu[data-closing] {
+  animation: context-menu-out 90ms ease-in forwards;
+  pointer-events: none;
+}
+
+.context-submenu {
+  animation: context-submenu-in 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-menu,
+  .context-submenu {
+    animation: none;
+  }
+}

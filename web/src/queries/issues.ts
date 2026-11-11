@@ -106,24 +106,22 @@ export function usePatchIssue(key: string) {
   return mutation;
 }
 
-/** Moves an issue to another status, showing the move at once and rolling it back if the server refuses. */
-export function useMoveIssueStatus() {
+/** Changes properties of an issue, showing the change at once and rolling it back if the server refuses. */
+export function useQuickPatchIssue() {
   const client = useQueryClient();
   const { notify } = useToast();
   const isIssueList = (key: readonly unknown[]) => key[0] === "issues";
   const mutation = useMutation({
-    mutationFn: ({ issue, status }: { issue: Issue; status: IssueStatus }) =>
-      apiWrite<{ issue: Issue }>(`/api/issues/${encodeURIComponent(issue.key)}`, "PATCH", {
-        status,
-      }),
-    onMutate: async ({ issue, status }) => {
+    mutationFn: ({ issue, change }: { issue: Issue; change: Partial<Issue> }) =>
+      apiWrite<{ issue: Issue }>(`/api/issues/${encodeURIComponent(issue.key)}`, "PATCH", change),
+    onMutate: async ({ issue, change }) => {
       await client.cancelQueries({ predicate: (query) => isIssueList(query.queryKey) });
       const previous = client.getQueriesData<Issue[]>({
         predicate: (query) => isIssueList(query.queryKey),
       });
       client.setQueriesData<Issue[]>(
         { predicate: (query) => isIssueList(query.queryKey) },
-        (current) => current?.map((item) => (item.id === issue.id ? { ...item, status } : item)),
+        (current) => current?.map((item) => (item.id === issue.id ? { ...item, ...change } : item)),
       );
 
       return { previous };
@@ -140,5 +138,12 @@ export function useMoveIssueStatus() {
     },
   });
 
-  return (issue: Issue, status: IssueStatus) => mutation.mutate({ issue, status });
+  return (issue: Issue, change: Partial<Issue>) => mutation.mutate({ issue, change });
+}
+
+/** Moves an issue to another status. */
+export function useMoveIssueStatus() {
+  const patchIssue = useQuickPatchIssue();
+
+  return (issue: Issue, status: IssueStatus) => patchIssue(issue, { status });
 }

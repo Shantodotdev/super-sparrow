@@ -6,6 +6,7 @@ import { issueStatusLabel, issueStatuses, statusIcon } from "../lib/issue-status
 import { slugify } from "../lib/format";
 import type { Issue, IssueStatus } from "../lib/types";
 import { Icon } from "./icon";
+import { useIssueContextMenu } from "./issue-context-menu";
 import { LabelChips } from "./label-chips";
 import { Person } from "./person";
 
@@ -19,6 +20,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
   const projectSlug = useProjectSlugs();
   const columns = issueStatuses.filter((status) => !statusFilter || status === statusFilter);
   const moveIssue = useMoveIssueStatus();
+  const contextMenu = useIssueContextMenu();
   const draggedRef = useRef<Issue | undefined>(undefined);
   const [dragged, setDragged] = useState<Issue | undefined>();
   const [dropTarget, setDropTarget] = useState<IssueStatus | undefined>();
@@ -88,9 +90,10 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
                 <Link
                   className={`flex w-full cursor-grab flex-col items-start gap-[10px] rounded-[8px] border border-[#252b35] bg-[#12151a] p-[13px] text-left transition-opacity duration-150 active:cursor-grabbing ${
                     dragged?.id === issue.id ? "opacity-40" : ""
-                  } hover:border-[#5873c7] hover:bg-[#171d28] focus:outline-none focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]`}
+                  } ${contextMenu.activeId === issue.id ? "border-[#5873c7] bg-[#171d28]" : ""} hover:border-[#5873c7] hover:bg-[#171d28] focus:outline-none focus-visible:border-[#5873c7] focus-visible:bg-[#171d28]`}
                   key={issue.key}
                   draggable
+                  onContextMenu={contextMenu.open(issue)}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
                     event.dataTransfer.setData("text/plain", issue.key);
@@ -132,6 +135,7 @@ export function IssueBoard({ issues, statusFilter }: IssueBoardProps) {
           </section>
         );
       })}
+      {contextMenu.menu}
     </div>
   );
 }
