@@ -297,3 +297,32 @@ func TestAttachmentEventsReachTheStream(t *testing.T) {
 		t.Fatalf("events %+v", after.Events)
 	}
 }
+
+func TestSubissueAndFindingAttachmentsAreListedSeparately(t *testing.T) {
+	a := newAPITeam(t)
+	issue := a.project()
+
+	var created struct {
+		Subissue subissueView `json:"subissue"`
+	}
+	a.call(http.MethodPost, "/api/issues/"+issue.Key+"/subissues", a.member, map[string]any{"title": "Child", "status": "todo"}, http.StatusCreated, &created)
+	subissuePath := "/api/issues/" + issue.Key + "/subissues/" + created.Subissue.ID + "/attachments"
+
+	var begun beginResponse
+	a.call(http.MethodPost, subissuePath, a.member, map[string]any{"filename": "child.png", "content_type": "image/png", "byte_size": len(pngBytes)}, http.StatusCreated, &begun)
+	if begun.Attachment.SubissueID != created.Subissue.ID || begun.Attachment.FindingID != "" {
+		t.Fatalf("begun %+v", begun.Attachment)
+	}
+	a.objects.Put(begun.Attachment.ID, pngBytes)
+	a.call(http.MethodPost, "/api/attachments/"+begun.Attachment.ID+"/complete", a.member, nil, http.StatusOK, nil)
+
+	var onSubissue, onIssue attachmentList
+	a.call(http.MethodGet, subissuePath, a.owner, nil, http.StatusOK, &onSubissue)
+	a.call(http.MethodGet, attachmentsPath(issue.Key), a.owner, nil, http.StatusOK, &onIssue)
+	if len(onSubissue.Attachments) != 1 || onSubissue.Attachments[0].ID != begun.Attachment.ID || len(onIssue.Attachments) != 0 {
+		t.Fatalf("subissue list %+v, issue list %+v", onSubissue, onIssue)
+	}
+
+	a.call(http.MethodPost, "/api/issues/"+issue.Key+"/subissues/missing/attachments", a.member,
+		map[string]any{"filename": "x.png", "content_type": "image/png", "byte_size": 5}, http.StatusNotFound, nil)
+}

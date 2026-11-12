@@ -4,10 +4,11 @@ import { Download, File as FileIcon, FileText, Trash2 } from "lucide-react";
 import { useFileDrop } from "../hooks/use-file-drop";
 import { attachmentKind, formatBytes } from "../lib/attachments";
 import { formatRelative } from "../lib/format";
-import type { Attachment, Issue } from "../lib/types";
+import type { Attachment } from "../lib/types";
 import {
-  issueAttachmentsQuery,
+  attachmentsQuery,
   useAttachmentUploads,
+  type AttachmentScope,
   useDeleteAttachment,
   type UploadJob,
 } from "../queries/attachments";
@@ -19,14 +20,20 @@ const iconButton =
   "grid place-items-center rounded-md border-0 bg-transparent p-1.5 text-[#9ba9bc] hover:bg-[#1b2027] hover:text-[#d7dfeb]";
 
 /**
- * An issue's files, listed below its description. Files are added with the button,
- * or by dropping them on the panel, and upload straight away.
+ * The files of an issue, a subissue, or a finding. Files are added with the button, or by
+ * dropping them on the panel, and upload straight away.
  */
-export function AttachmentsPanel({ issue }: { issue: Issue }) {
-  const attachments = useQuery(issueAttachmentsQuery(issue.key));
+export function AttachmentsPanel({
+  scope,
+  className = "mt-6 max-w-[850px]",
+}: {
+  scope: AttachmentScope;
+  className?: string;
+}) {
+  const attachments = useQuery(attachmentsQuery(scope));
   const me = useQuery(meQuery);
   const uploads = useAttachmentUploads();
-  const deleteAttachment = useDeleteAttachment(issue.key);
+  const deleteAttachment = useDeleteAttachment(scope);
   const actor = useActor();
   const [problems, setProblems] = useState<string[]>([]);
   const [preview, setPreview] = useState<Attachment | null>(null);
@@ -35,7 +42,7 @@ export function AttachmentsPanel({ issue }: { issue: Issue }) {
   keptDeleting.current = deleting ?? keptDeleting.current;
 
   const upload = async (jobs: UploadJob[]) => {
-    const failed = await uploads.start(issue.key, jobs);
+    const failed = await uploads.start(scope, jobs);
     for (const job of jobs) {
       if (!failed.some((item) => item.id === job.id)) uploads.remove(job.id);
     }
@@ -56,7 +63,7 @@ export function AttachmentsPanel({ issue }: { issue: Issue }) {
     <section
       aria-label="Attachments"
       tabIndex={0}
-      className={`mt-6 max-w-[850px] rounded-xl border bg-[#0d0f12] p-3 outline-none focus-visible:border-[#3a4a78] ${dragging ? "border-[#426fff] bg-[#10141c]" : "border-[#222730]"}`}
+      className={`${className} rounded-xl border bg-[#0d0f12] p-3 outline-none focus-visible:border-[#3a4a78] ${dragging ? "border-[#426fff] bg-[#10141c]" : "border-[#222730]"}`}
       {...handlers}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -125,7 +132,7 @@ export function AttachmentsPanel({ issue }: { issue: Issue }) {
         label="Delete attachment"
       >
         <h2>Delete “{keptDeleting.current?.filename}”?</h2>
-        <p className="muted text-[#a2aec2]">The file is removed from the issue for everyone.</p>
+        <p className="muted text-[#a2aec2]">The file is removed for everyone.</p>
         <div className="mt-[22px] flex justify-end gap-[8px]">
           <button
             autoFocus

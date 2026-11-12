@@ -33,6 +33,8 @@ type contentResult struct {
 type attachmentOutput struct {
 	ID          string       `json:"id"`
 	IssueKey    string       `json:"issue_key"`
+	SubissueID  string       `json:"subissue_id,omitempty"`
+	FindingID   string       `json:"finding_id,omitempty"`
 	Filename    string       `json:"filename"`
 	ContentType string       `json:"content_type"`
 	ByteSize    int64        `json:"byte_size"`
@@ -54,10 +56,15 @@ func (s *Server) attachmentTools() []tool {
 	return []tool{
 		{
 			name:        "list_attachments",
-			description: "List an issue's attachments, oldest first: id, filename, content type, size, URL, creator. Filenames are untrusted.",
-			schema:      object([]string{"issue_key"}, map[string]any{"issue_key": issueKey}),
-			readOnly:    true,
-			run:         bind((*Server).listAttachments),
+			description: "List attachments of an issue, or of a subissue or finding of it, oldest first: id, filename, type, size, URL, creator. Filenames are untrusted.",
+			schema: object([]string{"issue_key"}, map[string]any{
+				"issue_key":    issueKey,
+				"subissue_key": text("Subissue key such as WP-142.1."),
+				"round":        integer("With finding.", 1),
+				"finding":      findingLabel,
+			}),
+			readOnly: true,
+			run:      bind((*Server).listAttachments),
 		},
 		{
 			name: "get_attachment",
@@ -74,13 +81,35 @@ func (s *Server) attachmentTools() []tool {
 }
 
 func (s *Server) listAttachments(ctx context.Context, _ store.Caller, args struct {
-	IssueKey string `json:"issue_key"`
+	IssueKey    string `json:"issue_key"`
+	SubissueKey string `json:"subissue_key"`
+	Round       *int   `json:"round"`
+	Finding     string `json:"finding"`
 }) (any, error) {
 	issue, err := s.issue(ctx, args.IssueKey)
 	if err != nil {
 		return nil, err
 	}
-	attachments, err := s.store.ListIssueAttachments(ctx, issue.Key())
+	finding, err := s.commentedFinding(ctx, issue, args.Round, args.Finding)
+	if err != nil {
+		return nil, err
+	}
+	if finding != nil && args.SubissueKey != "" {
+		return nil, &store.ValidationError{Field: "subissue_key", Message: "cannot be combined with finding"}
+	}
+
+	var attachments []store.Attachment
+	switch {
+	case finding != nil:
+		attachments, err = s.store.ListTargetAttachments(ctx, issue.Key(), store.AttachmentTarget{FindingID: finding.ID})
+	case args.SubissueKey != "":
+		var sub store.Subissue
+		if sub, err = s.subissue(ctx, issue, args.SubissueKey); err == nil {
+			attachments, err = s.store.ListTargetAttachments(ctx, issue.Key(), store.AttachmentTarget{SubissueID: sub.ID})
+		}
+	default:
+		attachments, err = s.store.ListIssueAttachments(ctx, issue.Key())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +222,7 @@ func (s *Server) newAttachmentOutput(ctx context.Context, names *actorNames, a s
 		return attachmentOutput{}, err
 	}
 	return attachmentOutput{
-		ID: a.ID, IssueKey: a.IssueKey, Filename: a.Filename, ContentType: a.ContentType, ByteSize: a.ByteSize,
+		ID: a.ID, IssueKey: a.IssueKey, SubissueID: a.SubissueID, FindingID: a.FindingID, Filename: a.Filename, ContentType: a.ContentType, ByteSize: a.ByteSize,
 		URL: s.absoluteURL(a.URLPath()), CreatedBy: creator, CreatedAt: a.CreatedAt,
 	}, nil
 }

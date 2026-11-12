@@ -168,6 +168,10 @@ func New(opts Options) http.Handler {
 	s.route("POST /api/issues/{key}/attachments", signedIn, s.beginAttachment)
 	s.route("POST /api/attachments/{id}/complete", signedIn, s.completeAttachment)
 	s.route("GET /api/issues/{key}/attachments", signedIn, s.listAttachments)
+	s.route("POST /api/issues/{key}/subissues/{subissue}/attachments", signedIn, s.beginSubissueAttachment)
+	s.route("GET /api/issues/{key}/subissues/{subissue}/attachments", signedIn, s.listSubissueAttachments)
+	s.route("POST /api/issues/{key}/reviews/{round}/findings/{finding}/attachments", signedIn, s.beginFindingAttachment)
+	s.route("GET /api/issues/{key}/reviews/{round}/findings/{finding}/attachments", signedIn, s.listFindingAttachments)
 	s.route("GET /api/attachments/{id}", signedIn, s.downloadAttachment)
 	s.route("DELETE /api/attachments/{id}", humanOnly, s.deleteAttachment)
 

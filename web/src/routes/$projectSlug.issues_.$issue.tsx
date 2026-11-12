@@ -225,7 +225,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
           {tab === "plan" && (
             <>
               <IssuePlan key={issue.id} issue={issue} />
-              <AttachmentsPanel key={`attachments-${issue.id}`} issue={issue} />
+              <AttachmentsPanel key={`attachments-${issue.id}`} scope={{ issueKey: issue.key }} />
             </>
           )}
           {tab === "subissues" && <SubissueList key={issue.id} issue={issue} />}

@@ -398,3 +398,72 @@ func TestDeletingAProjectRemovesItsAttachmentObjects(t *testing.T) {
 		t.Fatalf("rows %v", list)
 	}
 }
+
+func TestAttachmentsBelongToTheirSubissueOrFinding(t *testing.T) {
+	tm := newTeam(t)
+	r := tm.reviewed(t)
+	child := got(tm.store.CreateSubissue(tm.ctx, tm.agent, r.issue.ID, NewSubissue{Title: "Child", Status: IssueTodo})).must(t)
+	key := r.issue.Key()
+
+	begin := func(target AttachmentTarget, name string) Attachment {
+		t.Helper()
+		attachment, _, err := tm.store.BeginTargetAttachment(tm.ctx, tm.member, key, target, name, "text/plain", 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tm.objects.Put(attachment.ID, []byte("hello"))
+		return got(tm.store.CompleteAttachment(tm.ctx, tm.member, attachment.ID)).must(t)
+	}
+	onIssue := begin(AttachmentTarget{}, "issue.txt")
+	onChild := begin(AttachmentTarget{SubissueID: child.ID}, "child.txt")
+	onFinding := begin(AttachmentTarget{FindingID: r.finding.ID}, "finding.txt")
+
+	if onChild.SubissueID != child.ID || onChild.FindingID != "" || onFinding.FindingID != r.finding.ID || onFinding.SubissueID != "" {
+		t.Fatalf("targets: child %+v, finding %+v", onChild, onFinding)
+	}
+
+	names := func(list []Attachment) []string {
+		out := []string{}
+		for _, item := range list {
+			out = append(out, item.Filename)
+		}
+		return out
+	}
+	if list := got(tm.store.ListIssueAttachments(tm.ctx, key)).must(t); len(list) != 1 || list[0].ID != onIssue.ID {
+		t.Errorf("issue list %v, want only issue.txt", names(list))
+	}
+	if list := got(tm.store.ListTargetAttachments(tm.ctx, key, AttachmentTarget{SubissueID: child.ID})).must(t); len(list) != 1 || list[0].ID != onChild.ID {
+		t.Errorf("subissue list %v, want only child.txt", names(list))
+	}
+	if list := got(tm.store.ListTargetAttachments(tm.ctx, key, AttachmentTarget{FindingID: r.finding.ID})).must(t); len(list) != 1 || list[0].ID != onFinding.ID {
+		t.Errorf("finding list %v, want only finding.txt", names(list))
+	}
+}
+
+func TestAttachmentTargetsMustBeOnTheSameIssue(t *testing.T) {
+	tm := newTeam(t)
+	r := tm.reviewed(t)
+	other := tm.issue(t, r.issue.ProjectID, "Other")
+	otherChild := got(tm.store.CreateSubissue(tm.ctx, tm.agent, other.ID, NewSubissue{Title: "Child", Status: IssueTodo})).must(t)
+	child := got(tm.store.CreateSubissue(tm.ctx, tm.agent, r.issue.ID, NewSubissue{Title: "Child", Status: IssueTodo})).must(t)
+
+	cases := map[string]AttachmentTarget{
+		"subissue of another issue": {SubissueID: otherChild.ID},
+		"finding of another issue":  {FindingID: r.finding.ID},
+		"unknown subissue":          {SubissueID: "missing"},
+		"both targets":              {SubissueID: child.ID, FindingID: r.finding.ID},
+	}
+	for name, target := range cases {
+		issueKey := r.issue.Key()
+		if name == "finding of another issue" {
+			issueKey = other.Key()
+		}
+		before := tm.eventCount(t)
+		if _, _, err := tm.store.BeginTargetAttachment(tm.ctx, tm.member, issueKey, target, "a.txt", "text/plain", 5); err == nil {
+			t.Errorf("%s: attachment was started", name)
+		}
+		if tm.eventCount(t) != before {
+			t.Errorf("%s: an event was recorded", name)
+		}
+	}
+}

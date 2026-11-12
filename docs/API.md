@@ -90,7 +90,7 @@ People and agents use the same authenticated endpoints. Actor fields are rejecte
 
 ## Attachments
 
-Files are attached to an issue and shown below its description. They are stored in a dedicated, private Cloudflare R2 bucket (`ATTACHMENTS_R2_BUCKET`), not in the database, and the client uploads straight to R2. The bucket is not backed up, so an object that is lost leaves an attachment row with no file.
+Files are attached to an issue and shown below its description, or to one of its subissues or findings and shown in that subissue or finding. They are stored in a dedicated, private Cloudflare R2 bucket (`ATTACHMENTS_R2_BUCKET`), not in the database, and the client uploads straight to R2. The bucket is not backed up, so an object that is lost leaves an attachment row with no file.
 
 | Method and path                       | Access  | What it does                                                                                                                                                                                                              |
 | ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -102,7 +102,7 @@ Files are attached to an issue and shown below its description. They are stored 
 
 The client sends the file with the `method` and `headers` of `upload` (the `Content-Type` it declared) to `upload.url`. The upload goes to the bucket's origin, so the bucket needs a CORS rule for the app's origin; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Each attachment returns `id`, `project_key`, `issue_key`, `filename`, `content_type`, `byte_size`, `url`, `created_by_actor_id`, and `created_at`. Completed uploads write `attachment.created` and deletions write `attachment.deleted`, on the project.
+The same create and list requests exist under `/api/issues/{key}/subissues/{subissue}/attachments` and `/api/issues/{key}/reviews/{round}/findings/{finding}/attachments`; the issue list holds only the issue's own files. Each attachment returns `id`, `project_key`, `issue_key`, `subissue_id` or `finding_id` when it belongs to one, `filename`, `content_type`, `byte_size`, `url`, `created_by_actor_id`, and `created_at`. Completed uploads write `attachment.created` and deletions write `attachment.deleted`, on the project.
 
 ## Reviews and findings
 

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
 import type { Issue, IssueStatus, Subissue } from "../lib/types";
 import { useSaveSubissue } from "../queries/subissues";
+import { AttachmentsPanel } from "./attachments-panel";
 import { Icon } from "./icon";
 import { Textarea } from "./input";
 import { LabelChips } from "./label-chips";
@@ -187,6 +188,11 @@ function SubissueDetail({
         </p>
       )}
       <SubissueDescription issue={issue} subissue={subissue} />
+      <AttachmentsPanel
+        key={`attachments-${subissue.id}`}
+        scope={{ issueKey: issue.key, subissueId: subissue.id }}
+        className="mt-6 shrink-0"
+      />
     </div>
   );
 }

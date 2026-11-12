@@ -5,21 +5,42 @@ import { attachmentUploadRequest, queueFiles } from "../lib/attachments";
 import type { Attachment } from "../lib/types";
 import { useToast } from "../components/toast";
 
-/** An issue's attachments, oldest first. */
-export const issueAttachmentsQuery = (issueKey: string) =>
+/**
+ * What a set of files belongs to: the issue itself, one of its subissues, or one of its findings.
+ * Setting both `subissueId` and `finding` is not meaningful; `subissueId` wins.
+ */
+export type AttachmentScope = {
+  issueKey: string;
+  subissueId?: string;
+  finding?: { id: string; round: number; number: number };
+};
+
+/** The API path of a scope's attachments. */
+function scopePath({ issueKey, subissueId, finding }: AttachmentScope): string {
+  const issue = `/api/issues/${encodeURIComponent(issueKey)}`;
+  if (subissueId) return `${issue}/subissues/${encodeURIComponent(subissueId)}/attachments`;
+  if (finding) return `${issue}/reviews/${finding.round}/findings/${finding.number}/attachments`;
+  return `${issue}/attachments`;
+}
+
+/** A scope's attachments, oldest first. The issue key leads the query key so live events can refresh every scope of an issue. */
+export const attachmentsQuery = (scope: AttachmentScope) =>
   queryOptions({
-    queryKey: ["attachments", issueKey.toUpperCase()],
+    queryKey: [
+      "attachments",
+      scope.issueKey.toUpperCase(),
+      scope.subissueId ?? scope.finding?.id ?? "",
+    ],
     queryFn: async () =>
-      (
-        await apiGet<{ attachments: Attachment[] }>(
-          `/api/issues/${encodeURIComponent(issueKey)}/attachments`,
-        )
-      ).attachments,
+      (await apiGet<{ attachments: Attachment[] }>(scopePath(scope))).attachments,
   });
 
-/** Adds a stored attachment to its issue's cached list and refreshes the list. */
-function cacheAttachment(client: QueryClient, saved: Attachment) {
-  const key = issueAttachmentsQuery(saved.issue_key).queryKey;
+/** An issue's own attachments, oldest first. */
+export const issueAttachmentsQuery = (issueKey: string) => attachmentsQuery({ issueKey });
+
+/** Adds a stored attachment to its scope's cached list and refreshes the list. */
+function cacheAttachment(client: QueryClient, scope: AttachmentScope, saved: Attachment) {
+  const key = attachmentsQuery(scope).queryKey;
   client.setQueryData<Attachment[]>(key, (current) =>
     current && !current.some((item) => item.id === saved.id) ? [...current, saved] : current,
   );
@@ -27,17 +48,18 @@ function cacheAttachment(client: QueryClient, saved: Attachment) {
 }
 
 /** Deletes an attachment; only people can. */
-export function useDeleteAttachment(issueKey: string) {
+export function useDeleteAttachment(scope: AttachmentScope) {
   const client = useQueryClient();
   const { notify } = useToast();
   return useMutation({
     mutationFn: (attachment: Attachment) =>
       apiWrite<void>(`/api/attachments/${encodeURIComponent(attachment.id)}`, "DELETE"),
     onSuccess: (_, attachment) => {
-      client.setQueryData<Attachment[]>(issueAttachmentsQuery(issueKey).queryKey, (current) =>
+      const key = attachmentsQuery(scope).queryKey;
+      client.setQueryData<Attachment[]>(key, (current) =>
         current?.filter((item) => item.id !== attachment.id),
       );
-      void client.invalidateQueries({ queryKey: issueAttachmentsQuery(issueKey).queryKey });
+      void client.invalidateQueries({ queryKey: key });
     },
     onError: (error) => notify(error.message),
   });
@@ -56,8 +78,8 @@ export type UploadJob = {
 };
 
 /**
- * Tracks files being attached. Files are queued first and uploaded to an issue when `start` is
- * given its key, so a form can queue files before its issue exists. Uploads run one after another
+ * Tracks files being attached. Files are queued first and uploaded when `start` is given an issue
+ * key or a scope, so a form can queue files before its issue exists. Uploads run one after another
  * within a `start` call, and a finished upload lands in the issue's attachment list at once.
  */
 export function useAttachmentUploads() {
@@ -91,7 +113,7 @@ export function useAttachmentUploads() {
     return { added, rejected };
   };
 
-  const upload = async (issueKey: string, job: UploadJob): Promise<boolean> => {
+  const upload = async (scope: AttachmentScope, job: UploadJob): Promise<boolean> => {
     const controller = new AbortController();
     controllers.current.set(job.id, controller);
     patch(job.id, { status: "uploading", progress: 0, error: "" });
@@ -99,7 +121,7 @@ export function useAttachmentUploads() {
 
     try {
       const started = await apiWrite<{ attachment: Attachment; upload: UploadTarget }>(
-        `/api/issues/${encodeURIComponent(issueKey)}/attachments`,
+        scopePath(scope),
         "POST",
         attachmentUploadRequest(job.file),
       );
@@ -112,7 +134,7 @@ export function useAttachmentUploads() {
         `/api/attachments/${encodeURIComponent(pendingId)}/complete`,
         "POST",
       );
-      cacheAttachment(client, attachment);
+      cacheAttachment(client, scope, attachment);
       patch(job.id, { status: "done", progress: 1 });
       return true;
     } catch (failure) {
@@ -134,8 +156,12 @@ export function useAttachmentUploads() {
     }
   };
 
-  /** Uploads the given jobs, or every queued and failed job, to an issue; resolves to the failures. */
-  const start = async (issueKey: string, only?: UploadJob[]): Promise<UploadJob[]> => {
+  /** Uploads the given jobs, or every queued and failed job, to an issue or a scope of it; resolves to the failures. */
+  const start = async (
+    target: string | AttachmentScope,
+    only?: UploadJob[],
+  ): Promise<UploadJob[]> => {
+    const scope = typeof target === "string" ? { issueKey: target } : target;
     const ids = new Set((only ?? current.current).map((job) => job.id));
     const pending = current.current.filter(
       (job) => ids.has(job.id) && (job.status === "queued" || job.status === "failed"),
@@ -144,7 +170,7 @@ export function useAttachmentUploads() {
     for (const job of pending) {
       // A job removed while an earlier one uploaded is skipped.
       if (!current.current.some((item) => item.id === job.id)) continue;
-      if (!(await upload(issueKey, job))) {
+      if (!(await upload(scope, job))) {
         const latest = current.current.find((item) => item.id === job.id);
         if (latest) failed.push(latest);
       }

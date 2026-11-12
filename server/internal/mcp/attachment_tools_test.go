@@ -289,3 +289,29 @@ func TestAttachmentToolsAreReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestListAttachmentsOfASubissue(t *testing.T) {
+	f := newAttachmentFixture(t)
+	issue := f.first
+	sub, err := f.store.CreateSubissue(f.ctx, f.agent, issue.ID, store.NewSubissue{Title: "Child", Status: store.IssueTodo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, _, err := f.store.BeginTargetAttachment(f.ctx, f.agent, issue.Key(), store.AttachmentTarget{SubissueID: sub.ID}, "child.txt", "text/plain", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.objects.Put(pending.ID, []byte("hello"))
+	if _, err := f.store.CompleteAttachment(f.ctx, f.agent, pending.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	own := metadata(t, f.call("list_attachments", map[string]any{"issue_key": issue.Key(), "subissue_key": issue.Key() + ".1"}))
+	if list, _ := own["attachments"].([]any); len(list) != 1 {
+		t.Fatalf("subissue list %v, want child.txt", own)
+	}
+	onIssue := metadata(t, f.call("list_attachments", map[string]any{"issue_key": issue.Key()}))
+	if list, _ := onIssue["attachments"].([]any); len(list) != 0 {
+		t.Fatalf("issue list %v, want none", onIssue)
+	}
+}

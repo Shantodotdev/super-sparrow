@@ -9,6 +9,7 @@ import type { Finding, FindingStatus } from "../lib/types";
 import { findingsQuery, useChangeFindingStatus, type Decision } from "../queries/findings";
 import { issuesQuery } from "../queries/issues";
 import { useProjectSlugs } from "../hooks/use-project";
+import { AttachmentsPanel } from "./attachments-panel";
 import { Discussion } from "./discussion";
 import { FindingSeverity, FindingStatus as FindingStatusLabel } from "./finding-row";
 import { Icon } from "./icon";
@@ -292,6 +293,14 @@ export function FindingDetail({
           </p>
         )}
       </section>
+      <AttachmentsPanel
+        key={`attachments-${finding.id}`}
+        scope={{
+          issueKey: finding.issue_key,
+          finding: { id: finding.id, round: finding.round, number: finding.number },
+        }}
+        className="mt-6"
+      />
       <section className="mt-6 border-t border-[#252a32] pt-5">
         <h3 className="mb-4 text-[13px] font-semibold">
           Discussion{" "}

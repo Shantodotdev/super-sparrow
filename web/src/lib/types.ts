@@ -205,6 +205,8 @@ export type Attachment = {
   id: string;
   project_key: string;
   issue_key: string;
+  subissue_id?: string;
+  finding_id?: string;
   filename: string;
   content_type: string;
   byte_size: number;

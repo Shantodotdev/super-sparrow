@@ -48,7 +48,14 @@ type Objects interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// Attachment is a file attached to an issue. The bytes are in the bucket; this is what the
+// AttachmentTarget says what an attachment belongs to within its issue. The zero value is the
+// issue itself; at most one field is set.
+type AttachmentTarget struct {
+	SubissueID string
+	FindingID  string
+}
+
+// Attachment is a file attached to an issue, or to one of its subissues or findings. The bytes are in the bucket; this is what the
 // database keeps about them. A pending attachment has a row and an upload link but no confirmed
 // file yet, and is hidden everywhere except to the person who is uploading it.
 type Attachment struct {
@@ -57,6 +64,8 @@ type Attachment struct {
 	ProjectKey  string
 	IssueID     string
 	IssueKey    string
+	SubissueID  string
+	FindingID   string
 	Filename    string
 	ContentType string
 	ByteSize    int64
@@ -75,7 +84,8 @@ type Upload struct {
 	Headers map[string]string
 }
 
-const attachmentSelect = `SELECT a.id, a.project_id, p.key, a.issue_id, p.key || '-' || i.number, a.filename,
+const attachmentSelect = `SELECT a.id, a.project_id, p.key, a.issue_id, p.key || '-' || i.number,
+	COALESCE(a.subissue_id, ''), COALESCE(a.finding_id, ''), a.filename,
 	a.content_type, a.byte_size, a.uploaded_at IS NULL, a.created_by_actor_id, a.created_at, a.updated_at
 	FROM attachments a JOIN projects p ON p.id = a.project_id JOIN issues i ON i.id = a.issue_id`
 
@@ -83,6 +93,12 @@ const attachmentSelect = `SELECT a.id, a.project_id, p.key, a.issue_id, p.key ||
 // the file to. The file goes straight to the bucket, never through this server. The declared
 // size and type only choose the limit; CompleteAttachment checks the real file.
 func (s *Store) BeginAttachment(ctx context.Context, by Caller, issueKey, filename, contentType string, size int64) (Attachment, Upload, error) {
+	return s.BeginTargetAttachment(ctx, by, issueKey, AttachmentTarget{}, filename, contentType, size)
+}
+
+// BeginTargetAttachment is BeginAttachment for a file that belongs to one of the issue's
+// subissues or findings. A target on another issue is refused as not found.
+func (s *Store) BeginTargetAttachment(ctx context.Context, by Caller, issueKey string, target AttachmentTarget, filename, contentType string, size int64) (Attachment, Upload, error) {
 	name, err := cleanFilename(filename)
 	if err != nil {
 		return Attachment{}, Upload{}, err
@@ -106,10 +122,15 @@ func (s *Store) BeginAttachment(ctx context.Context, by Caller, issueKey, filena
 			return err
 		}
 
+		if err := requireAttachmentTarget(w, current.ID, target); err != nil {
+			return err
+		}
+
 		id := newID()
-		_, err = w.exec(`INSERT INTO attachments (id, project_id, issue_id, filename, content_type, byte_size,
-			uploaded_at, created_by_actor_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
-			id, current.ProjectID, current.ID, name, contentType, size, w.caller.ID, w.timestamp(), w.timestamp())
+		_, err = w.exec(`INSERT INTO attachments (id, project_id, issue_id, subissue_id, finding_id, filename, content_type,
+			byte_size, uploaded_at, created_by_actor_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+			id, current.ProjectID, current.ID, nullIfEmpty(target.SubissueID), nullIfEmpty(target.FindingID), name, contentType,
+			size, w.caller.ID, w.timestamp(), w.timestamp())
 		if err != nil {
 			return fmt.Errorf("store attachment: %w", err)
 		}
@@ -226,13 +247,66 @@ func (s *Store) ReadAttachmentPrefix(ctx context.Context, a Attachment, limit in
 	return data, false, nil
 }
 
-// ListIssueAttachments returns the issue's completed attachments, oldest first.
+// requireAttachmentTarget checks that the subissue or finding exists on the issue.
+func requireAttachmentTarget(w *writeTx, issueID string, target AttachmentTarget) error {
+	switch {
+	case target.SubissueID != "" && target.FindingID != "":
+		return invalid("target", "must be a subissue or a finding, not both")
+	case target.SubissueID != "":
+		var found int
+		err := w.tx.QueryRowContext(w.ctx, `SELECT 1 FROM subissues WHERE id = ? AND issue_id = ?`, target.SubissueID, issueID).Scan(&found)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("subissue")
+		}
+		if err != nil {
+			return fmt.Errorf("check subissue %s: %w", target.SubissueID, err)
+		}
+	case target.FindingID != "":
+		var found int
+		err := w.tx.QueryRowContext(w.ctx, `SELECT 1 FROM findings f JOIN review_rounds r ON r.id = f.review_round_id
+			WHERE f.id = ? AND r.issue_id = ?`, target.FindingID, issueID).Scan(&found)
+		if errors.Is(err, sql.ErrNoRows) {
+			return notFound("finding")
+		}
+		if err != nil {
+			return fmt.Errorf("check finding %s: %w", target.FindingID, err)
+		}
+	}
+	return nil
+}
+
+func nullIfEmpty(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+// ListIssueAttachments returns the completed attachments of the issue itself, oldest first.
+// Files on its subissues and findings are listed by ListTargetAttachments.
 func (s *Store) ListIssueAttachments(ctx context.Context, issueKey string) ([]Attachment, error) {
 	issue, err := s.GetIssueByKey(ctx, issueKey)
 	if err != nil {
 		return nil, err
 	}
-	return listAttachments(ctx, s.db, `WHERE a.issue_id = ? AND a.uploaded_at IS NOT NULL`, issue.ID)
+	return listAttachments(ctx, s.db, `WHERE a.issue_id = ? AND a.subissue_id IS NULL AND a.finding_id IS NULL
+		AND a.uploaded_at IS NOT NULL`, issue.ID)
+}
+
+// ListTargetAttachments returns the completed attachments of one subissue or finding of the
+// issue, oldest first.
+func (s *Store) ListTargetAttachments(ctx context.Context, issueKey string, target AttachmentTarget) ([]Attachment, error) {
+	issue, err := s.GetIssueByKey(ctx, issueKey)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case target.SubissueID != "" && target.FindingID == "":
+		return listAttachments(ctx, s.db, `WHERE a.issue_id = ? AND a.subissue_id = ? AND a.uploaded_at IS NOT NULL`, issue.ID, target.SubissueID)
+	case target.FindingID != "" && target.SubissueID == "":
+		return listAttachments(ctx, s.db, `WHERE a.issue_id = ? AND a.finding_id = ? AND a.uploaded_at IS NOT NULL`, issue.ID, target.FindingID)
+	}
+	return nil, invalid("target", "must be a subissue or a finding")
 }
 
 // DeleteAttachment removes an attachment and, once that is committed, its file. Only a person
@@ -331,6 +405,7 @@ func declaredContentType(raw string) string {
 func attachmentPayload(a Attachment) map[string]any {
 	return map[string]any{
 		"attachment_id": a.ID, "issue_id": a.IssueID, "issue_key": a.IssueKey,
+		"subissue_id": a.SubissueID, "finding_id": a.FindingID,
 		"filename": a.Filename, "content_type": a.ContentType, "byte_size": a.ByteSize,
 	}
 }
@@ -363,7 +438,7 @@ func listAttachments(ctx context.Context, q querier, where string, args ...any) 
 func scanAttachment(row scanner) (Attachment, error) {
 	var a Attachment
 	var created, updated string
-	err := row.Scan(&a.ID, &a.ProjectID, &a.ProjectKey, &a.IssueID, &a.IssueKey, &a.Filename, &a.ContentType,
+	err := row.Scan(&a.ID, &a.ProjectID, &a.ProjectKey, &a.IssueID, &a.IssueKey, &a.SubissueID, &a.FindingID, &a.Filename, &a.ContentType,
 		&a.ByteSize, &a.Pending, &a.CreatedByID, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Attachment{}, notFound("attachment")
