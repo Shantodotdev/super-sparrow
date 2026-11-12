@@ -9,6 +9,7 @@ import { useAddComment } from "../queries/findings";
 import { commentsQuery, useActor } from "../queries/project";
 import { Avatar } from "./avatar";
 import { reviewActorName } from "../lib/review";
+import { MarkdownView } from "./markdown-view";
 
 type DiscussionProps = {
   issueId: string;
@@ -96,11 +97,14 @@ export function Discussion({ issueId, findingId, variant = "default" }: Discussi
                     {formatRelative(comment.created_at)}
                   </small>
                 </div>
-                <p
-                  className={`mt-[4px] max-w-160 leading-normal wrap-break-word whitespace-pre-wrap text-[#d5dce8] ${variant === "review" ? "pb-3" : "inline-block rounded-2xl rounded-tl-[4px] bg-[#1c2029] px-4 py-[9px]"}`}
+                <div
+                  className={`mt-[4px] max-w-160 leading-normal text-[#d5dce8] ${variant === "review" ? "pb-3" : "inline-block rounded-2xl rounded-tl-[4px] bg-[#1c2029] px-4 py-[9px]"}`}
                 >
-                  {comment.body}
-                </p>
+                  <MarkdownView
+                    markdown={comment.body}
+                    className="[&_.tiptap]:min-h-0 [&_.tiptap]:leading-normal [&_.tiptap]:text-inherit [&_.tiptap>:last-child]:mb-0"
+                  />
+                </div>
               </div>
             </div>
           );
