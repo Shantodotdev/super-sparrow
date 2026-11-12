@@ -56,6 +56,7 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
 
 const tabs: { id: IssueTab; label: string; icon: IconName }[] = [
   { id: "plan", label: "Plan", icon: "file-text" },
+  { id: "subissues", label: "Subissues", icon: "square-check" },
   { id: "rounds", label: "Review rounds", icon: "list-todo" },
   { id: "findings", label: "Findings", icon: "list-filter" },
   { id: "activity", label: "Activity", icon: "activity" },
@@ -104,6 +105,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
   const { tab = "plan" } = search;
   const navigate = Route.useNavigate();
   const transitionRun = useRef(0);
+  const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
 
   const switchTab = (nextTab: IssueTab) => {
     if (nextTab === tab) return;
@@ -204,6 +206,11 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
                   className="absolute inset-x-0 bottom-0 h-[3px] rounded-t-[3px] bg-[#426fff] [view-transition-name:issue-tab-indicator]"
                 />
               )}
+              {id === "subissues" && (
+                <span className="count rounded-[5px] bg-[#262b34] px-2 py-[3px] text-[12px] text-[#dce2ec]">
+                  {subissues.length}
+                </span>
+              )}
               {id === "rounds" && (
                 <span className="count rounded-[5px] bg-[#262b34] px-2 py-[3px] text-[12px] text-[#dce2ec]">
                   {rounds.length}
@@ -219,9 +226,9 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
             <>
               <IssuePlan key={issue.id} issue={issue} />
               <AttachmentsPanel key={`attachments-${issue.id}`} issue={issue} />
-              <SubissueList issue={issue} />
             </>
           )}
+          {tab === "subissues" && <SubissueList key={issue.id} issue={issue} />}
           {(tab === "rounds" || tab === "findings") && (
             <IssueReviews
               issue={issue}

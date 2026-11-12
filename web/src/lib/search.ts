@@ -12,7 +12,7 @@ export type IssuesSearch = {
   new?: true;
 };
 
-export type IssueTab = "plan" | "findings" | "rounds" | "activity" | "comments";
+export type IssueTab = "plan" | "subissues" | "findings" | "rounds" | "activity" | "comments";
 
 export type IssueSearch = {
   tab?: Exclude<IssueTab, "plan">;
@@ -55,6 +55,7 @@ export function validateIssueSearch(search: Record<string, unknown>): IssueSearc
 
   return {
     tab:
+      search.tab === "subissues" ||
       search.tab === "findings" ||
       search.tab === "rounds" ||
       search.tab === "activity" ||

@@ -10,7 +10,6 @@ import { ResourceSelector } from "./resource-selector";
 import { apiWrite } from "../lib/api";
 import { useProject } from "../hooks/use-project";
 import type { Milestone } from "../lib/types";
-import { SubissueList } from "./subissue-list";
 import { Select } from "./select";
 import { Avatar } from "./avatar";
 import { IssueTextField } from "./issue-text-field";
@@ -21,7 +20,7 @@ type IssuePropertiesProps = {
   issue: Issue;
 };
 
-/** The side panel of an issue page: status, people, branch, subissues, and labels. */
+/** The side panel of an issue page: status, people, branch, and labels. */
 export function IssueProperties({ issue }: IssuePropertiesProps) {
   const project = useProject();
   const client = useQueryClient();
@@ -141,9 +140,6 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
           <Icon name="github" /> {pullNumber ? `#${pullNumber}` : "Open pull request"}
         </a>
       )}
-      <div className="mt-5 border-t border-t-[#252b34] pt-[16px] [&_p]:mt-[10px]">
-        <SubissueList issue={issue} compact />
-      </div>
     </aside>
   );
 }
