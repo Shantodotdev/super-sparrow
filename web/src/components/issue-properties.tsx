@@ -32,7 +32,7 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
   const pullNumber = /\/pull\/(\d+)/.exec(pullRequestUrl)?.[1];
 
   return (
-    <aside className="min-h-0 overflow-y-auto border-l border-l-[#242932] p-[24px] text-[13px] max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_.icon]:size-[15px] [&_>_.custom-select]:w-full [&_button[aria-expanded]]:min-h-[36px] [&_button[aria-expanded]]:py-0 [&_button[aria-expanded]]:text-[13px] [&_h3]:mx-0 [&_h3]:mt-[16px] [&_h3]:mb-[6px] [&_h3]:text-[12px] [&_h3:first-child]:mt-0 [&_input]:h-[36px] [&_input]:min-h-[36px] [&_input]:py-0 [&_input]:text-[13px] [&_strong]:text-[13px]">
+    <aside className="sticky top-0 h-dvh self-start overflow-y-auto border-l border-l-[#242932] p-[24px] text-[13px] max-[700px]:static max-[700px]:h-auto max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_.icon]:size-[15px] [&_>_.custom-select]:w-full [&_button[aria-expanded]]:min-h-[36px] [&_button[aria-expanded]]:py-0 [&_button[aria-expanded]]:text-[13px] [&_h3]:mx-0 [&_h3]:mt-[16px] [&_h3]:mb-[6px] [&_h3]:text-[12px] [&_h3:first-child]:mt-0 [&_input]:h-[36px] [&_input]:min-h-[36px] [&_input]:py-0 [&_input]:text-[13px] [&_strong]:text-[13px]">
       <h3>Status</h3>
       <div className="[&_.custom-select-value]:flex-1">
         <Select
