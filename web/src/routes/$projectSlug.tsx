@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, Outlet, useLocation } from "@tanstack/react-router";
+import { saveLastProject } from "../lib/last-project";
 import { projectsQuery } from "../queries/project";
 import { NotFoundState } from "../components/not-found-state";
 
@@ -25,11 +26,16 @@ function ProjectLayout() {
     }
   }, [oldProject, projectSlug, location.pathname, location.searchStr, location.hash]);
 
+  const known = projects.some((project) => project.slug === projectSlug);
+  useEffect(() => {
+    if (known) saveLastProject(projectSlug);
+  }, [known, projectSlug]);
+
   if (oldProject) return <p role="status">Opening project…</p>;
   const legacy = legacyRoutes[projectSlug as keyof typeof legacyRoutes];
   if (legacy && projects[0])
     return <Navigate to={legacy} params={{ projectSlug: projects[0].slug }} replace />;
-  if (!projects.some((project) => project.slug === projectSlug))
+  if (!known)
     return (
       <NotFoundState
         title="Project not found"
