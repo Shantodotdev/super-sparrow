@@ -18,6 +18,7 @@ import { IssueDragPreview } from "./issue-drag-preview";
 import { useIssueDrag } from "../hooks/use-issue-drag";
 import { useDragAutoscroll } from "../hooks/use-drag-autoscroll";
 import { useToast } from "./toast";
+import { useAttachmentUploads } from "../queries/attachments";
 
 /** Shows an issue's lightweight children, each opening in a side drawer for editing. */
 export function SubissueList({
@@ -177,8 +178,13 @@ function SubissueCreator({
   const [status, setStatus] = useState<IssueStatus>("backlog");
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const save = useSaveSubissue(issue.key);
+  const uploads = useAttachmentUploads();
+  const { notify } = useToast();
+  const [attachError, setAttachError] = useState("");
   useEffect(() => {
     if (!open) return;
+    uploads.clear();
+    setAttachError("");
     setTitle("");
     setDescription("");
     setStatus("backlog");
@@ -191,7 +197,21 @@ function SubissueCreator({
     event.preventDefault();
     if (save.isPending) return;
     try {
-      await save.mutateAsync({ title, description, status, label_ids: labelIds });
+      const { subissue } = await save.mutateAsync({
+        title,
+        description,
+        status,
+        label_ids: labelIds,
+      });
+
+      // Files upload to the new subissue; any that fail can be added again from its panel.
+      if (uploads.jobs.length > 0) {
+        const failed = await uploads.start({ issueKey: issue.key, subissueId: subissue.id });
+        if (failed.length > 0) {
+          notify(`${subissue.key} was created, but ${failed.length} file(s) did not upload.`);
+        }
+        uploads.clear();
+      }
       if (createMore) {
         setTitle("");
         setDescription("");
@@ -234,10 +254,19 @@ function SubissueCreator({
         selected: labelIds,
         onChange: async (ids) => setLabelIds(ids),
       }}
-      error={save.error?.message}
+      error={attachError || save.error?.message}
       pending={save.isPending}
+      attachments={{
+        jobs: uploads.jobs,
+        onFiles: (files) => {
+          const { rejected } = uploads.add(files);
+          setAttachError(rejected.join(" "));
+        },
+        onRemove: (job) => uploads.remove(job.id),
+        onError: setAttachError,
+      }}
       submitDisabled={!title.trim()}
-      submitLabel={save.isPending ? "Saving…" : "Create subissue"}
+      submitLabel="Create subissue"
       createMore={{ checked: createMore, onChange: setCreateMore }}
     />
   );

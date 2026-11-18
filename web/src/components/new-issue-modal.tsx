@@ -503,7 +503,7 @@ export function NewIssueModal({
               <span>Create more</span>
             </label>
             <button
-              className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"
+              className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6] disabled:cursor-default"
               disabled={
                 pending || createLabel.isPending || !!labelDraftName || !title.trim() || !projectKey
               }
