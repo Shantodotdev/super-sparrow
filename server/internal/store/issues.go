@@ -672,8 +672,18 @@ func getIssue(ctx context.Context, q querier, where string, args ...any) (Issue,
 	return scanIssue(q.QueryRowContext(ctx, `SELECT `+issueColumns+issueFrom+`WHERE `+where, args...))
 }
 
+// getIssueByProjectNumber returns the issue with this key, or the issue that had it before it
+// moved to another project.
 func getIssueByProjectNumber(ctx context.Context, q querier, projectKey string, number int) (Issue, error) {
-	return getIssue(ctx, q, `p.key = ? AND i.number = ?`, strings.ToUpper(projectKey), number)
+	projectKey = strings.ToUpper(projectKey)
+	issue, err := getIssue(ctx, q, `p.key = ? AND i.number = ?`, projectKey, number)
+	if !errors.Is(err, ErrNotFound) {
+		return issue, err
+	}
+
+	return getIssue(ctx, q, `i.id = (
+		SELECT a.issue_id FROM issue_key_aliases a JOIN projects ap ON ap.id = a.project_id
+		WHERE ap.key = ? AND a.number = ?)`, projectKey, number)
 }
 
 func scanIssue(row scanner) (Issue, error) {

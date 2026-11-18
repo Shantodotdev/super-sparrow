@@ -69,8 +69,11 @@ func TestMoveIssueTakesEverythingToTheTargetProject(t *testing.T) {
 	if attachments := got(tm.store.ListIssueAttachments(tm.ctx, moved.Key())).must(t); len(attachments) != 1 || attachments[0].ProjectKey != "BB" {
 		t.Errorf("attachments = %+v", attachments)
 	}
-	if _, err := tm.store.GetIssueByKey(tm.ctx, "AA-1"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("old key error = %v, want not found", err)
+	if old, err := tm.store.GetIssueByKey(tm.ctx, "AA-1"); err != nil || old.ID != issue.ID || old.Key() != "BB-2" {
+		t.Errorf("old key found %s, %v; want the moved issue", old.Key(), err)
+	}
+	if found, err := tm.store.FindIssueForBranch(tm.ctx, "fix/aa-1-old-branch"); err != nil || found.ID != issue.ID {
+		t.Errorf("old branch found %s, %v; want the moved issue", found.Key(), err)
 	}
 
 	event := tm.lastEvent(t)
@@ -107,5 +110,52 @@ func TestMoveIssueRefusals(t *testing.T) {
 	back := got(tm.store.MoveIssue(tm.ctx, tm.member, moved.ID, from.ID)).must(t)
 	if moved.Key() != "BB-2" || back.Key() != "AA-2" {
 		t.Errorf("keys %s then %s, want BB-2 then AA-2", moved.Key(), back.Key())
+	}
+}
+
+func TestMoveIssuesKeepsLinksBetweenMovedIssues(t *testing.T) {
+	tm := newTeam(t)
+	from, to := tm.project(t, "AA"), tm.project(t, "BB")
+	parent := tm.issue(t, from.ID, "Parent")
+	child := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: from.ID, Title: "Child", Status: IssueTodo, ParentIssueID: parent.ID})).must(t)
+	stays := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: from.ID, Title: "Stays", Status: IssueTodo, ParentIssueID: parent.ID})).must(t)
+
+	// The child comes first, so its parent has not moved yet when it does.
+	moved, err := tm.store.MoveIssues(tm.ctx, tm.member, []string{child.ID, parent.ID, child.ID}, to.ID)
+	if err != nil {
+		t.Fatalf("MoveIssues: %v", err)
+	}
+	if len(moved) != 2 || moved[0].Key() != "BB-1" || moved[1].Key() != "BB-2" {
+		t.Fatalf("moved %+v", moved)
+	}
+	if moved[0].ParentIssueID != parent.ID {
+		t.Errorf("child parent = %q, want %s", moved[0].ParentIssueID, parent.ID)
+	}
+
+	left := got(tm.store.GetIssue(tm.ctx, stays.ID)).must(t)
+	if left.ParentIssueID != "" || left.ProjectID != from.ID {
+		t.Errorf("child left behind = %+v", left)
+	}
+	events := got(tm.store.ListEvents(tm.ctx, EventFilter{TargetType: TargetIssue, TargetID: stays.ID})).must(t)
+	if last := events[len(events)-1]; last.Kind != "issue.updated" || last.ProjectID != from.ID || last.ActorID != tm.member.ActorID {
+		t.Errorf("detached child event %s in %s by %s", last.Kind, last.ProjectID, last.ActorID)
+	}
+}
+
+func TestMoveIssuesRefusesBranchClashWithinTheMove(t *testing.T) {
+	tm := newTeam(t)
+	first, second, to := tm.project(t, "AA"), tm.project(t, "CC"), tm.project(t, "BB")
+	a := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: first.ID, Title: "A", Status: IssueTodo, BranchName: "feat/same"})).must(t)
+	c := got(tm.store.CreateIssue(tm.ctx, tm.member, NewIssue{ProjectID: second.ID, Title: "C", Status: IssueTodo, BranchName: "feat/same"})).must(t)
+
+	before := tm.eventCount(t)
+	if _, err := tm.store.MoveIssues(tm.ctx, tm.member, []string{a.ID, c.ID}, to.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("branch clash error = %v, want a conflict", err)
+	}
+	if stayed := got(tm.store.GetIssue(tm.ctx, a.ID)).must(t); stayed.ProjectID != first.ID || tm.eventCount(t) != before {
+		t.Errorf("a refused move changed %s or wrote events", stayed.Key())
+	}
+	if _, err := tm.store.MoveIssues(tm.ctx, tm.member, nil, to.ID); err == nil {
+		t.Error("an empty move succeeded")
 	}
 }

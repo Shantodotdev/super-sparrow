@@ -193,6 +193,46 @@ func (s *server) moveIssue(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// moveIssues moves the issues named by the body's issues, a list of keys, to the project named by
+// its project, all in one transaction, so parent links between them survive. The response carries
+// the moved issues, with their new keys, in the order given.
+func (s *server) moveIssues(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Issues  []string `json:"issues"`
+		Project string   `json:"project"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		return err
+	}
+
+	ids := make([]string, 0, len(body.Issues))
+	for _, key := range body.Issues {
+		issue, err := s.store.GetIssueByKey(r.Context(), key)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, issue.ID)
+	}
+	target, err := s.store.GetProjectByKey(r.Context(), body.Project)
+	if errors.Is(err, store.ErrNotFound) {
+		return &store.ValidationError{Field: "project", Message: "must be the key of an existing project"}
+	}
+	if err != nil {
+		return err
+	}
+
+	moved, err := s.store.MoveIssues(r.Context(), identityFrom(r.Context()).caller(), ids, target.ID)
+	if err != nil {
+		return err
+	}
+	views := make([]issueView, 0, len(moved))
+	for _, issue := range moved {
+		views = append(views, newIssueView(issue))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"issues": views})
+	return nil
+}
+
 // checklistChange is one item to tick or untick, by its index in the plan's checklist and the
 // text it had when the caller read it.
 type checklistChange struct {

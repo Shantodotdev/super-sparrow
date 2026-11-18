@@ -18,6 +18,10 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
     }
     const project = projects.find((p) => p.id === event.project_id);
     if (project) projectKeys.add(project.key);
+    if (event.kind === "issue.moved") {
+      const source = projects.find((p) => p.id === event.payload.from_project_id);
+      if (source) projectKeys.add(source.key);
+    }
     switch (event.target_type) {
       case "issue":
         affected.add("milestones");
