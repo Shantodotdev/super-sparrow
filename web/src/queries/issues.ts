@@ -158,24 +158,19 @@ export function useMoveIssueToProject() {
   });
 }
 
-/** Moves issues one after another to a project; a failure is reported once all have been tried. */
+/**
+ * Moves issues to a project in one request, so links between them survive; either all move or
+ * none do. Returns the moved issues with their new keys.
+ */
 export function useMoveIssues() {
   const client = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ issues, projectKey }: { issues: Issue[]; projectKey: string }) => {
-      const failures: string[] = [];
-      for (const issue of issues) {
-        try {
-          await apiWrite(`/api/issues/${encodeURIComponent(issue.key)}/move`, "POST", {
-            project: projectKey,
-          });
-        } catch (error) {
-          failures.push(`${issue.key}: ${error instanceof Error ? error.message : "failed"}`);
-        }
-      }
-      if (failures.length) throw new Error(`Could not move ${failures.join("; ")}`);
-    },
+    mutationFn: ({ issues, projectKey }: { issues: Issue[]; projectKey: string }) =>
+      apiWrite<{ issues: Issue[] }>("/api/issues/move", "POST", {
+        issues: issues.map((issue) => issue.key),
+        project: projectKey,
+      }).then((result) => result.issues),
     onSettled: () => void client.invalidateQueries(),
   });
 }

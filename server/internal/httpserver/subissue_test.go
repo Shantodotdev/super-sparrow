@@ -123,6 +123,21 @@ func TestMoveIssueToAnotherProject(t *testing.T) {
 	if moved.Issue.Key != "OPS-1" || moved.Issue.ProjectKey != "OPS" {
 		t.Fatalf("moved: %+v", moved.Issue)
 	}
-	a.call(http.MethodGet, "/api/issues/WP-1", a.member, nil, http.StatusNotFound, nil)
-	a.call(http.MethodGet, "/api/issues/OPS-1", a.member, nil, http.StatusOK, nil)
+	var old struct {
+		Issue issueView `json:"issue"`
+	}
+	a.call(http.MethodGet, "/api/issues/WP-1", a.member, nil, http.StatusOK, &old)
+	if old.Issue.Key != "OPS-1" {
+		t.Fatalf("old key opened %s, want OPS-1", old.Issue.Key)
+	}
+
+	var many struct {
+		Issues []issueView `json:"issues"`
+	}
+	a.call(http.MethodPost, "/api/issues/move", a.member, map[string]any{"issues": []string{"WP-1"}, "project": "WP"}, http.StatusOK, &many)
+	if len(many.Issues) != 1 || many.Issues[0].Key != "WP-2" {
+		t.Fatalf("moved back: %+v", many.Issues)
+	}
+	a.call(http.MethodPost, "/api/issues/move", a.member, map[string]any{"issues": []string{"WP-2", "WP-9"}, "project": "OPS"}, http.StatusNotFound, nil)
+	a.call(http.MethodPost, "/api/issues/move", a.member, map[string]any{"issues": []string{}, "project": "OPS"}, http.StatusBadRequest, nil)
 }

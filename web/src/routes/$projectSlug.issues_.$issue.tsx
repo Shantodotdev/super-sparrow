@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useProject } from "../hooks/use-project";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, Navigate, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Discussion } from "../components/discussion";
 import { EventLine, eventIssueId } from "../components/event-line";
@@ -28,6 +28,7 @@ import {
   commentsQuery,
   labelsQuery,
   milestonesQuery,
+  projectsQuery,
   reviewRoundsQuery,
 } from "../queries/project";
 import { loadQuery } from "../queries/options";
@@ -72,6 +73,20 @@ function IssuePage() {
   const { data: findings } = useSuspenseQuery(findingsQuery);
   const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
   const { data: events } = useSuspenseQuery(activityQuery);
+  const { data: projects } = useSuspenseQuery(projectsQuery);
+
+  // An old key, from before the issue moved to another project, opens the issue at its new key.
+  const home = projects.find((item) => item.id === issue?.project_id);
+  if (issue && home && issue.key !== issueKey) {
+    return (
+      <Navigate
+        to="/$projectSlug/issues/$issue"
+        params={{ projectSlug: home.slug, issue: issue.key }}
+        search={(previous) => previous}
+        replace
+      />
+    );
+  }
 
   if (!issue || issue.project_id !== project.id) {
     return (
