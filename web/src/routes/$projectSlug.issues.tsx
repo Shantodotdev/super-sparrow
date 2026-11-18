@@ -199,7 +199,7 @@ function IssuesPage() {
             >
               <button
                 type="button"
-                className="relative z-1 inline-flex flex-[0_0_84px] items-center justify-center gap-[6px] rounded-full border-0 bg-transparent px-[10px] py-[6px] text-[12px] text-[#9ba9bc] transition-colors duration-180 ease-[ease] hover:text-[#edf0f6] aria-pressed:text-[#edf0f6] motion-reduce:transition-none"
+                className="relative z-1 inline-flex w-24 shrink-0 items-center justify-center gap-[6px] rounded-full border-0 bg-transparent px-[10px] py-[6px] text-[12px] text-[#9ba9bc] transition-colors duration-180 ease-[ease] hover:text-[#edf0f6] aria-pressed:text-[#edf0f6] motion-reduce:transition-none"
                 aria-pressed={view !== "board"}
                 onClick={() => switchView("list")}
               >
@@ -207,7 +207,7 @@ function IssuesPage() {
               </button>
               <button
                 type="button"
-                className="relative z-1 inline-flex flex-[0_0_84px] items-center justify-center gap-[6px] rounded-full border-0 bg-transparent px-4 py-[8px] text-[12px] text-[#9ba9bc] transition-colors duration-180 ease-[ease] hover:text-[#edf0f6] aria-pressed:text-[#edf0f6] motion-reduce:transition-none"
+                className="relative z-1 inline-flex w-24 shrink-0 items-center justify-center gap-[6px] rounded-full border-0 bg-transparent px-[10px] py-[6px] text-[12px] text-[#9ba9bc] transition-colors duration-180 ease-[ease] hover:text-[#edf0f6] aria-pressed:text-[#edf0f6] motion-reduce:transition-none"
                 aria-pressed={view === "board"}
                 onClick={() => switchView("board")}
               >
