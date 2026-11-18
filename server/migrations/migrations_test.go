@@ -3,6 +3,7 @@ package migrations_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"testing"
@@ -290,5 +291,59 @@ func TestMilestoneStatusColumnIsRemovedWithoutLosingWork(t *testing.T) {
 	var violations int
 	if err := db.QueryRow(`SELECT count(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
 		t.Fatalf("foreign key violations = %d: %v", violations, err)
+	}
+}
+
+func TestDefaultAvatarsAreAssignedToExistingPeople(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := database.Migrate(ctx, db, upTo(t, "0019")); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 40; i++ {
+		avatar := ""
+		if i == 0 {
+			avatar = "magical-dragon"
+		}
+		if _, err := db.Exec(`INSERT INTO actors (id, kind, display_name, avatar_id, email, role, created_at, updated_at)
+			VALUES (?, 'human', 'Person', ?, ?, 'member', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+			fmt.Sprintf("person%d", i), avatar, fmt.Sprintf("p%d@example.com", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(`SELECT id, avatar_id FROM actors WHERE kind = 'human'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var id, avatar string
+		if err := rows.Scan(&id, &avatar); err != nil {
+			t.Fatal(err)
+		}
+		if avatar == "" {
+			t.Fatalf("%s has no avatar", id)
+		}
+		if id == "person0" && avatar != "magical-dragon" {
+			t.Fatalf("existing avatar changed to %s", avatar)
+		}
+		counts[avatar]++
+	}
+	if len(counts) != 35 {
+		t.Fatalf("40 people over 35 avatars used %d distinct avatars", len(counts))
+	}
+	var system string
+	if err := db.QueryRow(`SELECT avatar_id FROM actors WHERE kind = 'system'`).Scan(&system); err != nil || system != "" {
+		t.Fatalf("system avatar %q, %v", system, err)
 	}
 }
