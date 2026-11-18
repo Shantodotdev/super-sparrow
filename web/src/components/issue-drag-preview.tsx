@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { Issue } from "../lib/types";
-
 type IssueDragPreviewProps = {
-  issue: Issue;
+  issue: { key: string; title: string };
   origin: { x: number; y: number };
 };
 

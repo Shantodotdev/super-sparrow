@@ -10,6 +10,7 @@ import {
   issuePriorityLabel,
   issueStatusLabel,
   issueStatuses,
+  statusGroupBackground as groupBackground,
   statusIcon,
 } from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
@@ -21,15 +22,6 @@ import { Icon } from "./icon";
 import { IssueDragPreview } from "./issue-drag-preview";
 import { useIssueContextMenu } from "./issue-context-menu";
 import { LabelChips } from "./label-chips";
-
-const groupBackground: Record<IssueStatus, string> = {
-  in_review: "bg-[#2b2634]",
-  in_progress: "bg-[#1c2736]",
-  todo: "bg-[#27292c]",
-  backlog: "bg-[#292c30]",
-  done: "bg-[#23302a]",
-  canceled: "bg-[#27292c]",
-};
 
 type IssueListProps = {
   issues: Issue[];

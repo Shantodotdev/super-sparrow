@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import type { Issue, IssueStatus } from "../lib/types";
+import type { IssueStatus } from "../lib/types";
+
+/** Anything with a status that can be dragged between status groups: an issue or a subissue. */
+type Draggable = { status: IssueStatus };
 
 /** How far the pointer must move before a press on an issue becomes a drag rather than a click. */
 const dragThreshold = 5;
 
-type Press = { issue: Issue; x: number; y: number; pointerId: number };
+type Press<T extends Draggable> = { issue: T; x: number; y: number; pointerId: number };
 
-type IssueDrag = {
+type IssueDrag<T extends Draggable> = {
   /** The issue being dragged, once the pointer has moved past the threshold. */
-  dragged: Issue | undefined;
+  dragged: T | undefined;
   /** The status group under the pointer while dragging. */
   dropTarget: IssueStatus | undefined;
   /** Where the drag started, for placing the preview on its first frame. */
   origin: { x: number; y: number };
   /** Props for a draggable issue row or card. */
-  dragProps: (issue: Issue) => {
+  dragProps: (issue: T) => {
     draggable: false;
     onPointerDown: (event: PointerEvent<HTMLElement>) => void;
     onClickCapture: (event: MouseEvent<HTMLElement>) => void;
@@ -32,13 +35,15 @@ function statusAt(x: number, y: number): IssueStatus | undefined {
  * drop, which crashes WebKitGTK in the Linux desktop app. A press that moves less than a few
  * pixels stays a click and opens the issue; Escape cancels a drag.
  */
-export function useIssueDrag(onDrop: (issue: Issue, status: IssueStatus) => void): IssueDrag {
-  const press = useRef<Press | undefined>(undefined);
+export function useIssueDrag<T extends Draggable>(
+  onDrop: (issue: T, status: IssueStatus) => void,
+): IssueDrag<T> {
+  const press = useRef<Press<T> | undefined>(undefined);
   const draggingRef = useRef(false);
   const dropTargetRef = useRef<IssueStatus | undefined>(undefined);
   const suppressClick = useRef(false);
   const onDropRef = useRef(onDrop);
-  const [dragged, setDragged] = useState<Issue | undefined>();
+  const [dragged, setDragged] = useState<T | undefined>();
   const [dropTarget, setDropTarget] = useState<IssueStatus | undefined>();
   const [origin, setOrigin] = useState({ x: 0, y: 0 });
 
@@ -115,7 +120,7 @@ export function useIssueDrag(onDrop: (issue: Issue, status: IssueStatus) => void
     };
   }, []);
 
-  const dragProps = (issue: Issue) => ({
+  const dragProps = (issue: T) => ({
     draggable: false as const,
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       if (event.button !== 0 || event.pointerType === "touch") return;

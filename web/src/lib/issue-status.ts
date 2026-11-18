@@ -63,3 +63,13 @@ export const issuePriorityColor: Record<IssuePriority, string> = {
   medium: "text-[#f2cf87]",
   low: "text-[#a7c0ff]",
 };
+
+/** Background of a status group heading in issue and subissue lists. */
+export const statusGroupBackground: Record<IssueStatus, string> = {
+  in_review: "bg-[#2b2634]",
+  in_progress: "bg-[#1c2736]",
+  todo: "bg-[#27292c]",
+  backlog: "bg-[#292c30]",
+  done: "bg-[#23302a]",
+  canceled: "bg-[#27292c]",
+};
