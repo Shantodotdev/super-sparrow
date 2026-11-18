@@ -268,3 +268,31 @@ func TestInviteSendsAnEmail(t *testing.T) {
 		t.Fatalf("failed invitation = %+v, %v", second, err)
 	}
 }
+
+func TestDevelopmentCodeSignsInWithoutEmail(t *testing.T) {
+	f := newFixture(t)
+	f.service.UseDevelopmentCode()
+
+	if err := f.service.RequestCode(f.ctx, "olive@example.com", "203.0.113.7"); err != nil {
+		t.Fatalf("RequestCode: %v", err)
+	}
+	f.service.Wait()
+	if sent := f.mailer.messages(); len(sent) != 0 {
+		t.Fatalf("development sent %d emails", len(sent))
+	}
+
+	if _, err := f.service.VerifyCode(f.ctx, "olive@example.com", "123456", "Firefox on Linux", "203.0.113.7", store.ClientBrowser); !errors.Is(err, store.ErrInvalidCode) {
+		t.Fatalf("a wrong code returned %v", err)
+	}
+	signIn, err := f.service.VerifyCode(f.ctx, "olive@example.com", DevelopmentCodeValue, "Firefox on Linux", "203.0.113.7", store.ClientBrowser)
+	if err != nil || signIn.Actor.ID != f.owner.ID {
+		t.Fatalf("VerifyCode = %+v, %v", signIn, err)
+	}
+
+	if _, err := f.service.Invite(f.ctx, store.Caller{ActorID: f.owner.ID}, store.NewHuman{DisplayName: "Max", Email: "max@example.com", Role: store.RoleMember}); err != nil {
+		t.Fatalf("Invite: %v", err)
+	}
+	if sent := f.mailer.messages(); len(sent) != 0 {
+		t.Fatalf("development invitation sent %d emails", len(sent))
+	}
+}

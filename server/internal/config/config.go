@@ -56,6 +56,7 @@ type Config struct {
 	PublicURL     *url.URL
 	LogLevel      slog.Level
 	// ResendAPIKey authenticates the server to Resend, which sends sign-in codes and invitations.
+	// Development sends no email, so it may be empty there.
 	ResendAPIKey string
 	// EmailFrom is the sender of every email, such as "Super Sparrow <sparrow@example.com>".
 	EmailFrom string
@@ -161,15 +162,15 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	problems = append(problems, err)
 
-	resendAPIKey, err := required(getenv, "RESEND_API_KEY")
-	if err == nil && !strings.HasPrefix(resendAPIKey, "re_") {
+	resendAPIKey, err := optional("RESEND_API_KEY")
+	if err == nil && resendAPIKey != "" && !strings.HasPrefix(resendAPIKey, "re_") {
 		err = errors.New("RESEND_API_KEY must be a Resend API key, which starts with re_")
 	}
 	problems = append(problems, err)
 	cfg.ResendAPIKey = resendAPIKey
 
-	emailFrom, err := required(getenv, "EMAIL_FROM")
-	if err == nil {
+	emailFrom, err := optional("EMAIL_FROM")
+	if err == nil && emailFrom != "" {
 		_, err = mail.ParseAddress(emailFrom)
 		if err != nil {
 			err = fmt.Errorf("EMAIL_FROM must be an address such as Super Sparrow <sparrow@example.com>: %w", err)

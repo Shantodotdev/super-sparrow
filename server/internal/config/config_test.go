@@ -231,3 +231,17 @@ func TestAttachmentsR2IsLoadedInDevelopment(t *testing.T) {
 		t.Errorf("AttachmentsR2 = %+v, want %+v", cfg.AttachmentsR2, want)
 	}
 }
+
+func TestDevelopmentNeedsNoEmailSettings(t *testing.T) {
+	env := developmentEnv(t)
+	delete(env, "RESEND_API_KEY")
+	delete(env, "EMAIL_FROM")
+
+	cfg, err := Load(lookup(env))
+	if err != nil {
+		t.Fatalf("Load returned an error: %v", err)
+	}
+	if cfg.ResendAPIKey != "" || cfg.EmailFrom != "" {
+		t.Errorf("email settings %q %q", cfg.ResendAPIKey, cfg.EmailFrom)
+	}
+}

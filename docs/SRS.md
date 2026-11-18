@@ -143,7 +143,7 @@ Super Sparrow serves one team. There is no public signup and no password.
 - Settings lists each person's signed-in devices, with sign-out for one device or all of them.
 - Disabling a teammate ends all their sessions and revokes all their agent tokens at once.
 - Signing in and out and creating, renewing, or revoking a token write events on the person or agent. Sign-in codes, session renewals, and token use are credential bookkeeping and write none.
-- The Resend API key, the sender address, and the server's public URL are required settings.
+- The Resend API key, the sender address, and the server's public URL are required settings in production. A development server sends no email: every teammate signs in with the fixed code `000000`, and it needs no Resend settings.
 
 ### Agents
 
