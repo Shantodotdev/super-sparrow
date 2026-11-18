@@ -270,6 +270,31 @@ func listCopies(ctx context.Context, bucket *r2.Bucket) error {
 	return nil
 }
 
+const (
+	developmentOwnerName  = "Admin"
+	developmentOwnerEmail = "admin@gmail.com"
+)
+
+// seedDevelopmentOwner makes sure a development database has the owner everyone signs in as
+// with the development code. It adds nothing when that person already exists.
+func seedDevelopmentOwner(ctx context.Context, st *store.Store) error {
+	_, err := st.GetActorByEmail(ctx, developmentOwnerEmail)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("look up development owner: %w", err)
+	}
+
+	_, err = st.CreateHuman(ctx, store.Caller{ActorID: store.SystemActorID},
+		store.NewHuman{DisplayName: developmentOwnerName, Email: developmentOwnerEmail, Role: store.RoleOwner})
+	if err != nil {
+		return fmt.Errorf("seed development owner: %w", err)
+	}
+
+	return nil
+}
+
 // serve migrates the database and serves HTTP until ctx ends, running the backup jobs alongside
 // when they are enabled. On shutdown it ends event streams, waits for open requests to finish,
 // and lets a running backup record its result.
@@ -281,7 +306,17 @@ func serve(ctx context.Context) error {
 	defer db.Close()
 
 	logger := logging.New(os.Stdout, cfg.LogLevel)
-	authService := auth.New(st, email.NewResend(cfg.ResendAPIKey, cfg.EmailFrom), cfg.PublicURL, cfg.SignInCodeKey, logger, time.Now)
+	var mailer email.Sender
+	if cfg.Environment != config.Development {
+		mailer = email.NewResend(cfg.ResendAPIKey, cfg.EmailFrom)
+	}
+	authService := auth.New(st, mailer, cfg.PublicURL, cfg.SignInCodeKey, logger, time.Now)
+	if cfg.Environment == config.Development {
+		authService.UseDevelopmentCode()
+		if err := seedDevelopmentOwner(ctx, st); err != nil {
+			return err
+		}
+	}
 	defer authService.Wait()
 
 	stopStreams := make(chan struct{})

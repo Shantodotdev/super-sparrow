@@ -70,6 +70,8 @@ type Service struct {
 	// cliLogins counts CLI sign-in requests per client address, apart from emailed codes.
 	cliLogins *ratelimit.Limiter
 	sending   sync.WaitGroup
+	// developmentCode, when set, is the sign-in code every teammate gets and no email is sent.
+	developmentCode string
 }
 
 // New returns a Service. publicURL is the address people open, used in emails. codeKey is the
@@ -90,6 +92,13 @@ func New(st *store.Store, mailer email.Sender, publicURL *url.URL, codeKey []byt
 	}
 }
 
+// DevelopmentCodeValue is the sign-in code of a development server, which sends no email.
+const DevelopmentCodeValue = "000000"
+
+// UseDevelopmentCode makes the service issue DevelopmentCodeValue to every teammate instead of
+// emailing a random code, and send no email at all. Call it only for a development server.
+func (s *Service) UseDevelopmentCode() { s.developmentCode = DevelopmentCodeValue }
+
 // RequestCode emails a new sign-in code to address when it belongs to an active teammate. It
 // returns the same result whether or not it does, and sends the email in the background so the
 // response time does not tell them apart either. It fails with a RateLimitError when address or
@@ -107,13 +116,16 @@ func (s *Service) RequestCode(ctx context.Context, address, clientIP string) err
 		return &RateLimitError{RetryAfter: retry}
 	}
 
-	code, err := newCode()
-	if err != nil {
-		return err
+	code := s.developmentCode
+	if code == "" {
+		var err error
+		if code, err = newCode(); err != nil {
+			return err
+		}
 	}
 
 	issued, err := s.store.IssueSignInCode(ctx, normalized, s.hashCode(normalized, code))
-	if err != nil || !issued {
+	if err != nil || !issued || s.developmentCode != "" {
 		return err
 	}
 
@@ -248,6 +260,10 @@ func (s *Service) Invite(ctx context.Context, by store.Caller, input store.NewHu
 	inviter, err := s.store.GetActor(ctx, by.ActorID)
 	if err != nil {
 		return actor, fmt.Errorf("%w: load inviter: %w", ErrInvitationNotSent, err)
+	}
+
+	if s.developmentCode != "" {
+		return actor, nil
 	}
 
 	message, err := email.Invitation(actor.Email, inviter.DisplayName, s.publicURL.String(), s.publicURL.JoinPath("logo.png").String())
