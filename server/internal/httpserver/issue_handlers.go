@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/shantodotdev/super-sparrow/server/internal/checklist"
@@ -154,6 +155,37 @@ func (s *server) updateIssue(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	issue, err = s.store.UpdateIssue(r.Context(), identityFrom(r.Context()).caller(), issue.ID, update)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"issue": newIssueView(issue)})
+	return nil
+}
+
+// moveIssue moves the issue, with its subissues, reviews, comments, and attachments, to the
+// project named by the body's project, a project key. The issue takes that project's next number,
+// so the response carries its new key.
+func (s *server) moveIssue(w http.ResponseWriter, r *http.Request) error {
+	var body struct {
+		Project string `json:"project"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		return err
+	}
+
+	issue, err := s.issueFromPath(r)
+	if err != nil {
+		return err
+	}
+	target, err := s.store.GetProjectByKey(r.Context(), body.Project)
+	if errors.Is(err, store.ErrNotFound) {
+		return &store.ValidationError{Field: "project", Message: "must be the key of an existing project"}
+	}
+	if err != nil {
+		return err
+	}
+
+	issue, err = s.store.MoveIssue(r.Context(), identityFrom(r.Context()).caller(), issue.ID, target.ID)
 	if err != nil {
 		return err
 	}

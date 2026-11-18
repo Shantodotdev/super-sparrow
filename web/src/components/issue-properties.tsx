@@ -1,9 +1,11 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useState } from "react";
 import { formatDate, webUrl } from "../lib/format";
 import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
-import { usePatchIssue } from "../queries/issues";
-import { actorsQuery, milestonesQuery } from "../queries/project";
+import { issueQuery, useMoveIssueToProject, usePatchIssue } from "../queries/issues";
+import { actorsQuery, milestonesQuery, projectsQuery } from "../queries/project";
 import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 import { ResourceSelector } from "./resource-selector";
@@ -15,6 +17,7 @@ import { Avatar } from "./avatar";
 import { IssueTextField } from "./issue-text-field";
 import { LabelSelector } from "./label-selector";
 import { Person } from "./person";
+import { MoveIssueDialog } from "./move-issue-dialog";
 
 type IssuePropertiesProps = {
   issue: Issue;
@@ -27,12 +30,64 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
   const { data: actors } = useSuspenseQuery(actorsQuery);
   const { data: milestones } = useSuspenseQuery(milestonesQuery);
   const patch = usePatchIssue(issue.key);
+  const { data: projects } = useSuspenseQuery(projectsQuery);
+  const moveIssue = useMoveIssueToProject();
+  const navigate = useNavigate();
+  const { tab } = useSearch({ strict: false }) as { tab?: string };
+  const [moveTarget, setMoveTarget] = useState<string>();
+  const target = projects.find((item) => item.id === moveTarget);
+
+  const confirmMove = () => {
+    if (!target) return;
+    moveIssue.mutate(
+      { issue, projectKey: target.key },
+      {
+        onSuccess: async (moved) => {
+          // Go to the new address before refetching, so no query asks for the old key.
+          await navigate({
+            to: "/$projectSlug/issues/$issue",
+            params: { projectSlug: target.slug, issue: moved.key },
+            search: { tab: tab as never },
+            replace: true,
+          });
+          client.removeQueries({ queryKey: issueQuery(issue.key).queryKey });
+          void client.invalidateQueries();
+          setMoveTarget(undefined);
+        },
+      },
+    );
+  };
 
   const pullRequestUrl = webUrl(issue.pull_request_url);
   const pullNumber = /\/pull\/(\d+)/.exec(pullRequestUrl)?.[1];
 
   return (
     <aside className="sticky top-0 h-dvh self-start overflow-y-auto border-l border-l-[#242932] p-[24px] text-[13px] max-[700px]:static max-[700px]:h-auto max-[700px]:border-t max-[700px]:border-l-0 max-[700px]:border-t-[#252a32] [&_.icon]:size-[15px] [&_>_.custom-select]:w-full [&_button[aria-expanded]]:min-h-[36px] [&_button[aria-expanded]]:py-0 [&_button[aria-expanded]]:text-[13px] [&_h3]:mx-0 [&_h3]:mt-[16px] [&_h3]:mb-[6px] [&_h3]:text-[12px] [&_h3:first-child]:mt-0 [&_input]:h-[36px] [&_input]:min-h-[36px] [&_input]:py-0 [&_input]:text-[13px] [&_strong]:text-[13px]">
+      <h3>Project</h3>
+      <Select
+        label="Project"
+        value={issue.project_id}
+        icon="folder"
+        onChange={(value) => {
+          if (value === issue.project_id) return;
+          moveIssue.reset();
+          setMoveTarget(value);
+        }}
+        options={projects.map((item) => ({
+          value: item.id,
+          label: item.name,
+          icon: "folder" as const,
+          iconClassName: "text-[#95a6bd]",
+        }))}
+      />
+      <MoveIssueDialog
+        issue={issue}
+        target={target}
+        pending={moveIssue.isPending}
+        error={moveIssue.error?.message ?? ""}
+        onConfirm={confirmMove}
+        onClose={() => setMoveTarget(undefined)}
+      />
       <h3>Status</h3>
       <div className="[&_.custom-select-value]:flex-1">
         <Select

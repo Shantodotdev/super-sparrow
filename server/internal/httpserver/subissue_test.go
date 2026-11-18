@@ -104,3 +104,25 @@ func TestSubissues(t *testing.T) {
 		t.Fatalf("subissue actors: %v, agent %s", actors, me.Actor.ID)
 	}
 }
+
+func TestMoveIssueToAnotherProject(t *testing.T) {
+	a := newAPITeam(t)
+	a.project()
+	a.call(http.MethodPost, "/api/projects", a.member, map[string]string{"key": "ops", "name": "Ops"}, http.StatusCreated, nil)
+	path := "/api/issues/WP-1/move"
+
+	a.call(http.MethodPost, path, "", map[string]string{"project": "OPS"}, http.StatusUnauthorized, nil)
+	a.call(http.MethodPost, path, a.member, map[string]string{"project": "NOPE"}, http.StatusBadRequest, nil)
+	a.call(http.MethodPost, path, a.member, map[string]string{"project": "WP"}, http.StatusBadRequest, nil)
+	a.call(http.MethodPost, "/api/issues/WP-9/move", a.member, map[string]string{"project": "OPS"}, http.StatusNotFound, nil)
+
+	var moved struct {
+		Issue issueView `json:"issue"`
+	}
+	a.call(http.MethodPost, path, a.agent, map[string]string{"project": "OPS"}, http.StatusOK, &moved)
+	if moved.Issue.Key != "OPS-1" || moved.Issue.ProjectKey != "OPS" {
+		t.Fatalf("moved: %+v", moved.Issue)
+	}
+	a.call(http.MethodGet, "/api/issues/WP-1", a.member, nil, http.StatusNotFound, nil)
+	a.call(http.MethodGet, "/api/issues/OPS-1", a.member, nil, http.StatusOK, nil)
+}
