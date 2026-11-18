@@ -5,7 +5,7 @@ import type { Project } from "../queries/resources";
 import { Modal } from "./modal";
 
 type MoveIssueDialogProps = {
-  issue: Issue;
+  issues: Issue[];
   target: Project | undefined;
   pending: boolean;
   error: string;
@@ -15,7 +15,7 @@ type MoveIssueDialogProps = {
 
 /** Asks for confirmation before an issue moves to another project, saying what moves with it. */
 export function MoveIssueDialog({
-  issue,
+  issues,
   target,
   pending,
   error,
@@ -27,6 +27,11 @@ export function MoveIssueDialog({
   const lastTarget = useRef(target);
   if (target) lastTarget.current = target;
   const name = lastTarget.current?.name;
+  const lastIssues = useRef(issues);
+  if (target) lastIssues.current = issues;
+  const moving = lastIssues.current;
+  const many = moving.length > 1;
+  const what = moving.length === 1 ? moving[0]?.key : `${moving.length} issues`;
 
   return createPortal(
     <Modal
@@ -39,16 +44,17 @@ export function MoveIssueDialog({
       labelledBy={headingId}
     >
       <h2 id={headingId} className="m-0 text-[18px] font-medium text-[#e7e8ec]">
-        Move {issue.key} to {name}?
+        Move {what} to {name}?
       </h2>
       <p className="mt-3 mb-0 text-[15px] leading-[1.55] text-[#a9b8ca]">
-        The issue gets a new key in {name}, and the old key stops working. Its subissues, reviews,
-        comments, and attachments move with it.
+        {many ? "Each issue gets a new key" : "The issue gets a new key"} in {name}, and{" "}
+        {many ? "the old keys stop" : "the old key stops"} working. Subissues, reviews, comments,
+        and attachments move with {many ? "them" : "it"}.
       </p>
       <ul className="mt-3 mb-0 list-disc space-y-1 pl-5 text-[15px] leading-normal text-[#a9b8ca]">
         <li>Labels move by name; missing ones are created in {name}.</li>
         <li>The milestone moves if {name} has one with the same name, otherwise it is cleared.</li>
-        <li>Its parent issue link and any child issues are unlinked.</li>
+        <li>Parent issue links and child issues are unlinked.</li>
       </ul>
       {error && (
         <p role="alert" className="mt-3 mb-0 text-[15px] text-[#ff9999]">
@@ -71,7 +77,7 @@ export function MoveIssueDialog({
           disabled={pending}
           onClick={onConfirm}
         >
-          Move issue
+          {moving.length === 1 ? "Move issue" : `Move ${moving.length} issues`}
         </button>
       </div>
     </Modal>,

@@ -81,7 +81,7 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
         }))}
       />
       <MoveIssueDialog
-        issue={issue}
+        issues={[issue]}
         target={target}
         pending={moveIssue.isPending}
         error={moveIssue.error?.message ?? ""}

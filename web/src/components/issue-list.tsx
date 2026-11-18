@@ -14,8 +14,10 @@ import {
   statusIcon,
 } from "../lib/issue-status";
 import type { Issue, IssueStatus } from "../lib/types";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useMoveIssuesDialog } from "../hooks/use-move-issues-dialog";
 import { useMoveIssueStatus } from "../queries/issues";
-import { useActor } from "../queries/project";
+import { projectsQuery, useActor } from "../queries/project";
 import { Avatar } from "./avatar";
 import { useActorTitle } from "./person";
 import { Icon } from "./icon";
@@ -51,6 +53,8 @@ export function IssueList({
   const { dragged, dropTarget, origin, dragProps } = useIssueDrag(moveIssue);
 
   const [selected, setSelected] = useState<string[]>([]);
+  const { data: projects } = useSuspenseQuery(projectsQuery);
+  const mover = useMoveIssuesDialog(() => setSelected([]));
   const lastToggled = useRef<string | undefined>(undefined);
 
   useDragAutoscroll(!!dragged, listRef, toolbarHeight);
@@ -252,10 +256,18 @@ export function IssueList({
         );
       })}
       {contextMenu.menu}
+      {mover.dialog}
       {selected.length > 0 && (
         <IssueSelectionBar
           count={selected.length}
+          projects={projects}
           onMove={moveSelected}
+          onMoveToProject={(project) =>
+            mover.request(
+              issues.filter((issue) => selected.includes(issue.id)),
+              project,
+            )
+          }
           onClear={() => setSelected([])}
         />
       )}
