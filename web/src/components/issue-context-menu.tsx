@@ -22,8 +22,10 @@ import {
   statusIconColor,
 } from "../lib/issue-status";
 import type { Issue, IssuePriority } from "../lib/types";
+import { useMoveIssuesDialog } from "../hooks/use-move-issues-dialog";
 import { issuesQuery, useQuickPatchIssue } from "../queries/issues";
-import { actorsQuery, labelsQuery, milestonesQuery } from "../queries/project";
+import { actorsQuery, labelsQuery, milestonesQuery, projectsQuery } from "../queries/project";
+import type { Project } from "../queries/resources";
 import { Avatar } from "./avatar";
 import { Icon } from "./icon";
 import { LabelDot } from "./label-dot";
@@ -39,22 +41,28 @@ const panelClass =
 /** Opens a Linear-style menu of an issue's properties on right-click. */
 export function useIssueContextMenu() {
   const [target, setTarget] = useState<MenuTarget>();
+  const mover = useMoveIssuesDialog();
 
   const open = (issue: Issue) => (event: MouseEvent) => {
     event.preventDefault();
     setTarget({ issue, x: event.clientX, y: event.clientY });
   };
 
-  const menu = target
-    ? createPortal(
-        <IssueContextMenu
-          key={`${target.issue.id}:${target.x}:${target.y}`}
-          target={target}
-          onClose={() => setTarget(undefined)}
-        />,
-        document.body,
-      )
-    : null;
+  const menu = (
+    <>
+      {target &&
+        createPortal(
+          <IssueContextMenu
+            key={`${target.issue.id}:${target.x}:${target.y}`}
+            target={target}
+            onClose={() => setTarget(undefined)}
+            onMove={(issue, project) => mover.request([issue], project)}
+          />,
+          document.body,
+        )}
+      {mover.dialog}
+    </>
+  );
 
   return { open, menu, activeId: target?.issue.id };
 }
@@ -203,7 +211,16 @@ export function ContextMenuShell({
 }
 
 /** Lists the properties of one issue as pickers; each choice is saved at once. */
-function IssueContextMenu({ target, onClose }: { target: MenuTarget; onClose: () => void }) {
+function IssueContextMenu({
+  target,
+  onClose,
+  onMove,
+}: {
+  target: MenuTarget;
+  onClose: () => void;
+  onMove: (issue: Issue, project: Project) => void;
+}) {
+  const { data: projects } = useSuspenseQuery(projectsQuery);
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const { data: actors } = useSuspenseQuery(actorsQuery);
   const { data: labels } = useSuspenseQuery(labelsQuery);
@@ -223,6 +240,7 @@ function IssueContextMenu({ target, onClose }: { target: MenuTarget; onClose: ()
   );
   const assignee = people.find((actor) => actor.id === issue.assignee_actor_id);
   const milestone = projectMilestones.find((item) => item.id === issue.milestone_id);
+  const currentProject = projects.find((item) => item.id === issue.project_id);
   const link = `${window.location.origin}/${projectSlug(issue.project_id)}/issues/${issue.key}`;
 
   return (
@@ -312,6 +330,27 @@ function IssueContextMenu({ target, onClose }: { target: MenuTarget; onClose: ()
                   }
                   checked={issue.assignee_actor_id === actor.id}
                   onSelect={() => choose({ assignee_actor_id: actor.id })}
+                />
+              ))}
+            </Parent>
+            <Parent
+              id="project"
+              label="Project"
+              icon={<Icon name="folder" className="text-[#95a6bd]" />}
+              detail={currentProject?.name}
+              openSub={openSub}
+              setOpenSub={setOpenSub}
+            >
+              {projects.map((project) => (
+                <Item
+                  key={project.id}
+                  label={project.name}
+                  icon={<Icon name="folder" className="text-[#95a6bd]" />}
+                  checked={project.id === issue.project_id}
+                  onSelect={() => {
+                    close();
+                    onMove(issue, project);
+                  }}
                 />
               ))}
             </Parent>
