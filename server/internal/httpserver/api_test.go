@@ -602,7 +602,7 @@ func TestLabelColorAPI(t *testing.T) {
 		Label labelView `json:"label"`
 	}
 	a.call(http.MethodPost, "/api/projects/WP/labels", a.member, map[string]string{"name": "Urgent", "color": "#F2A9AE"}, http.StatusCreated, &created)
-	if created.Label.Color != "#ff6b6b" {
+	if created.Label.Color != "#f2a9ae" {
 		t.Fatalf("created label %+v", created.Label)
 	}
 	var listed struct {

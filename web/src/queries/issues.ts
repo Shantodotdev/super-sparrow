@@ -147,3 +147,13 @@ export function useMoveIssueStatus() {
 
   return (issue: Issue, status: IssueStatus) => patchIssue(issue, { status });
 }
+
+/** Moves an issue to another project, which gives it a new key; returns the moved issue. */
+export function useMoveIssueToProject() {
+  return useMutation({
+    mutationFn: ({ issue, projectKey }: { issue: Issue; projectKey: string }) =>
+      apiWrite<{ issue: Issue }>(`/api/issues/${encodeURIComponent(issue.key)}/move`, "POST", {
+        project: projectKey,
+      }).then((result) => result.issue),
+  });
+}

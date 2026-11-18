@@ -33,6 +33,8 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
       return { action: `updated subissue ${String(p.number)} on` };
     case "issue.status_changed":
       return { action: `moved to ${issueStatusLabel[p.to as IssueStatus] ?? String(p.to)}` };
+    case "issue.moved":
+      return { action: `moved from ${String(p.from_key)} to` };
     case "issue.checklist_changed":
       return { action: "updated the checklist of" };
     case "review_round.started":
