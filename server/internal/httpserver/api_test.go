@@ -602,7 +602,7 @@ func TestLabelColorAPI(t *testing.T) {
 		Label labelView `json:"label"`
 	}
 	a.call(http.MethodPost, "/api/projects/WP/labels", a.member, map[string]string{"name": "Urgent", "color": "#F2A9AE"}, http.StatusCreated, &created)
-	if created.Label.Color != "#f2a9ae" {
+	if created.Label.Color != "#ff6b6b" {
 		t.Fatalf("created label %+v", created.Label)
 	}
 	var listed struct {
@@ -614,7 +614,7 @@ func TestLabelColorAPI(t *testing.T) {
 	}
 	wantField(t, a.request(http.MethodPost, "/api/projects/WP/labels", a.member, map[string]string{"name": "Invalid", "color": "not-a-color"}), "color")
 	a.call(http.MethodPost, "/api/projects/WP/labels", a.agent, map[string]string{"name": "Legacy"}, http.StatusCreated, &created)
-	if created.Label.Color != "#a7c0ff" {
+	if created.Label.Color != "#6c9bff" {
 		t.Fatalf("legacy label %+v", created.Label)
 	}
 }

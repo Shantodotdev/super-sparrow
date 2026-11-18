@@ -333,7 +333,7 @@ func scanMilestone(row scanner) (Milestone, error) {
 
 // CreateLabel adds a label to a project. People and agents can create labels.
 func (s *Store) CreateLabel(ctx context.Context, by Caller, projectID, name string) (Label, error) {
-	return s.CreateLabelWithColor(ctx, by, projectID, name, "#a7c0ff")
+	return s.CreateLabelWithColor(ctx, by, projectID, name, "#6c9bff")
 }
 
 // CreateLabelWithColor adds a label with an explicit hexadecimal color and records its actor.
@@ -345,7 +345,7 @@ func (s *Store) CreateLabelWithColor(ctx context.Context, by Caller, projectID, 
 
 	color = strings.ToLower(strings.TrimSpace(color))
 	if !labelColorPattern.MatchString(color) {
-		return Label{}, invalid("color", "must be a six-digit hex color, such as #a7c0ff")
+		return Label{}, invalid("color", "must be a six-digit hex color, such as #6c9bff")
 	}
 
 	label := Label{ID: newID(), ProjectID: projectID, Name: name, Color: color}
@@ -385,7 +385,7 @@ func (s *Store) UpdateLabel(ctx context.Context, by Caller, projectID, labelID s
 	if update.Color.Set {
 		update.Color.Value = strings.ToLower(strings.TrimSpace(update.Color.Value))
 		if !labelColorPattern.MatchString(update.Color.Value) {
-			return Label{}, invalid("color", "must be a six-digit hex color, such as #a7c0ff")
+			return Label{}, invalid("color", "must be a six-digit hex color, such as #6c9bff")
 		}
 	}
 

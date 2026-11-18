@@ -4,7 +4,7 @@ import { Input } from "./input";
 import { FloatingMenu } from "./floating-menu";
 import { Icon } from "./icon";
 import { LabelDot } from "./label-dot";
-import { labelColors } from "../lib/label-colors";
+import { labelColors, labelGradient } from "../lib/label-colors";
 
 type ResourceOption = { id: string; name: string; color?: string };
 type ResourceSelectorProps = {
@@ -142,7 +142,7 @@ export function ResourceSelector({
                   >
                     <span
                       className="size-5 rounded-full"
-                      style={{ backgroundColor: color.value }}
+                      style={{ backgroundImage: labelGradient(color.value) }}
                     />
                     {color.name}
                   </button>

@@ -228,7 +228,7 @@ func TestLabelColorsBackfillExistingLabels(t *testing.T) {
 	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]string{"Bug": "#f2a9ae", "backend": "#a1e4cd", "Other": "#a7c0ff"} {
+	for name, want := range map[string]string{"Bug": "#ff6b6b", "backend": "#3fd9a0", "Other": "#6c9bff"} {
 		var color string
 		if err := db.QueryRow(`SELECT color FROM labels WHERE name=?`, name).Scan(&color); err != nil {
 			t.Fatal(err)
