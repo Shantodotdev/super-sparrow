@@ -164,8 +164,10 @@ export function useGlobalShortcuts(onHelp: () => void): void {
     search: () => {
       document.querySelector<HTMLInputElement>('input[aria-label="Search issues"]')?.focus();
     },
-    nextIssue: () => moveRowFocus(1),
-    previousIssue: () => moveRowFocus(-1),
+    ...(!onIssuePage && {
+      nextIssue: () => moveRowFocus(1),
+      previousIssue: () => moveRowFocus(-1),
+    }),
     toggleView: () => {
       if (!onIssueList || !projectSlug) return;
 

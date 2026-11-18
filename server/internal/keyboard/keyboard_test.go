@@ -37,3 +37,16 @@ func TestKeyboardRejectsCollisionsAndInvalidChords(t *testing.T) {
 		}
 	}
 }
+
+func TestIssueListAndIssuePageMayShareKeys(t *testing.T) {
+	definitions := Definitions()
+	if definitions["nextIssue"].Binding != definitions["previousTab"].Binding {
+		t.Fatalf("expected next issue and previous tab to share a key by default")
+	}
+	if err := Validate(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(map[string]string{"newIssue": "S"}); err == nil {
+		t.Fatal("expected a conflict between New issue and New subissue")
+	}
+}

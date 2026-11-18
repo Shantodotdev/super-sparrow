@@ -100,6 +100,9 @@ func Validate(overrides map[string]string) error {
 		for _, other := range ids[index+1:] {
 			for _, left := range expandMod(bindings[id]) {
 				for _, right := range expandMod(bindings[other]) {
+					if exclusivePages(definitions[id].Group, definitions[other].Group) {
+						continue
+					}
 					if left == right || strings.HasPrefix(left, right+" ") || strings.HasPrefix(right, left+" ") {
 						return fmt.Errorf("%s conflicts with %s", definitions[id].Label, definitions[other].Label)
 					}
@@ -108,6 +111,12 @@ func Validate(overrides map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// exclusivePages reports whether two groups belong to pages that are never open together, so
+// their actions may share a key.
+func exclusivePages(left, right string) bool {
+	return left == "Issue list" && right == "Issue page" || left == "Issue page" && right == "Issue list"
 }
 
 func expandMod(binding string) []string {

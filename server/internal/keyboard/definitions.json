@@ -98,6 +98,21 @@
     "group": "Issue page",
     "binding": "5"
   },
+  "previousTab": {
+    "label": "Previous issue tab",
+    "group": "Issue page",
+    "binding": "J"
+  },
+  "nextTab": {
+    "label": "Next issue tab",
+    "group": "Issue page",
+    "binding": "L"
+  },
+  "newSubissue": {
+    "label": "New subissue",
+    "group": "Issue page",
+    "binding": "S"
+  },
   "editTitle": {
     "label": "Edit issue title",
     "group": "Issue page",
@@ -116,7 +131,7 @@
   "findingLater": {
     "label": "Decide Later",
     "group": "Findings",
-    "binding": "L"
+    "binding": "D"
   },
   "help": {
     "label": "Show keyboard shortcuts",
