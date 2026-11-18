@@ -304,7 +304,11 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             .permission("allow-end-capture"),
     )?;
     let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(server.clone()))
-        .title("Super Sparrow")
+        .title(if cfg!(debug_assertions) {
+            "Super Sparrow - Developer"
+        } else {
+            "Super Sparrow"
+        })
         .user_agent(USER_AGENT)
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
