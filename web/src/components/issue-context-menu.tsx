@@ -59,13 +59,29 @@ export function useIssueContextMenu() {
   return { open, menu, activeId: target?.issue.id };
 }
 
-/** Lists the properties of one issue as pickers; each choice is saved at once. */
-function IssueContextMenu({
-  target,
-  onClose: dismiss,
-}: {
-  target: MenuTarget;
+type MenuControls = {
   onClose: () => void;
+  openSub: string | undefined;
+  setOpenSub: (id: string | undefined) => void;
+};
+
+/**
+ * The floating panel of a context menu: it sits at the pointer, closes on any interaction outside
+ * it after an exit animation, and moves between rows and submenus with the arrow keys. `children`
+ * receives the controls its rows need.
+ */
+export function ContextMenuShell({
+  label,
+  x,
+  y,
+  onClose: dismiss,
+  children,
+}: {
+  label: string;
+  x: number;
+  y: number;
+  onClose: () => void;
+  children: (controls: MenuControls) => ReactNode;
 }) {
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<number | undefined>(undefined);
@@ -81,27 +97,8 @@ function IssueContextMenu({
     closeTimer.current = window.setTimeout(() => dismissRef.current(), 110);
   }, []);
 
-  const { data: issues } = useSuspenseQuery(issuesQuery);
-  const { data: actors } = useSuspenseQuery(actorsQuery);
-  const { data: labels } = useSuspenseQuery(labelsQuery);
-  const { data: milestones } = useSuspenseQuery(milestonesQuery);
-  const projectSlug = useProjectSlugs();
-  const patchIssue = useQuickPatchIssue();
-  const { notify } = useToast();
   const root = useRef<HTMLDivElement>(null);
   const [openSub, setOpenSub] = useState<string>();
-
-  // Follow optimistic edits so checkmarks update while the menu stays open.
-  const issue = issues.find((item) => item.id === target.issue.id) ?? target.issue;
-  const priority: IssuePriority = issue.priority ?? "";
-  const projectLabels = labels.filter((label) => label.project_id === issue.project_id);
-  const projectMilestones = milestones.filter((item) => item.project_id === issue.project_id);
-  const people = actors.filter(
-    (actor) =>
-      actor.kind === "human" && (!actor.disabled_at || actor.id === issue.assignee_actor_id),
-  );
-  const assignee = people.find((actor) => actor.id === issue.assignee_actor_id);
-  const milestone = projectMilestones.find((item) => item.id === issue.milestone_id);
 
   // Place the menu at the pointer, kept inside the viewport.
   useLayoutEffect(() => {
@@ -110,10 +107,10 @@ function IssueContextMenu({
 
     const edge = 8;
     const bounds = element.getBoundingClientRect();
-    element.style.left = `${Math.max(edge, Math.min(target.x, window.innerWidth - bounds.width - edge))}px`;
-    element.style.top = `${Math.max(edge, Math.min(target.y, window.innerHeight - bounds.height - edge))}px`;
+    element.style.left = `${Math.max(edge, Math.min(x, window.innerWidth - bounds.width - edge))}px`;
+    element.style.top = `${Math.max(edge, Math.min(y, window.innerHeight - bounds.height - edge))}px`;
     element.focus({ preventScroll: true });
-  }, [target.x, target.y]);
+  }, [x, y]);
 
   // Dismiss on any interaction outside the menu.
   useEffect(() => {
@@ -150,19 +147,6 @@ function IssueContextMenu({
       window.removeEventListener("blur", onClose);
     };
   }, [onClose]);
-
-  const choose = (change: Partial<Issue>, keepOpen = false) => {
-    patchIssue(issue, change);
-    if (!keepOpen) onClose();
-  };
-
-  const copy = (text: string, message: string) => {
-    void navigator.clipboard.writeText(text).then(
-      () => notify(message),
-      () => notify("Could not copy to the clipboard"),
-    );
-    onClose();
-  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const current = (event.target as HTMLElement).closest<HTMLElement>("[role=menu]");
@@ -201,152 +185,209 @@ function IssueContextMenu({
     }
   };
 
-  const link = `${window.location.origin}/${projectSlug(issue.project_id)}/issues/${issue.key}`;
-
   return (
     <div
       ref={root}
       role="menu"
       tabIndex={-1}
-      aria-label={`Actions for ${issue.key}`}
+      aria-label={label}
       className={`context-menu fixed outline-none ${panelClass}`}
       data-closing={closing || undefined}
-      style={{ left: target.x, top: target.y }}
+      style={{ left: x, top: y }}
       onKeyDown={onKeyDown}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <Parent
-        id="status"
-        label="Status"
-        icon={<Icon name={statusIcon[issue.status]} className={statusIconColor[issue.status]} />}
-        openSub={openSub}
-        setOpenSub={setOpenSub}
-      >
-        {issueStatuses.map((status) => (
-          <Item
-            key={status}
-            label={issueStatusLabel[status]}
-            icon={<Icon name={statusIcon[status]} className={statusIconColor[status]} />}
-            checked={issue.status === status}
-            onSelect={() => choose({ status })}
-          />
-        ))}
-      </Parent>
-      <Parent
-        id="priority"
-        label="Priority"
-        icon={<Icon name={issuePriorityIcon[priority]} className={issuePriorityColor[priority]} />}
-        openSub={openSub}
-        setOpenSub={setOpenSub}
-      >
-        {(["", ...issuePriorities] as IssuePriority[]).map((value) => (
-          <Item
-            key={value || "none"}
-            label={issuePriorityLabel[value]}
-            icon={<Icon name={issuePriorityIcon[value]} className={issuePriorityColor[value]} />}
-            checked={priority === value}
-            onSelect={() => choose({ priority: value })}
-          />
-        ))}
-      </Parent>
-      <Parent
-        id="assignee"
-        label="Assignee"
-        icon={<Icon name="circle-user-round" className="text-[#95a6bd]" />}
-        detail={assignee?.display_name}
-        openSub={openSub}
-        setOpenSub={setOpenSub}
-      >
-        <Item
-          label="Unassigned"
-          icon={<Icon name="circle-user-round" className="text-[#95a6bd]" />}
-          checked={!issue.assignee_actor_id}
-          onSelect={() => choose({ assignee_actor_id: "" })}
-        />
-        {people.map((actor) => (
-          <Item
-            key={actor.id}
-            label={actor.display_name}
-            icon={
-              <span className="flex shrink-0 [&_.avatar]:size-5 [&_.avatar]:basis-5 [&_.avatar]:text-[9px]">
-                <Avatar actor={actor} />
-              </span>
-            }
-            checked={issue.assignee_actor_id === actor.id}
-            onSelect={() => choose({ assignee_actor_id: actor.id })}
-          />
-        ))}
-      </Parent>
-      <Parent
-        id="labels"
-        label="Labels"
-        icon={<Icon name="tag" className="text-[#95a6bd]" />}
-        detail={issue.label_ids.length ? String(issue.label_ids.length) : undefined}
-        openSub={openSub}
-        setOpenSub={setOpenSub}
-      >
-        {projectLabels.length === 0 && <Item label="No labels" disabled />}
-        {projectLabels.map((label) => {
-          const checked = issue.label_ids.includes(label.id);
-
-          return (
-            <Item
-              key={label.id}
-              label={label.name}
-              icon={<LabelDot color={label.color} />}
-              checked={checked}
-              onSelect={() =>
-                choose(
-                  {
-                    label_ids: checked
-                      ? issue.label_ids.filter((id) => id !== label.id)
-                      : [...issue.label_ids, label.id],
-                  },
-                  true,
-                )
-              }
-            />
-          );
-        })}
-      </Parent>
-      <Parent
-        id="milestone"
-        label="Milestone"
-        icon={<Icon name="target" className="text-[#95a6bd]" />}
-        detail={milestone?.name}
-        openSub={openSub}
-        setOpenSub={setOpenSub}
-      >
-        <Item
-          label="No milestone"
-          icon={<Icon name="target" className="text-[#95a6bd]" />}
-          checked={!issue.milestone_id}
-          onSelect={() => choose({ milestone_id: "" })}
-        />
-        {projectMilestones.map((item) => (
-          <Item
-            key={item.id}
-            label={item.name}
-            icon={<Icon name="target" className="text-[#95a6bd]" />}
-            checked={issue.milestone_id === item.id}
-            onSelect={() => choose({ milestone_id: item.id })}
-          />
-        ))}
-      </Parent>
-      <div role="separator" className="mx-1 my-1 h-px shrink-0 bg-[#2c323c]" />
-      <Item
-        label="Copy issue ID"
-        icon={<Icon name="copy" className="text-[#95a6bd]" />}
-        onSelect={() => copy(issue.key, `Copied ${issue.key}`)}
-        onHover={() => setOpenSub(undefined)}
-      />
-      <Item
-        label="Copy issue link"
-        icon={<Icon name="link" className="text-[#95a6bd]" />}
-        onSelect={() => copy(link, "Copied issue link")}
-        onHover={() => setOpenSub(undefined)}
-      />
+      {children({ onClose, openSub, setOpenSub })}
     </div>
+  );
+}
+
+/** Lists the properties of one issue as pickers; each choice is saved at once. */
+function IssueContextMenu({ target, onClose }: { target: MenuTarget; onClose: () => void }) {
+  const { data: issues } = useSuspenseQuery(issuesQuery);
+  const { data: actors } = useSuspenseQuery(actorsQuery);
+  const { data: labels } = useSuspenseQuery(labelsQuery);
+  const { data: milestones } = useSuspenseQuery(milestonesQuery);
+  const projectSlug = useProjectSlugs();
+  const patchIssue = useQuickPatchIssue();
+  const { notify } = useToast();
+
+  // Follow optimistic edits so checkmarks update while the menu stays open.
+  const issue = issues.find((item) => item.id === target.issue.id) ?? target.issue;
+  const priority: IssuePriority = issue.priority ?? "";
+  const projectLabels = labels.filter((label) => label.project_id === issue.project_id);
+  const projectMilestones = milestones.filter((item) => item.project_id === issue.project_id);
+  const people = actors.filter(
+    (actor) =>
+      actor.kind === "human" && (!actor.disabled_at || actor.id === issue.assignee_actor_id),
+  );
+  const assignee = people.find((actor) => actor.id === issue.assignee_actor_id);
+  const milestone = projectMilestones.find((item) => item.id === issue.milestone_id);
+  const link = `${window.location.origin}/${projectSlug(issue.project_id)}/issues/${issue.key}`;
+
+  return (
+    <ContextMenuShell
+      label={`Actions for ${issue.key}`}
+      x={target.x}
+      y={target.y}
+      onClose={onClose}
+    >
+      {({ onClose: close, openSub, setOpenSub }) => {
+        const choose = (change: Partial<Issue>, keepOpen = false) => {
+          patchIssue(issue, change);
+          if (!keepOpen) close();
+        };
+        const copy = (text: string, message: string) => {
+          void navigator.clipboard.writeText(text).then(
+            () => notify(message),
+            () => notify("Could not copy to the clipboard"),
+          );
+          close();
+        };
+
+        return (
+          <>
+            <Parent
+              id="status"
+              label="Status"
+              icon={
+                <Icon name={statusIcon[issue.status]} className={statusIconColor[issue.status]} />
+              }
+              openSub={openSub}
+              setOpenSub={setOpenSub}
+            >
+              {issueStatuses.map((status) => (
+                <Item
+                  key={status}
+                  label={issueStatusLabel[status]}
+                  icon={<Icon name={statusIcon[status]} className={statusIconColor[status]} />}
+                  checked={issue.status === status}
+                  onSelect={() => choose({ status })}
+                />
+              ))}
+            </Parent>
+            <Parent
+              id="priority"
+              label="Priority"
+              icon={
+                <Icon name={issuePriorityIcon[priority]} className={issuePriorityColor[priority]} />
+              }
+              openSub={openSub}
+              setOpenSub={setOpenSub}
+            >
+              {(["", ...issuePriorities] as IssuePriority[]).map((value) => (
+                <Item
+                  key={value || "none"}
+                  label={issuePriorityLabel[value]}
+                  icon={
+                    <Icon name={issuePriorityIcon[value]} className={issuePriorityColor[value]} />
+                  }
+                  checked={priority === value}
+                  onSelect={() => choose({ priority: value })}
+                />
+              ))}
+            </Parent>
+            <Parent
+              id="assignee"
+              label="Assignee"
+              icon={<Icon name="circle-user-round" className="text-[#95a6bd]" />}
+              detail={assignee?.display_name}
+              openSub={openSub}
+              setOpenSub={setOpenSub}
+            >
+              <Item
+                label="Unassigned"
+                icon={<Icon name="circle-user-round" className="text-[#95a6bd]" />}
+                checked={!issue.assignee_actor_id}
+                onSelect={() => choose({ assignee_actor_id: "" })}
+              />
+              {people.map((actor) => (
+                <Item
+                  key={actor.id}
+                  label={actor.display_name}
+                  icon={
+                    <span className="flex shrink-0 [&_.avatar]:size-5 [&_.avatar]:basis-5 [&_.avatar]:text-[9px]">
+                      <Avatar actor={actor} />
+                    </span>
+                  }
+                  checked={issue.assignee_actor_id === actor.id}
+                  onSelect={() => choose({ assignee_actor_id: actor.id })}
+                />
+              ))}
+            </Parent>
+            <Parent
+              id="labels"
+              label="Labels"
+              icon={<Icon name="tag" className="text-[#95a6bd]" />}
+              detail={issue.label_ids.length ? String(issue.label_ids.length) : undefined}
+              openSub={openSub}
+              setOpenSub={setOpenSub}
+            >
+              {projectLabels.length === 0 && <Item label="No labels" disabled />}
+              {projectLabels.map((label) => {
+                const checked = issue.label_ids.includes(label.id);
+
+                return (
+                  <Item
+                    key={label.id}
+                    label={label.name}
+                    icon={<LabelDot color={label.color} />}
+                    checked={checked}
+                    onSelect={() =>
+                      choose(
+                        {
+                          label_ids: checked
+                            ? issue.label_ids.filter((id) => id !== label.id)
+                            : [...issue.label_ids, label.id],
+                        },
+                        true,
+                      )
+                    }
+                  />
+                );
+              })}
+            </Parent>
+            <Parent
+              id="milestone"
+              label="Milestone"
+              icon={<Icon name="target" className="text-[#95a6bd]" />}
+              detail={milestone?.name}
+              openSub={openSub}
+              setOpenSub={setOpenSub}
+            >
+              <Item
+                label="No milestone"
+                icon={<Icon name="target" className="text-[#95a6bd]" />}
+                checked={!issue.milestone_id}
+                onSelect={() => choose({ milestone_id: "" })}
+              />
+              {projectMilestones.map((item) => (
+                <Item
+                  key={item.id}
+                  label={item.name}
+                  icon={<Icon name="target" className="text-[#95a6bd]" />}
+                  checked={issue.milestone_id === item.id}
+                  onSelect={() => choose({ milestone_id: item.id })}
+                />
+              ))}
+            </Parent>
+            <div role="separator" className="mx-1 my-1 h-px shrink-0 bg-[#2c323c]" />
+            <Item
+              label="Copy issue ID"
+              icon={<Icon name="copy" className="text-[#95a6bd]" />}
+              onSelect={() => copy(issue.key, `Copied ${issue.key}`)}
+              onHover={() => setOpenSub(undefined)}
+            />
+            <Item
+              label="Copy issue link"
+              icon={<Icon name="link" className="text-[#95a6bd]" />}
+              onSelect={() => copy(link, "Copied issue link")}
+              onHover={() => setOpenSub(undefined)}
+            />
+          </>
+        );
+      }}
+    </ContextMenuShell>
   );
 }
 
@@ -360,7 +401,7 @@ type ItemProps = {
 };
 
 /** One choice in a menu; a checkmark shows the current value. */
-function Item({ label, icon, checked, disabled, onSelect, onHover }: ItemProps) {
+export function Item({ label, icon, checked, disabled, onSelect, onHover }: ItemProps) {
   return (
     <button
       type="button"
@@ -392,7 +433,7 @@ type ParentProps = {
 };
 
 /** A row that opens a submenu of choices beside it while hovered or focused. */
-function Parent({ id, label, icon, detail, openSub, setOpenSub, children }: ParentProps) {
+export function Parent({ id, label, icon, detail, openSub, setOpenSub, children }: ParentProps) {
   const open = openSub === id;
 
   return (

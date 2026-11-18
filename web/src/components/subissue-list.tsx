@@ -7,6 +7,7 @@ import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 import { SubissueDrawer } from "./subissue-drawer";
 import { SubissueFormDialog } from "./subissue-form-dialog";
+import { useSubissueContextMenu } from "./subissue-context-menu";
 
 /** Shows an issue's lightweight children, each opening in a side drawer for editing. */
 export function SubissueList({
@@ -19,6 +20,7 @@ export function SubissueList({
   onCreatingChange: (creating: boolean) => void;
 }) {
   const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
+  const contextMenu = useSubissueContextMenu(issue);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const selected = subissues.find((item) => item.id === selectedId);
@@ -52,7 +54,12 @@ export function SubissueList({
             <button
               type="button"
               aria-label={`${subissue.key}: ${subissue.title}, ${issueStatusLabel[subissue.status]}`}
-              className="grid min-h-[45px] w-full grid-cols-[20px_max-content_minmax(0,1fr)_auto] items-center gap-[10px] rounded-[10px] border-0 bg-transparent px-[12px] py-[6px] text-left transition-colors hover:bg-[#18191a]"
+              className={`grid min-h-[45px] w-full grid-cols-[20px_max-content_minmax(0,1fr)_auto] items-center gap-[10px] rounded-[10px] border-0 px-[12px] py-[6px] text-left transition-colors ${
+                contextMenu.activeId === subissue.id
+                  ? "bg-[#18191a]"
+                  : `bg-transparent ${contextMenu.activeId ? "" : "hover:bg-[#18191a]"}`
+              }`}
+              onContextMenu={contextMenu.open(subissue)}
               onClick={() => {
                 setSelectedId(subissue.id);
                 setDrawerOpen(true);
@@ -71,6 +78,7 @@ export function SubissueList({
           </li>
         ))}
       </ul>
+      {contextMenu.menu}
       <SubissueCreator issue={issue} open={creating} onClose={() => onCreatingChange(false)} />
       <SubissueDrawer
         issue={issue}
