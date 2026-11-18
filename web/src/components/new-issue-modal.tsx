@@ -1,4 +1,4 @@
-import { labelColors } from "../lib/label-colors";
+import { labelColors, labelGradient } from "../lib/label-colors";
 import { LabelDot } from "./label-dot";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
@@ -379,7 +379,7 @@ export function NewIssueModal({
                           >
                             <span
                               className="size-5 rounded-full"
-                              style={{ backgroundColor: value }}
+                              style={{ backgroundImage: labelGradient(value) }}
                             />
                             {name}
                           </button>

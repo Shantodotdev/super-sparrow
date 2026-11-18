@@ -18,7 +18,11 @@ export function LabelChips({ labelIds, projectKey }: { labelIds: string[]; proje
           <span
             key={id}
             className="label-chip inline-block rounded-full border px-[8px] py-[4px] text-[12px]"
-            style={{ color, borderColor: `${color}40`, backgroundColor: `${color}18` }}
+            style={{
+              color,
+              borderColor: `${color}55`,
+              backgroundImage: `linear-gradient(135deg, ${color}2e, ${color}0f)`,
+            }}
           >
             {label?.name ?? id}
           </span>
