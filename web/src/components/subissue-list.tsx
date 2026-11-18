@@ -9,9 +9,16 @@ import { SubissueDrawer } from "./subissue-drawer";
 import { SubissueFormDialog } from "./subissue-form-dialog";
 
 /** Shows an issue's lightweight children, each opening in a side drawer for editing. */
-export function SubissueList({ issue }: { issue: Issue }) {
+export function SubissueList({
+  issue,
+  creating,
+  onCreatingChange,
+}: {
+  issue: Issue;
+  creating: boolean;
+  onCreatingChange: (creating: boolean) => void;
+}) {
   const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
-  const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const selected = subissues.find((item) => item.id === selectedId);
@@ -30,7 +37,7 @@ export function SubissueList({ issue }: { issue: Issue }) {
           type="button"
           aria-label="Add subissue"
           title="Add subissue"
-          onClick={() => setCreating(true)}
+          onClick={() => onCreatingChange(true)}
           className="grid size-7 place-items-center rounded-[6px] border-0 bg-transparent p-0 text-[#9a9da6] transition-colors hover:bg-[#303238] hover:text-white"
         >
           <Icon name="plus" className="size-4" />
@@ -64,7 +71,7 @@ export function SubissueList({ issue }: { issue: Issue }) {
           </li>
         ))}
       </ul>
-      <SubissueCreator issue={issue} open={creating} onClose={() => setCreating(false)} />
+      <SubissueCreator issue={issue} open={creating} onClose={() => onCreatingChange(false)} />
       <SubissueDrawer
         issue={issue}
         subissue={selected}

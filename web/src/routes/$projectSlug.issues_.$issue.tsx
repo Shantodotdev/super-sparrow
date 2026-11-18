@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProject } from "../hooks/use-project";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -32,6 +32,7 @@ import {
 } from "../queries/project";
 import { loadQuery } from "../queries/options";
 import { useShortcutKeys } from "../components/shortcuts";
+import { isTypingTarget } from "../lib/shortcuts";
 
 export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   staticData: { section: "issues" },
@@ -105,6 +106,7 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
   const { tab = "plan" } = search;
   const navigate = Route.useNavigate();
   const transitionRun = useRef(0);
+  const [creatingSubissue, setCreatingSubissue] = useState(false);
   const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
 
   const switchTab = (nextTab: IssueTab) => {
@@ -134,7 +136,18 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
     void transition.finished.then(cleanup, cleanup);
   };
 
+  const moveTab = (step: 1 | -1) => {
+    const index = tabs.findIndex((item) => item.id === tab);
+    switchTab(tabs[(index + step + tabs.length) % tabs.length]!.id);
+  };
+
   useShortcutKeys({
+    previousTab: () => moveTab(-1),
+    nextTab: () => moveTab(1),
+    newSubissue: () => {
+      switchTab("subissues");
+      setCreatingSubissue(true);
+    },
     planTab: () => switchTab("plan"),
     roundsTab: () => switchTab("rounds"),
     findingsTab: () => switchTab("findings"),
@@ -142,6 +155,29 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
     commentsTab: () => switchTab("comments"),
     editTitle: () => document.querySelector<HTMLInputElement>("h1 input, h1 textarea")?.focus(),
   });
+
+  useEffect(() => {
+    const leave = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        isTypingTarget(event.target) ||
+        document.querySelector('[role="dialog"]:not([hidden])')
+      )
+        return;
+
+      void navigate({
+        to: "/$projectSlug/issues",
+        params: { projectSlug: project.slug },
+        search: {},
+      });
+    };
+
+    window.addEventListener("keydown", leave);
+
+    return () => window.removeEventListener("keydown", leave);
+  }, [navigate, project.slug]);
 
   return (
     <div
@@ -228,7 +264,14 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
               <AttachmentsPanel key={`attachments-${issue.id}`} scope={{ issueKey: issue.key }} />
             </>
           )}
-          {tab === "subissues" && <SubissueList key={issue.id} issue={issue} />}
+          {tab === "subissues" && (
+            <SubissueList
+              key={issue.id}
+              issue={issue}
+              creating={creatingSubissue}
+              onCreatingChange={setCreatingSubissue}
+            />
+          )}
           {(tab === "rounds" || tab === "findings") && (
             <IssueReviews
               issue={issue}
