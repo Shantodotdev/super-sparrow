@@ -7,7 +7,17 @@ import { LabelSelector } from "./label-selector";
 import { Input } from "./input";
 import { MarkdownEditor } from "./markdown-editor";
 import { Modal } from "./modal";
+import { AttachmentButtons, UploadList } from "./attachment-queue";
+import { useFileDrop } from "../hooks/use-file-drop";
+import type { UploadJob } from "../queries/attachments";
 import { Select } from "./select";
+
+type Attachments = {
+  jobs: UploadJob[];
+  onFiles: (files: File[]) => void;
+  onRemove: (job: UploadJob) => void;
+  onError: (message: string) => void;
+};
 
 type SubissueFormDialogProps = {
   open: boolean;
@@ -32,6 +42,7 @@ type SubissueFormDialogProps = {
   submitDisabled: boolean;
   submitLabel: string;
   createMore?: { checked: boolean; onChange: (checked: boolean) => void };
+  attachments?: Attachments;
 };
 
 /** Uses the existing New Issue form layout for subissues without changing the issue form. */
@@ -58,8 +69,13 @@ export function SubissueFormDialog({
   submitDisabled,
   submitLabel,
   createMore,
+  attachments,
 }: SubissueFormDialogProps) {
   const headingId = useId();
+  const { dragging, handlers: dropHandlers } = useFileDrop(
+    (files) => attachments?.onFiles(files),
+    !open || !attachments || pending,
+  );
 
   return createPortal(
     <Modal
@@ -71,7 +87,11 @@ export function SubissueFormDialog({
       overlayClassName="items-start overflow-y-auto pt-[min(15vh,_130px)] max-[600px]:py-[20px] max-[600px]:px-[12px]"
       labelledBy={headingId}
     >
-      <form onSubmit={onSubmit}>
+      <form
+        onSubmit={onSubmit}
+        className={dragging ? "ring-1 ring-[#426fff] ring-inset" : undefined}
+        {...dropHandlers}
+      >
         {error && (
           <p role="alert" className="mb-3 text-sm text-[#ff9999]">
             {error}
@@ -113,6 +133,11 @@ export function SubissueFormDialog({
             onChange={onDescriptionChange}
             className="mt-4 [&_.tiptap]:max-h-[38dvh]! [&_.tiptap]:min-h-[120px]! [&_.tiptap]:overflow-y-auto! [&_.tiptap]:text-[#f1f2f4]!"
           />
+          {attachments && attachments.jobs.length > 0 && (
+            <div className="mt-3 mb-2">
+              <UploadList jobs={attachments.jobs} onRemove={attachments.onRemove} showDone />
+            </div>
+          )}
           <div className="flex flex-wrap gap-[6px] [&_button]:min-h-10 [&_button]:px-[11px] [&_button]:py-[6px] [&_button]:text-[13px] **:[[role=listbox]]:max-h-(--subissue-menu-height)">
             <Select
               variant="chip"
@@ -126,6 +151,13 @@ export function SubissueFormDialog({
                 iconClassName: statusIconColor[value],
               }))}
             />
+            {attachments && (
+              <AttachmentButtons
+                onFiles={attachments.onFiles}
+                onError={attachments.onError}
+                disabled={pending}
+              />
+            )}
             {labels && (
               <div className="min-w-[180px]">
                 <LabelSelector
@@ -161,7 +193,7 @@ export function SubissueFormDialog({
           )}
           <button
             type="submit"
-            className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6]"
+            className="rounded-full border border-[#3264ff] bg-[#2455eb] px-[15px] py-[10px] font-[550] text-white hover:bg-[#3566f6] disabled:cursor-default"
             disabled={pending || submitDisabled}
           >
             {submitLabel}
