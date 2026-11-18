@@ -57,11 +57,11 @@ export const issuePriorityIcon: Record<IssuePriority, IconName> = {
 };
 
 export const issuePriorityColor: Record<IssuePriority, string> = {
-  "": "text-[#a9b6c8]",
-  urgent: "text-[#f2a9ae]",
-  high: "text-[#f2ad67]",
-  medium: "text-[#f2cf87]",
-  low: "text-[#a7c0ff]",
+  "": "text-[#8d9bb0]",
+  urgent: "text-[#ff5c5c]",
+  high: "text-[#ff9a3d]",
+  medium: "text-[#f5c242]",
+  low: "text-[#5a9bff]",
 };
 
 /** Background of a status group heading in issue and subissue lists. */
