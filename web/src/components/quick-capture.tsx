@@ -14,6 +14,7 @@ import type { IssuePriority, IssueStatus } from "../lib/types";
 import { useCreateIssue } from "../queries/issues";
 import { useAttachmentUploads } from "../queries/attachments";
 import { useFileDrop } from "../hooks/use-file-drop";
+import { readLastProject } from "../lib/last-project";
 import { actorsQuery, projectsQuery } from "../queries/project";
 import { projectLabelsQuery, projectMilestonesQuery } from "../queries/project-resources";
 import { FloatingMenu } from "./floating-menu";
@@ -76,7 +77,8 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
   const { notify } = useToast();
   const createIssue = useCreateIssue();
   const uploads = useAttachmentUploads();
-  const rememberedSlug = useCurrentProjectSlug();
+  const currentSlug = useCurrentProjectSlug();
+  const [lastSlug, setLastSlug] = useState(readLastProject);
   const projects = useQuery(projectsQuery);
   const people = useQuery({ ...actorsQuery, enabled: open });
 
@@ -100,7 +102,7 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
   const project =
-    projects.data?.find((item) => item.slug === (projectSlug ?? rememberedSlug)) ??
+    projects.data?.find((item) => item.slug === (projectSlug ?? currentSlug ?? lastSlug)) ??
     projects.data?.[0];
   const labels = useQuery({
     ...projectLabelsQuery(project?.key ?? ""),
@@ -110,6 +112,19 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     ...projectMilestonesQuery(project?.key ?? ""),
     enabled: open && !!project,
   });
+
+  // The capture window outlives visits to projects, so it rereads the last project when shown.
+  useEffect(() => {
+    const refresh = () => setLastSlug(readLastProject());
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
 
   // Each opening focuses the title, so the person can start typing at once.
   useEffect(() => {
