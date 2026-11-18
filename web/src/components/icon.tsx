@@ -36,6 +36,7 @@ import {
   Terminal,
   TriangleAlert,
   Users,
+  X,
 } from "lucide-react";
 
 const icons = {
@@ -76,6 +77,7 @@ const icons = {
   terminal: Terminal,
   "triangle-alert": TriangleAlert,
   users: Users,
+  x: X,
 } as const;
 
 export type IconName = keyof typeof icons;
