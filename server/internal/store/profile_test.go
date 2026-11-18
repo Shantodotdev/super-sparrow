@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -82,5 +83,34 @@ func TestProfileAvatarVariants(t *testing.T) {
 				t.Errorf("invalid or oversized avatar variant %s: %d bytes", name, len(data))
 			}
 		}
+	}
+}
+
+func TestNewPeopleGetUniqueDefaultAvatarsUntilExhausted(t *testing.T) {
+	tm := newTeam(t)
+	owner := got(tm.store.GetActor(tm.ctx, tm.owner.ActorID)).must(t)
+	if owner.AvatarID == "" {
+		t.Fatal("first owner has no default avatar")
+	}
+
+	seen := map[string]int{}
+	people := 0
+	for _, actor := range got(tm.store.ListActors(tm.ctx)).must(t) {
+		if actor.Kind == ActorHuman {
+			seen[actor.AvatarID]++
+			people++
+		}
+	}
+	for i := people; i < len(profileAvatarIDs); i++ {
+		person := got(tm.store.CreateHuman(tm.ctx, tm.owner, NewHuman{DisplayName: "Person", Email: fmt.Sprintf("person%d@example.com", i), Role: RoleMember})).must(t)
+		if person.AvatarID == "" || seen[person.AvatarID] > 0 {
+			t.Fatalf("person %d got avatar %q, already used %d times", i, person.AvatarID, seen[person.AvatarID])
+		}
+		seen[person.AvatarID]++
+	}
+
+	extra := got(tm.store.CreateHuman(tm.ctx, tm.owner, NewHuman{DisplayName: "Extra", Email: "extra@example.com", Role: RoleMember})).must(t)
+	if !slices.Contains(profileAvatarIDs, extra.AvatarID) {
+		t.Fatalf("extra person got avatar %q", extra.AvatarID)
 	}
 }

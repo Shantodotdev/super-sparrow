@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"slices"
 )
 
@@ -77,17 +78,57 @@ func (s *Store) CreateFirstOwner(ctx context.Context, displayName, email string)
 }
 
 func insertHuman(w *writeTx, actor *Actor) error {
+	avatarID, err := pickDefaultAvatar(w)
+	if err != nil {
+		return err
+	}
+
+	actor.AvatarID = avatarID
 	actor.CreatedAt, actor.UpdatedAt = w.now, w.now
-	_, err := w.exec(`
-		INSERT INTO actors (id, kind, display_name, email, role, created_at, updated_at)
-		VALUES (?, 'human', ?, ?, ?, ?, ?)`,
-		actor.ID, actor.DisplayName, actor.Email, actor.Role, w.timestamp(), w.timestamp())
+	_, err = w.exec(`
+		INSERT INTO actors (id, kind, display_name, avatar_id, email, role, created_at, updated_at)
+		VALUES (?, 'human', ?, ?, ?, ?, ?, ?)`,
+		actor.ID, actor.DisplayName, actor.AvatarID, actor.Email, actor.Role, w.timestamp(), w.timestamp())
 	if err != nil {
 		return mapUniqueViolation(err, "a person with this email already exists", "create person")
 	}
 
 	return w.event("", TargetActor, actor.ID, "actor.created",
 		map[string]any{"kind": ActorHuman, "display_name": actor.DisplayName, "email": actor.Email, "role": actor.Role})
+}
+
+// pickDefaultAvatar chooses a random built-in avatar for a new person, preferring one no
+// person uses yet. Once every avatar is taken, any avatar may repeat.
+func pickDefaultAvatar(w *writeTx) (string, error) {
+	rows, err := w.tx.QueryContext(w.ctx, `SELECT DISTINCT avatar_id FROM actors WHERE kind = 'human' AND avatar_id != ''`)
+	if err != nil {
+		return "", fmt.Errorf("list used avatars: %w", err)
+	}
+	defer rows.Close()
+
+	used := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", fmt.Errorf("scan used avatar: %w", err)
+		}
+		used[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("list used avatars: %w", err)
+	}
+
+	candidates := make([]string, 0, len(profileAvatarIDs))
+	for _, id := range profileAvatarIDs {
+		if !used[id] {
+			candidates = append(candidates, id)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = profileAvatarIDs
+	}
+
+	return candidates[rand.IntN(len(candidates))], nil
 }
 
 // CreateAgent adds an agent that works for the calling person. Only a person can add agents,
