@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiWrite } from "../lib/api";
-import type { Actor } from "../lib/types";
+import type { Actor, GitHubAccount } from "../lib/types";
+import { githubAccountsQuery } from "../queries/github";
 import { actorsQuery, meQuery } from "../queries/project";
 import { Avatar } from "./avatar";
 import { Icon } from "./icon";
@@ -21,9 +22,27 @@ export function ProfileModal({ actor, open, onClose }: ProfileModalProps) {
     queryFn: async () => (await apiGet<{ avatars: AvatarOption[] }>("/api/avatars")).avatars,
     enabled: open,
   });
+  const accounts = useQuery({ ...githubAccountsQuery, enabled: open });
+  const currentLogin =
+    accounts.data?.find((account) => account.person_id === actor.id)?.login ?? "";
+  // Null until the person edits the field, so the saved username shows once it has loaded.
+  const [githubDraft, setGithubDraft] = useState<string | null>(null);
+  const githubLogin = (githubDraft ?? currentLogin).trim();
   const save = useMutation({
-    mutationFn: () =>
-      apiWrite<{ actor: Actor }>("/api/me", "PATCH", { display_name: name, avatar_id: avatarID }),
+    mutationFn: async () => {
+      const saved = await apiWrite<{ actor: Actor }>("/api/me", "PATCH", {
+        display_name: name,
+        avatar_id: avatarID,
+      });
+      if (githubDraft !== null && githubLogin !== currentLogin) {
+        await apiWrite<{ account: GitHubAccount | null }>(
+          `/api/people/${encodeURIComponent(actor.id)}/github`,
+          "PUT",
+          { login: githubLogin === "" ? null : githubLogin },
+        );
+      }
+      return saved;
+    },
     onSuccess: ({ actor: updated }) => {
       client.setQueryData(meQuery.queryKey, updated);
       client.setQueryData(actorsQuery.queryKey, (current) =>
@@ -38,6 +57,7 @@ export function ProfileModal({ actor, open, onClose }: ProfileModalProps) {
     if (!open) return;
     setName(actor.display_name);
     setAvatarID(actor.avatar_id ?? "");
+    setGithubDraft(null);
     save.reset();
   }, [open]);
 
@@ -76,6 +96,22 @@ export function ProfileModal({ actor, open, onClose }: ProfileModalProps) {
             />
           </label>
         </div>
+        <label className="mt-6 grid gap-2">
+          GitHub username
+          <Input
+            maxLength={39}
+            placeholder="octocat"
+            value={githubDraft ?? currentLogin}
+            disabled={save.isPending || accounts.isPending}
+            onChange={(event) => {
+              setGithubDraft(event.target.value);
+              save.reset();
+            }}
+          />
+          <span className="text-xs font-normal text-[#95a6bd]">
+            Links pull requests you open or review on GitHub to you.
+          </span>
+        </label>
         <fieldset className="mt-6 min-w-0 border-0 p-0">
           <legend className="mb-3 text-sm font-medium text-[#ccd5e1]">Avatar</legend>
           {avatars.isPending && <p className="text-sm text-[#95a6bd]">Loading avatars…</p>}

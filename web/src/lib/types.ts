@@ -1,7 +1,7 @@
 // The Go API's JSON shapes, as server/internal/httpserver/views.go writes them. Timestamps are
 // RFC 3339 strings, and an empty string means "none" for optional IDs, as the API sends them.
 
-export type NavSection = "issues" | "activity" | "milestones" | "settings";
+export type NavSection = "issues" | "activity" | "milestones" | "pulls" | "settings";
 
 export type ActorKind = "human" | "agent" | "system";
 
@@ -213,4 +213,69 @@ export type Attachment = {
   url: string;
   created_by_actor_id: string;
   created_at: string;
+};
+
+export type PullRequestState = "open" | "closed" | "merged";
+export type PullRequestFilter = PullRequestState | "all";
+export type ReviewState = "approved" | "changes_requested" | "commented";
+export type ChecksState = "none" | "pending" | "success" | "failure";
+
+export type PullRequestReview = {
+  reviewer_login: string;
+  state: ReviewState | "dismissed";
+  submitted_at: string;
+  url: string;
+};
+
+export type PullRequest = {
+  id: number;
+  repository: string;
+  number: number;
+  title: string;
+  url: string;
+  state: PullRequestState;
+  draft: boolean;
+  author_login: string;
+  author_person_id: string | null;
+  head_ref: string;
+  base_ref: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  requested_reviewers: string[];
+  review_state: "none" | ReviewState;
+  checks_state: ChecksState;
+  /** Empty when the pull request was not merged. */
+  merged_by_login: string;
+  issue_key: string | null;
+  opened_at: string;
+  updated_at: string;
+  merged_at: string | null;
+  closed_at: string | null;
+  reviews: PullRequestReview[];
+};
+
+export type GitHubAccount = { person_id: string; login: string };
+
+export type GitHubRepository = {
+  id: number;
+  full_name: string;
+  url: string;
+  private: boolean;
+  installed: boolean;
+  project_key: string | null;
+};
+
+export type GitHubChannel = {
+  project_key: string;
+  guild_id: string;
+  guild_name: string;
+  channel_id: string;
+};
+
+export type GitHubInventory = {
+  app: { configured: boolean; install_url: string | null };
+  repositories: GitHubRepository[];
+  accounts: GitHubAccount[];
+  channels: GitHubChannel[];
 };

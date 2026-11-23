@@ -9,7 +9,11 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
   const projectKeys = new Set<string>();
   const issueIDs = new Set<string>();
   const attachmentIssues = new Set<string>();
+  let githubChanged = false;
   for (const event of events) {
+    if (event.kind.startsWith("github.") || event.kind === "discord.channel.set") {
+      githubChanged = true;
+    }
     if (event.kind === "attachment.created" || event.kind === "attachment.deleted") {
       if (typeof event.payload.issue_key === "string") {
         attachmentIssues.add(event.payload.issue_key.toUpperCase());
@@ -90,6 +94,9 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
                 ["finding", "review_round", "comment"].includes(event.target_type),
             ))
         );
+      }
+      if (resource === "pull-requests" || resource === "github" || resource === "github-accounts") {
+        return githubChanged;
       }
       if (resource === "keyboard-shortcuts") return affected.has("keyboard-shortcuts");
       if (resource === "attachments") {

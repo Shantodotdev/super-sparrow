@@ -81,3 +81,32 @@ test("other actor events do not invalidate the discord-links query", () => {
   expect(cache.getQueryState(["discord-links"])?.isInvalidated).toBe(false);
   cache.clear();
 });
+
+test("github events invalidate pull requests and the github settings queries", () => {
+  const cache = client();
+  cache.setQueryData(["pull-requests", "WP", "open"], []);
+  cache.setQueryData(["github"], {});
+  cache.setQueryData(["github-accounts"], []);
+  cache.setQueryData(["milestones"], []);
+
+  refreshLiveEvents(cache, [
+    { ...actorEvent("github.pull_request.opened"), target_type: "project", project_id: "p9" },
+  ]);
+
+  expect(cache.getQueryState(["pull-requests", "WP", "open"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["github"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["github-accounts"])?.isInvalidated).toBe(true);
+  cache.clear();
+});
+
+test("other events leave the github queries alone", () => {
+  const cache = client();
+  cache.setQueryData(["pull-requests", "WP", "open"], []);
+  cache.setQueryData(["github"], {});
+
+  refreshLiveEvents(cache, [actorEvent("actor.updated")]);
+
+  expect(cache.getQueryState(["pull-requests", "WP", "open"])?.isInvalidated).toBe(false);
+  expect(cache.getQueryState(["github"])?.isInvalidated).toBe(false);
+  cache.clear();
+});

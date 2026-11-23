@@ -37,18 +37,11 @@ func (s *Store) CloseIssueForMergedPullRequest(ctx context.Context, by Caller, p
 			return err
 		}
 
-		issue = current
 		if current.Status.closed() {
+			issue = current
 			return nil
 		}
-
-		if current.PullRequestURL == "" {
-			if err := updateIssueFields(w, current, IssueUpdate{PullRequestURL: Change(url)}); err != nil {
-				return err
-			}
-		}
-		err = setIssueStatusWith(w, current, IssueDone, map[string]any{"reason": "pull_request_merged", "pull_request_url": url})
-		if err != nil {
+		if err := closeMergedIssue(w, current, url); err != nil {
 			return err
 		}
 
@@ -58,4 +51,19 @@ func (s *Store) CloseIssueForMergedPullRequest(ctx context.Context, by Caller, p
 	})
 
 	return issue, changed, err
+}
+
+// closeMergedIssue marks an issue done because its pull request merged, and records the pull
+// request's URL on the issue when it has none. An issue that is already done or canceled is left
+// as it is.
+func closeMergedIssue(w *writeTx, issue Issue, url string) error {
+	if issue.Status.closed() {
+		return nil
+	}
+	if issue.PullRequestURL == "" {
+		if err := updateIssueFields(w, issue, IssueUpdate{PullRequestURL: Change(url)}); err != nil {
+			return err
+		}
+	}
+	return setIssueStatusWith(w, issue, IssueDone, map[string]any{"reason": "pull_request_merged", "pull_request_url": url})
 }

@@ -84,6 +84,13 @@ export function Sidebar() {
                       active={projectSlug === project.slug && section === "issues"}
                     />
                     <NavItem
+                      to="/$projectSlug/pulls"
+                      params={{ projectSlug: project.slug }}
+                      icon="git-pull-request"
+                      label="Pull requests"
+                      active={projectSlug === project.slug && section === "pulls"}
+                    />
+                    <NavItem
                       to="/$projectSlug/milestones"
                       params={{ projectSlug: project.slug }}
                       icon="target"

@@ -95,6 +95,29 @@ class SecretBoundaryTests(unittest.TestCase):
             set(runtime), set(deploy.APP_SETTINGS + deploy.DISCORD_RUNTIME_SETTINGS)
         )
 
+    def test_optional_github_app_settings_are_all_or_nothing(self):
+        base = {
+            name: "value" for name in deploy.APP_SETTINGS + deploy.CONNECTION_SETTINGS
+        }
+        self.assertEqual(set(deploy.production_settings(base)), set(deploy.APP_SETTINGS))
+
+        partial = dict(base, GITHUB_APP_ID="123", GITHUB_APP_SLUG="my-sparrow")
+        with self.assertRaisesRegex(ValueError, "GITHUB_APP_PRIVATE_KEY"):
+            deploy.production_settings(partial)
+
+        key = "-----BEGIN RSA PRIVATE KEY-----\nabc\ndef\n-----END RSA PRIVATE KEY-----\n"
+        complete = dict(partial, GITHUB_APP_PRIVATE_KEY=key)
+        runtime = deploy.production_settings(complete)
+        self.assertEqual(
+            set(runtime), set(deploy.APP_SETTINGS + deploy.GITHUB_APP_SETTINGS)
+        )
+        self.assertEqual(
+            runtime["GITHUB_APP_PRIVATE_KEY"],
+            "-----BEGIN RSA PRIVATE KEY-----\\nabc\\ndef\\n-----END RSA PRIVATE KEY-----",
+        )
+        # The multi-line key must now fit the env file's one-line values.
+        rollout.environment_text(runtime)
+
     def test_env_values_cannot_inject_another_setting(self):
         for value in (
             "secret\nAPP_ENV=development",

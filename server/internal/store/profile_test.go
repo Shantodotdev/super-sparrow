@@ -11,9 +11,15 @@ import (
 func TestUpdateProfilePersistsAndRecordsActor(t *testing.T) {
 	tm := newTeam(t)
 	original := got(tm.store.GetActor(tm.ctx, tm.owner.ActorID)).must(t)
-	updated := got(tm.store.UpdateProfile(tm.ctx, tm.member, ProfileUpdate{DisplayName: Change("  New Name  "), AvatarID: Change("adventurers-cat-pilot")})).must(t)
+	// New people get a random avatar, so pick one the member does not already have.
+	before := got(tm.store.GetActor(tm.ctx, tm.member.ActorID)).must(t)
+	avatar := ProfileAvatarIDs()[0]
+	if before.AvatarID == avatar {
+		avatar = ProfileAvatarIDs()[1]
+	}
+	updated := got(tm.store.UpdateProfile(tm.ctx, tm.member, ProfileUpdate{DisplayName: Change("  New Name  "), AvatarID: Change(avatar)})).must(t)
 	loaded := got(tm.store.GetActor(tm.ctx, tm.member.ActorID)).must(t)
-	if loaded.DisplayName != "New Name" || loaded.AvatarID != "adventurers-cat-pilot" || updated.ID != tm.member.ActorID {
+	if loaded.DisplayName != "New Name" || loaded.AvatarID != avatar || updated.ID != tm.member.ActorID {
 		t.Fatalf("profile %+v", loaded)
 	}
 	owner := got(tm.store.GetActor(tm.ctx, tm.owner.ActorID)).must(t)

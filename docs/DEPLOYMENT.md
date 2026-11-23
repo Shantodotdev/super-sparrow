@@ -12,7 +12,7 @@ Set `APP_ENV=production` on a server. Production requires every setting in `.env
 - `ATTACHMENTS_R2_ACCOUNT_ID`, `ATTACHMENTS_R2_ACCESS_KEY_ID`, `ATTACHMENTS_R2_SECRET_ACCESS_KEY`, and `ATTACHMENTS_R2_BUCKET` name the private R2 bucket that holds attached files, and the token that reaches it. They are required in development too. See Attachments below.
 - `WEB_DIR` is the built frontend's folder: `web/dist/client` after `make build-web`, or `/srv/web` in the Docker image.
 - The backup settings below.
-- `GITHUB_WEBHOOK_SECRET` is the webhook's secret.
+- `GITHUB_WEBHOOK_SECRET` is the webhook's secret. `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, and `GITHUB_APP_PRIVATE_KEY` are optional and go together; they turn on the GitHub App (see GitHub below).
 
 ## Run it with Docker Compose
 
@@ -224,14 +224,25 @@ To set them up:
 
 A sync loses at most the last hour of changes. Restore a daily copy to undo a mistake that the sync has already copied, such as a bad delete.
 
-## GitHub webhook
+## GitHub
 
-The webhook marks an issue done when its pull request merges. It finds the issue by the pull request's URL, or else by the branch name, as in `feat/wp-142-meta-comments`.
+GitHub sends Sparrow pull requests, reviews, comments, and check results through a GitHub App. With only `GITHUB_WEBHOOK_SECRET` set, a plain repository webhook still works: pull requests are stored from their deliveries and an issue is marked done when its pull request merges, but nothing is loaded from the API and checks are not tracked.
+
+The webhook marks an issue done when its pull request merges. It finds the issue by the pull request's URL, or else by the branch name, as in `feat/wp-142-meta-comments`. Every change is recorded as the system actor.
+
+### Create the GitHub App
 
 1. Set `GITHUB_WEBHOOK_SECRET` to a random string of at least 20 characters, such as the output of `openssl rand -hex 32`.
-2. In the repository's settings, add a webhook with the payload URL `https://sparrow.example.com/api/webhooks/github`, content type `application/json`, the same secret, and the "Pull requests" event.
+2. In GitHub, open **Settings → Developer settings → GitHub Apps → New GitHub App** (an organization's settings for an organization's repositories). Set the webhook URL to `https://sparrow.example.com/api/webhooks/github` and the same secret.
+3. Give it read-only repository permissions for **Pull requests**, **Checks**, **Commit statuses**, **Contents**, **Issues**, and **Metadata**, and subscribe to **Pull request**, **Pull request review**, **Pull request review comment**, **Issue comment**, **Check suite**, **Check run**, and **Status**. Installation events are sent to every App.
+4. Generate a private key. Set `GITHUB_APP_ID` to the App ID, `GITHUB_APP_SLUG` to the name in the App's URL (`github.com/apps/<slug>`), and `GITHUB_APP_PRIVATE_KEY` to the key file's contents. Newlines may be written as `\n`, which Doppler and `.env` files need for a one-line value. The three settings go together.
+5. Install the App on the repositories Sparrow should see. In **Settings → GitHub**, choose **Refresh from GitHub** if a repository is missing, then link each repository to a project. Linking loads its 50 most recently updated pull requests.
 
-The server refuses any delivery whose `X-Hub-Signature-256` does not match. The change is recorded as the system actor.
+To move an App from a development tunnel to production, change its webhook URL in the App's settings; the ID, key, and secret stay the same.
+
+### Discord pull request news
+
+Mention Sparrow in a Discord channel of an approved server with "post GitHub updates for WP here". Sparrow then posts there when a WP pull request is opened or marked ready for review, and when one merges. It mentions the people involved whose GitHub usernames are set in Sparrow and whose Discord accounts are linked in that server; a linked member can set their own by mentioning Sparrow with "my GitHub is octocat". Owners see and remove channels in **Settings → GitHub**.
 
 ## Discord
 

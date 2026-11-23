@@ -20,7 +20,7 @@ macOS needs the Xcode command line tools. Windows needs the Microsoft C++ build 
 
 ## First run
 
-1. `cp .env.example .env`, which sets `APP_ENV=development`. The server refuses to start when a setting it needs is missing and names each one. Development leaves `TRUSTED_PROXIES`, `WEB_DIR`, `GITHUB_WEBHOOK_SECRET`, and the backup settings optional, and turns off each feature whose settings are absent; the backup settings go all or none. The four `ATTACHMENTS_R2_` settings are required in development too. Production requires every setting; [DEPLOYMENT.md](DEPLOYMENT.md) covers them.
+1. `cp .env.example .env`, which sets `APP_ENV=development`. The server refuses to start when a setting it needs is missing and names each one. Development leaves `TRUSTED_PROXIES`, `WEB_DIR`, `GITHUB_WEBHOOK_SECRET`, the `GITHUB_APP_` settings, and the backup settings optional, and turns off each feature whose settings are absent; the backup settings go all or none, and so do the three `GITHUB_APP_` settings, which also need `GITHUB_WEBHOOK_SECRET`. The four `ATTACHMENTS_R2_` settings are required in development too. Production requires every setting; [DEPLOYMENT.md](DEPLOYMENT.md) covers them.
 2. Development sends no email and needs no Resend settings: every teammate signs in with the code `000000`, and invitations are not emailed. The server also adds an owner, `admin@gmail.com`, when the database has none. Production sends sign-in codes and invitations through [Resend](https://resend.com/api-keys) and requires `RESEND_API_KEY` and `EMAIL_FROM`.
 3. Set `SIGN_IN_CODE_KEY` to the output of `openssl rand -hex 32`.
 4. `make install` installs the Bun workspace and downloads the Go modules.

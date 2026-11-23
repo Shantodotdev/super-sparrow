@@ -47,6 +47,11 @@ export function SettingsHeader() {
             &nbsp; Discord
           </Link>
         )}
+        {identity.data?.role === "owner" && (
+          <Link to="/settings/github" activeProps={{ className: "selected" }}>
+            <Icon name="github" /> &nbsp; GitHub
+          </Link>
+        )}
         <Link to="/settings/shortcuts" activeProps={{ className: "selected" }}>
           <Icon name="keyboard" /> &nbsp; Keyboard shortcuts
         </Link>
