@@ -104,6 +104,12 @@ func (s *Store) CreateIssue(ctx context.Context, by Caller, input NewIssue) (Iss
 	return issue, err
 }
 
+// ValidateNewIssue checks issue fields before a client asks to commit a draft.
+func ValidateNewIssue(input NewIssue) error {
+	_, err := validateNewIssue(input)
+	return err
+}
+
 func validateNewIssue(input NewIssue) (issueFields, error) {
 	var fields issueFields
 	var err error
@@ -184,11 +190,16 @@ func insertIssue(w *writeTx, project Project, fields issueFields) (Issue, error)
 		return Issue{}, err
 	}
 
-	err = w.event(project.ID, TargetIssue, issue.ID, "issue.created", map[string]any{
+	payload := map[string]any{
 		"key": issue.Key(), "title": issue.Title, "status": issue.Status, "priority": issue.Priority, "parent_issue_id": issue.ParentIssueID,
 		"milestone_id": issue.MilestoneID, "assignee_actor_id": issue.AssigneeActorID,
 		"branch_name": issue.BranchName, "label_ids": issue.LabelIDs,
-	})
+	}
+	if w.client == ClientDiscord {
+		payload["discord_user_id"] = w.discord.UserID
+		payload["discord_guild_id"] = w.discord.GuildID
+	}
+	err = w.event(project.ID, TargetIssue, issue.ID, "issue.created", payload)
 	return issue, err
 }
 

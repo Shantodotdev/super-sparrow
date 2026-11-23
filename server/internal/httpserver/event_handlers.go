@@ -70,7 +70,11 @@ func (s *server) writeEvents(w http.ResponseWriter, r *http.Request, filter stor
 // eventFilter reads the filters the event list and the stream share: ?project, ?after, and
 // ?limit. Agents never see events about people, sessions, and tokens.
 func (s *server) eventFilter(r *http.Request) (store.EventFilter, error) {
-	filter := store.EventFilter{ProjectEventsOnly: identityFrom(r.Context()).actor.Kind == store.ActorAgent}
+	identity := identityFrom(r.Context())
+	filter := store.EventFilter{
+		ProjectEventsOnly:      identity.actor.Kind == store.ActorAgent,
+		HideDiscordGuildEvents: !identity.actor.IsOwner() || identity.client != store.ClientBrowser,
+	}
 	if key := r.URL.Query().Get("project"); key != "" {
 		project, err := s.store.GetProjectByKey(r.Context(), key)
 		if err != nil {

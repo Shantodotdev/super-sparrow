@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shantodotdev/super-sparrow/server/internal/auth"
+	"github.com/shantodotdev/super-sparrow/server/internal/discord"
 	"github.com/shantodotdev/super-sparrow/server/internal/mcp"
 	"github.com/shantodotdev/super-sparrow/server/internal/ratelimit"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
@@ -48,7 +49,8 @@ type Options struct {
 	// GitHubWebhookSecret checks GitHub webhook signatures; "" turns the webhook off.
 	GitHubWebhookSecret string
 	// CLIDir is the folder of the signed CLI release to offer for download, or "" to offer none.
-	CLIDir string
+	CLIDir  string
+	Discord *discord.Bot
 }
 
 type server struct {
@@ -67,6 +69,7 @@ type server struct {
 	mcp           *mcp.Server
 	cliDir        string
 	webhookSecret string
+	discord       *discord.Bot
 	mux           *http.ServeMux
 }
 
@@ -87,6 +90,7 @@ func New(opts Options) http.Handler {
 		stop:           opts.Stop,
 		mcp:            mcp.New(opts.Store, opts.PublicURL, opts.Logger, opts.Version),
 		webhookSecret:  opts.GitHubWebhookSecret,
+		discord:        opts.Discord,
 		cliDir:         opts.CLIDir,
 		mux:            http.NewServeMux(),
 	}
@@ -115,6 +119,10 @@ func New(opts Options) http.Handler {
 	s.route("GET /api/sessions", humanOnly, s.listSessions)
 	s.route("DELETE /api/sessions", humanOnly, s.revokeAllSessions)
 	s.route("DELETE /api/sessions/{id}", humanOnly, s.revokeSession)
+
+	s.route("GET /api/discord/guilds", ownerOnly, s.listDiscordGuilds)
+	s.route("POST /api/discord/guilds/{id}/approve", ownerOnly, s.approveDiscordGuild)
+	s.route("POST /api/discord/guilds/{id}/revoke", ownerOnly, s.revokeDiscordGuild)
 
 	s.route("GET /api/people", signedIn, s.listPeople)
 	s.route("POST /api/people", ownerOnly, s.invitePerson)
@@ -190,6 +198,10 @@ func New(opts Options) http.Handler {
 
 	if s.webhookSecret != "" {
 		s.route("POST /api/webhooks/github", public, s.githubWebhook)
+	}
+
+	if opts.Discord != nil {
+		s.mux.Handle("POST "+discord.InteractionsPath, opts.Discord)
 	}
 
 	// Unknown API paths answer in JSON, so they never fall through to the frontend.
