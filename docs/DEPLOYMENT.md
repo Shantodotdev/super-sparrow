@@ -242,9 +242,11 @@ Newly installed servers—or servers where someone mentions Sparrow—appear as 
 ignored. You can also pre-approve server IDs in configuration with `DISCORD_GUILD_IDS` (or the
 legacy single-server `DISCORD_GUILD_ID` setting).
 
-Members of an approved server can mention Sparrow to link Discord accounts to Sparrow teammates or
-choose a default project. Changing an existing teammate's Discord mapping requires that member or a
-linked workspace owner. A linked member can ask about work or draft an issue. Replies are visible
+A teammate links their Discord account with a one-time code from **Settings → Discord** in the
+desktop app, so naming a teammate is never enough to act as them. A member linked to a workspace
+owner can also link another member, and any linked member can choose the server's default project;
+both changes wait for the requester's confirmation button. A linked member can ask about work or
+draft an issue. Owners review and remove links in **Settings → Discord**. Replies are visible
 to everyone who can read the channel, so approve only private servers with members you trust to
 access the workspace.
 
@@ -275,13 +277,15 @@ access the workspace.
    `401` with `invalid Discord signature`.
 5. Unless you pre-approved the server with `DISCORD_GUILD_IDS`, open **Settings → Discord** as a
    workspace owner and approve the pending server (revoking it later causes Sparrow to ignore it).
-   In a channel the bot can see, select the app’s mention and type a request, such as
-   “@Sparrow link me to Shanto,” “@Sparrow set Checkout as the default,” or “@Sparrow what’s
-   the status for today?” Use an exact Discord username, server nickname, or mention to
-   distinguish teammates with similar names; changing an existing teammate's mapping requires that
-   member or a linked workspace owner. To create an issue, ask Sparrow to draft it and confirm the
-   preview. Only the requester can confirm their draft. Drafts expire after ten minutes or a server
-   restart.
+   Each teammate opens **Settings → Discord**, chooses **Get link code**, and within ten minutes
+   mentions the app in a channel the bot can see: “@Sparrow link me with code BCDF-GHJK.” A code
+   works once, and a new one moves the teammate's link to the account that redeems it. Then try
+   “@Sparrow set Checkout as the default” or “@Sparrow what’s the status for today?” An owner can
+   link another member with “@Sparrow link Black Sparrow to Shanto,” using an exact Discord
+   username, server nickname, or mention. Issue drafts, member links, and default project changes
+   show a preview with a button. Only the requester can confirm it. Drafts expire after ten minutes
+   or a server restart. Links made before link codes existed should be reviewed and removed in
+   **Settings → Discord** if they are not right.
 
 The provider receives the submitted prompt, the tool schemas, and compact project names and keys
 when needed to resolve a project. Configure the provider's data use in line with Discord's

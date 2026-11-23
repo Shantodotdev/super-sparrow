@@ -27,8 +27,34 @@ type discordMember struct {
 
 var userMention = regexp.MustCompile(`^<@!?(\d+)>$`)
 
-// linkTeammate resolves names on their original services before writing an audited link.
-func (h *Bot) linkTeammate(ctx context.Context, source store.DiscordIdentity, interactionID, member, teammate string) (message, error) {
+// redeemLinkCode links the requester's own Discord account with a code they made in Sparrow.
+func (h *Bot) redeemLinkCode(ctx context.Context, source store.DiscordIdentity, interactionID, userName, code string) (message, error) {
+	if code == "" {
+		return plain(linkCodeHelp), nil
+	}
+	hash, err := h.linkCodeHash(code)
+	if err != nil {
+		return plain(linkCodeHelp), nil
+	}
+	person, err := h.store.RedeemDiscordLinkCode(ctx, source, interactionID, userName, hash)
+	if err != nil {
+		return message{}, err
+	}
+	return plain("Linked your Discord account to **" + escape(person.DisplayName) + "** in Sparrow."), nil
+}
+
+const linkCodeHelp = "To link your Discord account, open Sparrow **Settings → Discord**, get a link code, and mention me with “link me with code BCDF-GHJK”."
+
+// prepareLink resolves names on their original services and asks the owner to confirm the link.
+// Only a requester linked to a workspace owner can link another member.
+func (h *Bot) prepareLink(ctx context.Context, caller store.Caller, source store.DiscordIdentity, interactionID, member, teammate string) (message, error) {
+	owner, err := h.store.DiscordCallerIsOwner(ctx, source)
+	if err != nil {
+		return message{}, err
+	}
+	if !owner {
+		return plain("Only a workspace owner can link another Discord member. " + linkCodeHelp), nil
+	}
 	member, teammate = strings.TrimSpace(member), strings.TrimSpace(teammate)
 	if member == "" || teammate == "" || len(member) > 150 || len(teammate) > 150 {
 		return plain("Tell me the Discord username and the Sparrow teammate’s name you want to link."), nil
@@ -65,12 +91,9 @@ func (h *Bot) linkTeammate(ctx context.Context, source store.DiscordIdentity, in
 	if err != nil || userID == "" {
 		return plain(reply), err
 	}
-	if err := h.store.SaveDiscordSetup(ctx, source, store.DiscordSetup{
-		InteractionID: interactionID, UserID: userID, PersonID: person.ID,
-	}); err != nil {
-		return message{}, err
-	}
-	return plain("Linked " + escape(member) + " to **" + escape(person.DisplayName) + "** in Sparrow."), nil
+	return h.offerDraft(interactionID, draft{caller: caller, setup: &setupDraft{
+		Member: store.DiscordMember{UserID: userID, Name: shorten(member, 100)}, PersonID: person.ID, PersonName: person.DisplayName,
+	}}), nil
 }
 
 // resolveMember accepts the signed caller for “me”, or checks a mention or exact name with Discord.

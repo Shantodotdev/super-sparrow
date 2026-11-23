@@ -18,9 +18,31 @@ type DiscordInventory = {
   guilds: DiscordGuild[];
 };
 
+type DiscordLink = {
+  guild_id: string;
+  guild_name: string;
+  user_id: string;
+  user_name: string;
+  person_id: string;
+  person_name: string;
+};
+
+type DiscordLinkCode = {
+  code: string;
+  expires_at: string;
+};
+
+type GuildAction = "approve" | "revoke";
+
 const inventoryQuery = queryOptions({
   queryKey: ["discord-guilds"],
   queryFn: () => apiGet<DiscordInventory>("/api/discord/guilds"),
+  retry: false,
+});
+
+const linksQuery = queryOptions({
+  queryKey: ["discord-links"],
+  queryFn: () => apiGet<{ links: DiscordLink[] }>("/api/discord/links"),
   retry: false,
 });
 
@@ -61,7 +83,7 @@ function summarizeGuilds(guilds: DiscordGuild[]): string {
   return parts.join(" · ");
 }
 
-/** Shows the Discord server approval controls to the workspace owner. */
+/** Shows the link-code panel to everyone and the server and link controls to the owner. */
 function DiscordSettingsPage() {
   const identity = useQuery(meQuery);
 
@@ -81,19 +103,198 @@ function DiscordSettingsPage() {
             {identity.error.message}
           </p>
         )}
-        {identity.data &&
-          (identity.data.role === "owner" ? (
-            <DiscordServers />
-          ) : (
-            <section className={panelClass}>
-              <h2>Discord servers</h2>
-              <p className="muted mt-[6px] text-[#a2aec2]">
-                Only workspace owners can manage Discord servers.
-              </p>
-            </section>
-          ))}
+        {identity.data && (
+          <>
+            <LinkCodePanel />
+            {identity.data.role === "owner" ? (
+              <>
+                <DiscordServers />
+                <DiscordLinks />
+              </>
+            ) : (
+              <section className={panelClass}>
+                <h2>Discord servers</h2>
+                <p className="muted mt-[6px] text-[#a2aec2]">
+                  Only workspace owners can manage Discord servers.
+                </p>
+              </section>
+            )}
+          </>
+        )}
       </main>
     </>
+  );
+}
+
+/** Lets a signed-in person generate the one-time code that links their Discord account. */
+function LinkCodePanel() {
+  const generate = useMutation({
+    mutationFn: () => apiWrite<DiscordLinkCode>("/api/discord/link-code", "POST"),
+  });
+  const result = generate.data;
+
+  return (
+    <section className={panelClass}>
+      <div className="mb-[20px] flex items-start justify-between gap-[20px] [&_p]:mt-[3px]">
+        <div>
+          <h2>Link your Discord account</h2>
+          <p className="muted text-[#a2aec2]">
+            Generate a one-time code, then send it to Super Sparrow in Discord.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => generate.mutate()}
+          disabled={generate.isPending}
+          aria-busy={generate.isPending}
+          className={refreshClass}
+        >
+          {result ? "Generate new code" : "Get link code"}
+        </button>
+      </div>
+
+      {generate.error && (
+        <p className={errorClass} role="alert">
+          {generate.error.message}
+        </p>
+      )}
+
+      {result && !generate.isPending && (
+        <div className="grid gap-[10px]">
+          <p
+            aria-label="Link code"
+            className="m-0 font-mono text-[28px] font-semibold tracking-[0.12em] text-[#e4eaf4]"
+          >
+            {result.code}
+          </p>
+          <p className="m-0 text-[13px] text-[#c5cfdd]">
+            In an approved Discord server, mention Super Sparrow: link me with code {result.code}
+          </p>
+          <p className="muted m-0 text-[13px] text-[#a2aec2]">
+            Expires {new Date(result.expires_at).toLocaleString()}. A new code replaces this one.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Lists the Discord members linked to teammates and lets an owner remove a link. */
+function DiscordLinks() {
+  const client = useQueryClient();
+  const links = useQuery(linksQuery);
+  const unlink = useMutation({
+    mutationFn: (link: DiscordLink) =>
+      apiWrite<void>(
+        `/api/discord/links/${encodeURIComponent(link.guild_id)}/${encodeURIComponent(link.user_id)}`,
+        "DELETE",
+      ),
+    onSuccess: () => client.invalidateQueries({ queryKey: linksQuery.queryKey }),
+  });
+  const rows = links.data?.links ?? [];
+
+  return (
+    <section className={panelClass}>
+      <div className="mb-[20px] flex items-start justify-between gap-[20px] [&_p]:mt-[3px]">
+        <div>
+          <h2>Linked members</h2>
+          <p className="muted text-[#a2aec2]">
+            Links made before link codes existed should be reviewed.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            unlink.reset();
+            void links.refetch();
+          }}
+          disabled={links.isFetching || unlink.isPending}
+          aria-busy={links.isFetching}
+          className={refreshClass}
+        >
+          <RefreshCw
+            aria-hidden="true"
+            className={`size-4 ${links.isFetching ? "animate-spin" : ""}`}
+          />
+          Refresh
+        </button>
+      </div>
+
+      {links.error && (
+        <p className={errorClass} role="alert">
+          {links.error.message}
+        </p>
+      )}
+      {unlink.error && (
+        <p className={errorClass} role="alert">
+          {unlink.error.message}
+        </p>
+      )}
+
+      {links.isPending && (
+        <p role="status" className="m-0 text-[13px] text-[#a2aec2]">
+          Loading linked members…
+        </p>
+      )}
+
+      {links.data && rows.length === 0 && (
+        <p role="status" className="m-0 text-[13px] text-[#a2aec2]">
+          No Discord members are linked to a teammate.
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table>
+            <thead>
+              <tr>
+                <th className="text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
+                  Server
+                </th>
+                <th className="text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
+                  Discord member
+                </th>
+                <th className="text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
+                  Sparrow teammate
+                </th>
+                <th className="w-[110px] text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((link) => {
+                const member = link.user_name || link.user_id;
+                const saving =
+                  unlink.isPending &&
+                  unlink.variables?.guild_id === link.guild_id &&
+                  unlink.variables?.user_id === link.user_id;
+
+                return (
+                  <tr key={`${link.guild_id}/${link.user_id}`}>
+                    <td>{link.guild_name || link.guild_id}</td>
+                    <td>{member}</td>
+                    <td>{link.person_name}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => unlink.mutate(link)}
+                        disabled={unlink.isPending}
+                        aria-busy={saving}
+                        aria-label={`Unlink ${member}`}
+                        className={revokeClass}
+                      >
+                        Unlink
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -102,8 +303,7 @@ function DiscordServers() {
   const client = useQueryClient();
   const inventory = useQuery(inventoryQuery);
   const decide = useMutation({
-    mutationFn: (guild: DiscordGuild) => {
-      const action = guild.status === "approved" ? "revoke" : "approve";
+    mutationFn: ({ guild, action }: { guild: DiscordGuild; action: GuildAction }) => {
       return apiWrite<{ guild: DiscordGuild }>(
         `/api/discord/guilds/${encodeURIComponent(guild.id)}/${action}`,
         "POST",
@@ -133,7 +333,10 @@ function DiscordServers() {
         </div>
         <button
           type="button"
-          onClick={() => void inventory.refetch()}
+          onClick={() => {
+            decide.reset();
+            void inventory.refetch();
+          }}
           disabled={inventory.isFetching || decide.isPending}
           aria-busy={inventory.isFetching}
           className={refreshClass}
@@ -190,7 +393,7 @@ function DiscordServers() {
                 <th className="w-40 text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
                   Status
                 </th>
-                <th className="w-[110px] text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
+                <th className="w-[190px] text-[13px] font-semibold tracking-normal text-[#e4eaf4] normal-case">
                   Actions
                 </th>
               </tr>
@@ -198,9 +401,11 @@ function DiscordServers() {
             <tbody>
               {guilds.map((guild) => {
                 const { label, dotClass } = statusMeta[guild.status];
-                const isApproved = guild.status === "approved";
-                const action = isApproved ? "Revoke" : "Approve";
-                const saving = decide.isPending && decide.variables?.id === guild.id;
+                const actions: GuildAction[] =
+                  guild.status === "pending"
+                    ? ["approve", "revoke"]
+                    : [guild.status === "approved" ? "revoke" : "approve"];
+                const saving = decide.isPending && decide.variables?.guild.id === guild.id;
 
                 return (
                   <tr key={guild.id}>
@@ -220,16 +425,25 @@ function DiscordServers() {
                       </span>
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        onClick={() => decide.mutate(guild)}
-                        disabled={decide.isPending}
-                        aria-busy={saving}
-                        aria-label={`${action} ${guild.name || guild.id}`}
-                        className={isApproved ? revokeClass : approveClass}
-                      >
-                        {action}
-                      </button>
+                      <div className="flex gap-2">
+                        {actions.map((action) => {
+                          const label = action === "approve" ? "Approve" : "Revoke";
+
+                          return (
+                            <button
+                              key={action}
+                              type="button"
+                              onClick={() => decide.mutate({ guild, action })}
+                              disabled={decide.isPending}
+                              aria-busy={saving}
+                              aria-label={`${label} ${guild.name || guild.id}`}
+                              className={action === "approve" ? approveClass : revokeClass}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </td>
                   </tr>
                 );

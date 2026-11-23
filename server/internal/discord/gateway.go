@@ -16,6 +16,7 @@ type mention struct {
 	guildName string
 	channelID string
 	messageID string
+	userName  string
 	prompt    string
 }
 
@@ -125,9 +126,13 @@ func (h *Bot) parseMention(event *discordgo.Message) (mention, bool) {
 		return mention{}, false
 	}
 	prompt := strings.TrimSpace(strings.NewReplacer(tag, "", nicknameTag, "").Replace(event.Content))
+	userName := event.Author.GlobalName
+	if userName == "" {
+		userName = event.Author.Username
+	}
 	return mention{
 		source:    h.guildSource(event.GuildID, event.Author.ID),
-		channelID: event.ChannelID, messageID: event.ID, prompt: prompt,
+		channelID: event.ChannelID, messageID: event.ID, userName: shorten(oneLine(userName), 100), prompt: prompt,
 	}, true
 }
 
@@ -156,7 +161,7 @@ func (h *Bot) respondToMention(ctx context.Context, request mention) {
 	default:
 		work, cancel := context.WithTimeout(ctx, 45*time.Second)
 		var err error
-		reply, err = h.answer(work, request.source, request.messageID, request.prompt)
+		reply, err = h.answer(work, request.source, request.messageID, request.userName, request.prompt)
 		if err != nil {
 			reply = plain(h.userError(work, "answer Discord mention", err))
 		}

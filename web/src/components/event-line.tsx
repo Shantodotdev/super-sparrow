@@ -56,7 +56,16 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
     case "comment.added":
       return { action: "commented on" };
     case "discord.setup":
-      return { action: "updated Discord setup" };
+      return {
+        action:
+          typeof p.linked_discord_user_id === "string"
+            ? "linked a Discord account"
+            : typeof p.default_project_id === "string"
+              ? "set the Discord default project"
+              : "updated Discord setup",
+      };
+    case "discord.unlinked":
+      return { action: "removed a Discord link" };
     case "discord.guild_requested":
       return {
         action: "requested Discord server approval",

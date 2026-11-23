@@ -47,3 +47,37 @@ test("unrelated actor events do not invalidate the discord-guilds query", () => 
   expect(cache.getQueryState(["actors"])?.isInvalidated).toBe(true);
   cache.clear();
 });
+
+test("discord events invalidate the discord-links query", () => {
+  for (const kind of ["discord.setup", "discord.unlinked", "discord.guild_revoked"]) {
+    const cache = client();
+    cache.setQueryData(["discord-links"], { links: [] });
+
+    refreshLiveEvents(cache, [actorEvent(kind)]);
+
+    expect(cache.getQueryState(["discord-links"])?.isInvalidated).toBe(true);
+    cache.clear();
+  }
+});
+
+test("discord link events leave the discord-guilds query alone", () => {
+  const cache = client();
+  cache.setQueryData(["discord-guilds"], { enabled: true, guilds: [] });
+  cache.setQueryData(["discord-links"], { links: [] });
+
+  refreshLiveEvents(cache, [actorEvent("discord.unlinked", { guild_id: "1" })]);
+
+  expect(cache.getQueryState(["discord-guilds"])?.isInvalidated).toBe(false);
+  expect(cache.getQueryState(["discord-links"])?.isInvalidated).toBe(true);
+  cache.clear();
+});
+
+test("other actor events do not invalidate the discord-links query", () => {
+  const cache = client();
+  cache.setQueryData(["discord-links"], { links: [] });
+
+  refreshLiveEvents(cache, [actorEvent("actor.updated")]);
+
+  expect(cache.getQueryState(["discord-links"])?.isInvalidated).toBe(false);
+  cache.clear();
+});
