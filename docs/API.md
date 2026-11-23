@@ -159,6 +159,15 @@ The browser's `EventSource` reconnects by itself and sends `Last-Event-ID`, and 
 
 `POST /mcp` is the MCP endpoint for agent tokens. See [DEPLOYMENT.md](DEPLOYMENT.md#connecting-agents). `POST /api/webhooks/github` receives GitHub webhooks when the webhook is set up. It answers deliveries without a well-formed signature, and events other than `ping` and `pull_request`, before reading their body, and takes bodies up to 1 MiB.
 
+## Discord
+
+| Method and path                         | Access                   | What it does                                                                                           |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/discord/guilds`               | owner                    | Returns `{enabled, guilds}`; each guild has `{id, name, status}` (`pending`, `approved`, or `revoked`) |
+| `POST /api/discord/guilds/{id}/approve` | owner                    | Approves a known Discord server and returns `{guild}`                                                  |
+| `POST /api/discord/guilds/{id}/revoke`  | owner                    | Revokes a Discord server's access and returns `{guild}`                                                |
+| `POST /api/discord/interactions`        | signed (Discord Ed25519) | Handles Discord PING and issue confirmation button clicks when the Discord integration is enabled      |
+
 ## Personal keyboard shortcuts
 
 `GET /api/me/shortcuts` returns the signed-in person’s `{ revision, overrides }`. An account with no edits returns revision `0` and an empty overrides object. Agents cannot read or edit personal shortcuts.
