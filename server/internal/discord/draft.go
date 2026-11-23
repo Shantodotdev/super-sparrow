@@ -16,16 +16,6 @@ type issueDraft struct {
 	Plan       string `json:"plan"`
 }
 
-// setupDraft is a member link or a default project change waiting for the requester's button.
-// Exactly one of Member and ProjectKey is set.
-type setupDraft struct {
-	Member      store.DiscordMember
-	PersonID    string
-	PersonName  string
-	ProjectKey  string
-	ProjectName string
-}
-
 // prepareDraft validates and displays a proposal. The immutable arguments are held until the same
 // linked Discord user confirms. Repeated deliveries of the original command keep the first draft.
 func (h *Bot) prepareDraft(ctx context.Context, caller store.Caller, interactionID string, arguments map[string]json.RawMessage) (message, error) {
@@ -42,38 +32,24 @@ func (h *Bot) prepareDraft(ctx context.Context, caller store.Caller, interaction
 	if len([]rune(draftPreview(fields))) > 1850 {
 		return plain("The draft is too long to preview in Discord. Try again with a shorter description."), nil
 	}
-	return h.offerDraft(interactionID, draft{caller: caller, issue: &fields}), nil
-}
 
-// offerDraft saves a draft and shows it with its confirmation button.
-func (h *Bot) offerDraft(interactionID string, proposal draft) message {
-	saved, accepted := h.saveDraft(interactionID, proposal)
+	saved, accepted := h.saveDraft(interactionID, caller, fields)
 	if !accepted {
-		return plain("Sparrow has too many pending drafts. Try again in a few minutes.")
+		return plain("Sparrow has too many pending drafts. Try again in a few minutes."), nil
 	}
-	if saved.caller != proposal.caller {
-		return plain("Your teammate mapping changed. Mention me again.")
+	if saved.caller != caller {
+		return plain("Your teammate mapping changed. Mention me again."), nil
 	}
 
-	var content, label, prefix string
-	switch {
-	case saved.issue != nil:
-		content, label, prefix = draftPreview(*saved.issue), "Create issue", confirmPrefix
-	case saved.setup != nil && saved.setup.ProjectKey != "":
-		content = fmt.Sprintf("**Use %s (%s) as this server’s default project?**", escape(saved.setup.ProjectName), saved.setup.ProjectKey)
-		label, prefix = "Set default project", setupPrefix
-	case saved.setup != nil:
-		content = fmt.Sprintf("**Link Discord member %s to Sparrow teammate %s?**", escape(saved.setup.Member.Name), escape(saved.setup.PersonName))
-		label, prefix = "Link member", setupPrefix
-	}
+	content := draftPreview(saved.fields)
 	if len([]rune(content)) > 1850 {
-		return plain("The draft is too long to preview in Discord. Try again with a shorter description.")
+		return plain("The draft is too long to preview in Discord. Try again with a shorter description."), nil
 	}
 	reply := plain(content)
 	reply.Components = &[]actionRow{{Type: 1, Components: []button{{
-		Type: 2, Style: 1, Label: label, CustomID: prefix + interactionID,
+		Type: 2, Style: 1, Label: "Create issue", CustomID: confirmPrefix + interactionID,
 	}}}}
-	return reply
+	return reply, nil
 }
 
 func draftPreview(fields issueDraft) string {
@@ -84,7 +60,7 @@ func draftPreview(fields issueDraft) string {
 	return content
 }
 
-func (h *Bot) saveDraft(id string, proposal draft) (draft, bool) {
+func (h *Bot) saveDraft(id string, caller store.Caller, fields issueDraft) (draft, bool) {
 	h.draftMu.Lock()
 	defer h.draftMu.Unlock()
 
@@ -101,9 +77,9 @@ func (h *Bot) saveDraft(id string, proposal draft) (draft, bool) {
 		return draft{}, false
 	}
 
-	proposal.expires = now.Add(draftLifetime)
-	h.drafts[id] = proposal
-	return proposal, true
+	saved := draft{caller: caller, expires: now.Add(draftLifetime), fields: fields}
+	h.drafts[id] = saved
+	return saved, true
 }
 
 func decodeDraft(arguments map[string]json.RawMessage) (issueDraft, error) {
@@ -122,70 +98,36 @@ func decodeDraft(arguments map[string]json.RawMessage) (issueDraft, error) {
 	return fields, nil
 }
 
-// confirm applies a draft for the Discord user who requested it. The issue uses the existing tool
-// receipt and setup changes use the message's setup receipt, so retrying a button never applies
-// a change twice.
+// confirm uses the existing tool receipt so retrying a button can never allocate another issue.
 func (h *Bot) confirm(ctx context.Context, source store.DiscordIdentity, customID string) response {
-	id, isIssue := strings.CutPrefix(customID, confirmPrefix)
-	if !isIssue {
-		var isSetup bool
-		if id, isSetup = strings.CutPrefix(customID, setupPrefix); !isSetup {
-			return private("That Sparrow action is unavailable.")
-		}
+	id, ok := strings.CutPrefix(customID, confirmPrefix)
+	if !ok {
+		return private("That Sparrow action is unavailable.")
 	}
 	h.draftMu.Lock()
 	saved, present := h.drafts[id]
 	h.draftMu.Unlock()
-	if !present || !h.now().Before(saved.expires) || saved.caller.Discord != source ||
-		(isIssue && saved.issue == nil) || (!isIssue && saved.setup == nil) {
+	if !present || !h.now().Before(saved.expires) || saved.caller.Discord != source {
 		return private("This draft is unavailable. Mention me to make a new one.")
 	}
 
-	var content string
-	if isIssue {
-		var failure *response
-		content, failure = h.createDraftIssue(ctx, saved.caller, id, *saved.issue)
-		if failure != nil {
-			return *failure
-		}
-	} else if saved.setup.ProjectKey != "" {
-		project, err := h.store.SetDiscordDefaultProject(ctx, saved.caller, id, saved.setup.ProjectKey)
-		if err != nil {
-			return private(h.userError(ctx, "set Discord default project", err))
-		}
-		content = "I’ll use **" + escape(project.Name) + " (" + project.Key + ")** when you leave out the project."
-	} else {
-		person, err := h.store.LinkDiscordMember(ctx, saved.caller, id, saved.setup.Member, saved.setup.PersonID)
-		if err != nil {
-			return private(h.userError(ctx, "link Discord member", err))
-		}
-		content = "Linked " + escape(saved.setup.Member.Name) + " to **" + escape(person.DisplayName) + "** in Sparrow."
-	}
-
-	reply := plain(content)
-	reply.Components = &[]actionRow{}
-	return response{Type: 7, Data: reply}
-}
-
-func (h *Bot) createDraftIssue(ctx context.Context, caller store.Caller, id string, fields issueDraft) (string, *response) {
 	arguments := struct {
 		issueDraft
 		RetryKey string `json:"idempotency_key"`
-	}{fields, "discord:" + id}
-	result, failed, err := h.tools.Call(ctx, caller, "create_issue", arguments)
+	}{saved.fields, "discord:" + id}
+	result, failed, err := h.tools.Call(ctx, saved.caller, "create_issue", arguments)
 	if err != nil {
-		reply := private(h.userError(ctx, "create Discord issue", err))
-		return "", &reply
+		return private(h.userError(ctx, "create Discord issue", err))
 	}
 	if failed {
-		reply := private(toolFailure(result))
-		return "", &reply
+		return private(toolFailure(result))
 	}
 
 	var issue issueRow
 	if err := json.Unmarshal(result, &issue); err != nil {
-		reply := private(h.userError(ctx, "read created Discord issue", err))
-		return "", &reply
+		return private(h.userError(ctx, "read created Discord issue", err))
 	}
-	return fmt.Sprintf("Created **%s** · %s · %s", issue.Key, escape(shorten(oneLine(issue.Title), 200)), statusLabel(issue.Status)), nil
+	reply := plain(fmt.Sprintf("Created **%s** · %s · %s", issue.Key, escape(shorten(oneLine(issue.Title), 200)), statusLabel(issue.Status)))
+	reply.Components = &[]actionRow{}
+	return response{Type: 7, Data: reply}
 }

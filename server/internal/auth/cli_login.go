@@ -134,14 +134,9 @@ func formatUserCode(code string) string {
 
 // normalizeUserCode accepts a code in any case, with or without its dash and spaces.
 func normalizeUserCode(code string) (string, error) {
-	normalized, ok := normalizedCode(code)
-	if !ok {
+	normalized := strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(code)))
+	if len(normalized) != userCodeLength || strings.Trim(normalized, userCodeAlphabet) != "" {
 		return "", &store.ValidationError{Field: "user_code", Message: "must be the 8-letter code the CLI shows, such as BCDF-GHJK"}
 	}
 	return normalized, nil
-}
-
-func normalizedCode(code string) (string, bool) {
-	normalized := strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(code)))
-	return normalized, len(normalized) == userCodeLength && strings.Trim(normalized, userCodeAlphabet) == ""
 }

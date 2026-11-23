@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -79,7 +78,7 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publicURL := must(t, wrap(url.Parse("https://sparrow.example")))
 	tools := mcp.New(h.st, publicURL, logger, "test")
-	endpoint := New(config.Discord{ApplicationID: appID, GuildIDs: append([]string{guildID}, extraGuilds...), PublicKey: public, Model: testModel, BotToken: "test-token", TimeZone: time.UTC}, h.st, tools, testLinkCodeHash, logger, clock)
+	endpoint := New(config.Discord{ApplicationID: appID, GuildIDs: append([]string{guildID}, extraGuilds...), PublicKey: public, Model: testModel, BotToken: "test-token", TimeZone: time.UTC}, h.st, tools, logger, clock)
 	anthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		h.modelCalls.Add(1)
 		if req.Method != http.MethodPost || req.Header.Get("x-api-key") != "test-key" || req.Header.Get("anthropic-version") != "2023-06-01" {
@@ -92,26 +91,20 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			Messages []conversation   `json:"messages"`
 			Tools    []mcp.Definition `json:"tools"`
 		}
-		if err := json.NewDecoder(req.Body).Decode(&input); err != nil || input.Model != testModel || len(input.Messages) == 0 ||
-			(len(input.Tools) != 1 && len(input.Tools) != 7) || (len(input.Tools) == 1 && input.Tools[0].Name != "link_account") {
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil || input.Model != testModel || len(input.Messages) == 0 || (len(input.Tools) != 3 && len(input.Tools) != 6) {
 			t.Errorf("bad model request: %+v, %v", input, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		for _, tool := range input.Tools {
 			switch tool.Name {
-			case "create_issue", "list_projects", "list_issues", "link_account", "link_teammate", "set_default_project", "today_status":
+			case "create_issue", "list_projects", "list_issues", "link_teammate", "set_default_project", "today_status":
 			default:
 				t.Errorf("unexpected model tool: %s", tool.Name)
 			}
 		}
 
 		var result string
-		prompt, _ := input.Messages[0].Content.(string)
-		if code, ok := strings.CutPrefix(prompt, "Link me with code "); ok {
-			_, _ = io.WriteString(w, toolReply("link_account", fmt.Sprintf(`{"code":%q}`, code)))
-			return
-		}
 		switch input.Messages[0].Content {
 		case "Add Black Sparrow is Sam. Add him.":
 			result = toolReply("link_teammate", `{"discord_name":"Black Sparrow","sparrow_name":"Sam"}`)
@@ -267,50 +260,13 @@ func (h *discordHarness) interactInGuild(t *testing.T, sourceGuild, user, id str
 	return h.send(t, body, strconv.FormatInt(h.now.Unix(), 10), true, http.StatusOK)
 }
 
-// testLinkCodeHash stands in for the server's keyed hash of a link code.
-func testLinkCodeHash(code string) ([]byte, error) {
-	if strings.TrimSpace(code) == "" || strings.Contains(code, "NOT") {
-		return nil, &store.ValidationError{Field: "code", Message: "must be a link code"}
-	}
-	sum := sha256.Sum256([]byte(strings.ToUpper(code)))
-	return sum[:], nil
-}
-
-// linkCode makes a link code for person, as the person would in the desktop app.
-func (h *discordHarness) linkCode(t *testing.T, person, code string) {
-	t.Helper()
-	hash := must(t, wrap(testLinkCodeHash(code)))
-	must(t, wrap(h.st.CreateDiscordLinkCode(t.Context(), store.Caller{ActorID: person, Client: store.ClientBrowser}, hash)))
-}
-
-// setup links user to person with a link code and, when project is given, makes it the guild's
-// default project as that user.
 func (h *discordHarness) setup(t *testing.T, id, user, person, project string) {
 	t.Helper()
-	code := "CODE" + id
-	h.linkCode(t, person, code)
-	source := h.bot.guildSource(guildID, user)
-	must(t, wrap(h.st.RedeemDiscordLinkCode(t.Context(), source, id, "", must(t, wrap(testLinkCodeHash(code))))))
-	if project != "" {
-		caller := must(t, wrap2(h.st.DiscordCaller(t.Context(), source, testModel)))
-		must(t, wrap(h.st.SetDiscordDefaultProject(t.Context(), caller, id+"p", project)))
+	source := h.bot.guildSource(guildID, setupUser)
+	input := store.DiscordSetup{InteractionID: id, UserID: user, PersonID: person, ProjectKey: project}
+	if err := h.st.SaveDiscordSetup(t.Context(), source, input); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func wrap2[T, U any](first T, _ U, err error) testResult[T] { return testResult[T]{first, err} }
-
-// confirmDraft presses the draft's button as user and expects the message to be updated.
-func (h *discordHarness) confirmDraft(t *testing.T, sourceGuild, user, id string, draft message) message {
-	t.Helper()
-	if draft.Components == nil || len(*draft.Components) == 0 {
-		t.Fatalf("reply has no confirmation button: %+v", draft)
-	}
-	custom := (*draft.Components)[0].Components[0].CustomID
-	reply := h.interactInGuild(t, sourceGuild, user, id, 3, fmt.Sprintf(`{"custom_id":%q}`, custom))
-	if reply.Type != 7 {
-		t.Fatalf("confirmation failed: %+v", reply)
-	}
-	return reply.Data
 }
 
 func mentionEvent(user, id, content string) *discordgo.Message {
@@ -358,7 +314,7 @@ func TestDiscordSignaturesAndScope(t *testing.T) {
 	h.send(t, `{"id":"1","type":2,"application_id":"1234567890","guild_id":"999","member":{"user":{"id":"3456789012"}}}`, timestamp, true, http.StatusForbidden)
 	h.send(t, `{"id":"1","type":2,"application_id":"1234567890","guild_id":"2345678901","member":{"user":{"id":"3456789012"}}}`, timestamp, true, http.StatusBadRequest)
 	h.ask(t, firstUser, "1", "List issues")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "get a link code") {
+	if reply := h.replied(t); !strings.Contains(reply.Content, "Link your Discord account") {
 		t.Fatalf("unlinked account saw issue data: %+v", reply)
 	}
 }
@@ -406,21 +362,9 @@ func TestDiscordSetupCreateAndList(t *testing.T) {
 	if !bytes.Contains(events[0].Payload, []byte(`"discord_user_id":"`+firstUser+`"`)) {
 		t.Fatalf("Discord user missing from audit event: %s", events[0].Payload)
 	}
-	var links, defaults int
-	for _, event := range must(t, wrap(h.st.ListEvents(t.Context(), store.EventFilter{TargetType: store.TargetActor}))) {
-		switch {
-		case event.Kind != "discord.setup":
-		case bytes.Contains(event.Payload, []byte(`"default_project_id"`)):
-			defaults++
-			if event.ActorID != actor.ID {
-				t.Fatalf("default project change was not attributed to the Discord agent: %+v", event)
-			}
-		case bytes.Contains(event.Payload, []byte(`"method":"code"`)):
-			links++
-		}
-	}
-	if links != 2 || defaults != 1 {
-		t.Fatalf("setup events were missing or duplicated: %d links, %d defaults", links, defaults)
+	allEvents := must(t, wrap(h.st.ListEvents(t.Context(), store.EventFilter{TargetType: store.TargetActor, TargetID: store.SystemActorID})))
+	if len(allEvents) != 2 || !bytes.Contains(allEvents[0].Payload, []byte(setupUser)) {
+		t.Fatalf("setup event was missing, duplicated, or unattributed: %+v", allEvents)
 	}
 
 	h.ask(t, secondUser, "18", "List issues")
@@ -443,29 +387,25 @@ func TestDiscordSetupCreateAndList(t *testing.T) {
 
 func TestDiscordRemapRejectsPreviouslyPreparedDraft(t *testing.T) {
 	h := newDiscordHarness(t)
-	ctx := t.Context()
 	h.setup(t, "30", firstUser, h.first.ID, "WP")
 	h.setup(t, "30b", secondUser, h.second.ID, "")
-	third := must(t, wrap(h.st.CreateHuman(ctx, store.Caller{ActorID: store.SystemActorID}, store.NewHuman{DisplayName: "Kim", Email: "kim@example.com", Role: store.RoleMember})))
+	third := must(t, wrap(h.st.CreateHuman(t.Context(), store.Caller{ActorID: store.SystemActorID}, store.NewHuman{DisplayName: "Kim", Email: "kim@example.com", Role: store.RoleMember})))
 	h.modelGate <- struct{}{}
 	h.ask(t, firstUser, "31", "Hold then create")
 	draft := h.replied(t)
 
-	callerOf := func(user string) store.Caller {
-		caller := must(t, wrap2(h.st.DiscordCaller(ctx, h.bot.guildSource(guildID, user), testModel)))
-		return caller
-	}
-	unlinked := store.Caller{ActorID: callerOf(secondUser).ActorID, Client: store.ClientDiscord, Discord: h.bot.guildSource(guildID, setupUser)}
-	if _, err := h.st.LinkDiscordMember(ctx, unlinked, "32a", store.DiscordMember{UserID: firstUser}, third.ID); !errors.Is(err, store.ErrForbidden) {
+	if err := h.st.SaveDiscordSetup(t.Context(), h.bot.guildSource(guildID, setupUser), store.DiscordSetup{InteractionID: "32a", UserID: firstUser, PersonID: third.ID}); !errors.Is(err, store.ErrForbidden) {
 		t.Fatalf("unlinked user remapped an existing link: %v", err)
 	}
-	if _, err := h.st.LinkDiscordMember(ctx, callerOf(secondUser), "32b", store.DiscordMember{UserID: firstUser}, third.ID); !errors.Is(err, store.ErrForbidden) {
+	if err := h.st.SaveDiscordSetup(t.Context(), h.bot.guildSource(guildID, secondUser), store.DiscordSetup{InteractionID: "32b", UserID: firstUser, PersonID: third.ID}); !errors.Is(err, store.ErrForbidden) {
 		t.Fatalf("non-owner remapped another member's link: %v", err)
 	}
-	if _, err := h.st.LinkDiscordMember(ctx, callerOf(firstUser), "32c", store.DiscordMember{UserID: secondUser}, third.ID); err != nil {
+	if err := h.st.SaveDiscordSetup(t.Context(), h.bot.guildSource(guildID, firstUser), store.DiscordSetup{InteractionID: "32c", UserID: secondUser, PersonID: third.ID}); err != nil {
 		t.Fatalf("linked owner could not remap another member: %v", err)
 	}
-	h.setup(t, "32", firstUser, h.second.ID, "")
+	if err := h.st.SaveDiscordSetup(t.Context(), h.bot.guildSource(guildID, firstUser), store.DiscordSetup{InteractionID: "32", UserID: firstUser, PersonID: h.second.ID}); err != nil {
+		t.Fatalf("member could not remap themselves: %v", err)
+	}
 
 	id := (*draft.Components)[0].Components[0].CustomID
 	reply := h.interact(t, firstUser, "33", 3, fmt.Sprintf(`{"custom_id":%q}`, id))
@@ -474,127 +414,38 @@ func TestDiscordRemapRejectsPreviouslyPreparedDraft(t *testing.T) {
 	}
 }
 
-func TestDiscordLinkCodes(t *testing.T) {
-	h := newDiscordHarness(t)
-	ctx := t.Context()
-
-	// Naming a teammate is not enough to act as them.
-	h.ask(t, firstUser, "40", "Link me to Rae")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "get a link code") {
-		t.Fatalf("unlinked member linked without a code: %+v", reply)
-	}
-	h.ask(t, firstUser, "41", "Set Checkout as the default")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "get a link code") {
-		t.Fatalf("unlinked member changed the default project: %+v", reply)
-	}
-	h.ask(t, firstUser, "42", "Link me with code WRONG-CODE")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "wrong or has expired") {
-		t.Fatalf("wrong code was accepted: %+v", reply)
-	}
-	h.ask(t, firstUser, "43", "Link me with code NOT-A-CODE")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "Settings → Discord") {
-		t.Fatalf("malformed code was not explained: %+v", reply)
-	}
-	if _, _, err := h.st.DiscordCaller(ctx, h.bot.guildSource(guildID, firstUser), testModel); !errors.Is(err, store.ErrForbidden) {
-		t.Fatalf("a failed attempt linked the member: %v", err)
-	}
-
-	// Only a person in the desktop app can make a code.
-	hash := must(t, wrap(testLinkCodeHash("BCDF-GHJK")))
-	for _, caller := range []store.Caller{{ActorID: h.second.ID, Client: store.ClientCLI}, {ActorID: store.SystemActorID, Client: store.ClientBrowser}} {
-		if _, err := h.st.CreateDiscordLinkCode(ctx, caller, hash); !errors.Is(err, store.ErrForbidden) {
-			t.Fatalf("%+v created a link code: %v", caller, err)
-		}
-	}
-
-	// Expired codes fail, and a new code replaces the old one.
-	h.linkCode(t, h.second.ID, "EXPIRED")
-	h.now = h.now.Add(store.DiscordLinkCodeLifetime)
-	h.ask(t, firstUser, "44", "Link me with code EXPIRED")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "wrong or has expired") {
-		t.Fatalf("expired code was accepted: %+v", reply)
-	}
-	h.linkCode(t, h.second.ID, "OLD")
-	h.linkCode(t, h.second.ID, "BCDF-GHJK")
-	h.ask(t, firstUser, "45", "Link me with code OLD")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "wrong or has expired") {
-		t.Fatalf("replaced code was accepted: %+v", reply)
-	}
-	h.ask(t, firstUser, "46", "Link me with code bcdf-ghjk")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "Linked your Discord account to **Rae**") {
-		t.Fatalf("valid code was rejected: %+v", reply)
-	}
-	h.ask(t, secondUser, "47", "Link me with code BCDF-GHJK")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "wrong or has expired") {
-		t.Fatalf("a code was used twice: %+v", reply)
-	}
-
-	// The teammate's new code moves their link to the account that redeems it.
-	h.linkCode(t, h.second.ID, "MOVE")
-	h.ask(t, secondUser, "48", "Link me with code MOVE")
-	h.replied(t)
-	if _, _, err := h.st.DiscordCaller(ctx, h.bot.guildSource(guildID, firstUser), testModel); !errors.Is(err, store.ErrForbidden) {
-		t.Fatalf("the previous account kept the teammate's link: %v", err)
-	}
-	caller := must(t, wrap2(h.st.DiscordCaller(ctx, h.bot.guildSource(guildID, secondUser), testModel)))
-	agent := must(t, wrap(h.st.GetActor(ctx, caller.ActorID)))
-	if agent.OwnerActorID != h.second.ID {
-		t.Fatalf("link moved to the wrong teammate: %+v", agent)
-	}
-
-	// A member who is not an owner cannot link someone else.
-	h.ask(t, secondUser, "49", "Add Black Sparrow is Sam. Add him.")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "Only a workspace owner") || reply.Components != nil {
-		t.Fatalf("non-owner could link another member: %+v", reply)
-	}
-	links := must(t, wrap(h.st.ListDiscordLinks(ctx)))
-	if len(links) != 1 || links[0].UserID != secondUser || links[0].PersonID != h.second.ID {
-		t.Fatalf("unexpected links: %+v", links)
-	}
-
-	owner := store.Caller{ActorID: h.first.ID, Client: store.ClientBrowser}
-	for _, caller := range []store.Caller{{ActorID: h.second.ID, Client: store.ClientBrowser}, {ActorID: h.first.ID, Client: store.ClientCLI}} {
-		if err := h.st.UnlinkDiscordMember(ctx, caller, guildID, secondUser); !errors.Is(err, store.ErrForbidden) {
-			t.Fatalf("%+v removed a Discord link: %v", caller, err)
-		}
-	}
-	if err := h.st.UnlinkDiscordMember(ctx, owner, guildID, secondUser); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := h.st.DiscordCaller(ctx, h.bot.guildSource(guildID, secondUser), testModel); !errors.Is(err, store.ErrForbidden) {
-		t.Fatalf("removed link still acts: %v", err)
-	}
-}
-
 func TestDiscordNaturalSetupAndToday(t *testing.T) {
 	h := newDiscordHarness(t)
-	admin := must(t, wrap(h.st.CreateHuman(t.Context(), store.Caller{ActorID: store.SystemActorID}, store.NewHuman{DisplayName: "Kim", Email: "kim@example.com", Role: store.RoleOwner})))
-	h.setup(t, "49", setupUser, admin.ID, "")
-
 	h.ask(t, setupUser, "50", "Add Black Sparrow is Sam. Add him.")
-	proposal := h.replied(t)
-	if !strings.Contains(proposal.Content, "Link Discord member Black Sparrow to Sparrow teammate Sam?") {
-		t.Fatalf("did not propose the unique exact member: %+v", proposal)
-	}
-	if _, _, err := h.st.DiscordCaller(t.Context(), h.bot.guildSource(guildID, firstUser), testModel); !errors.Is(err, store.ErrForbidden) {
-		t.Fatalf("the link was saved before the owner confirmed it: %v", err)
-	}
-	if reply := h.interact(t, firstUser, "50b", 3, fmt.Sprintf(`{"custom_id":%q}`, (*proposal.Components)[0].Components[0].CustomID)); reply.Type != 4 {
-		t.Fatalf("another member confirmed the owner's link: %+v", reply)
-	}
-	for _, id := range []string{"50c", "50d"} {
-		if reply := h.confirmDraft(t, guildID, setupUser, id, proposal); !strings.Contains(reply.Content, "Linked Black Sparrow to **Sam**") {
-			t.Fatalf("did not link the member: %+v", reply)
-		}
+	if reply := h.replied(t); !strings.Contains(reply.Content, "Linked Black Sparrow to **Sam**") {
+		t.Fatalf("did not link the unique exact member: %+v", reply)
 	}
 	h.ask(t, setupUser, "51", "Link Night Owl to Rae")
 	if reply := h.replied(t); !strings.Contains(reply.Content, "More than one Discord member") {
 		t.Fatalf("matched an ambiguous member: %+v", reply)
 	}
 	h.ask(t, setupUser, "52", "Set Checkout as the default")
-	if reply := h.confirmDraft(t, guildID, setupUser, "52b", h.replied(t)); !strings.Contains(reply.Content, "Checkout (WP)") {
+	if reply := h.replied(t); !strings.Contains(reply.Content, "Checkout (WP)") {
 		t.Fatalf("did not set a default project: %+v", reply)
 	}
+	links := must(t, wrap(h.st.ListDiscordLinks(t.Context())))
+	if len(links) != 1 || links[0].UserID != firstUser || links[0].UserName != "Black Sparrow" || links[0].PersonID != h.first.ID {
+		t.Fatalf("link did not record the member: %+v", links)
+	}
+
+	// A linked member's setup change is recorded as their Discord agent.
+	h.ask(t, firstUser, "52b", "Set Operations as the default")
+	h.replied(t)
+	linked, project, err := h.st.DiscordCaller(t.Context(), h.bot.guildSource(guildID, firstUser), testModel)
+	if err != nil || project != "OPS" {
+		t.Fatalf("linked member could not change the default: %q %v", project, err)
+	}
+	events := must(t, wrap(h.st.ListEvents(t.Context(), store.EventFilter{ActorID: linked.ActorID})))
+	if len(events) != 1 || events[0].Kind != "discord.setup" {
+		t.Fatalf("setup change was not attributed to the Discord agent: %+v", events)
+	}
+	h.ask(t, setupUser, "52c", "Set Checkout as the default")
+	h.replied(t)
 
 	caller, project, err := h.st.DiscordCaller(t.Context(), h.bot.guildSource(guildID, firstUser), testModel)
 	if err != nil || project != "WP" || caller.ActorID == "" {
@@ -660,16 +511,15 @@ func TestDiscordApprovedGuildsKeepSetupAndDraftsSeparate(t *testing.T) {
 
 	// A link in the first guild cannot authorize issue access in the second.
 	h.askInGuild(t, otherGuild, firstUser, "61", "List issues")
-	if reply := h.replied(t); !strings.Contains(reply.Content, "get a link code") {
+	if reply := h.replied(t); !strings.Contains(reply.Content, "Link your Discord account") {
 		t.Fatalf("the first guild's link leaked to the second: %+v", reply)
 	}
-	h.linkCode(t, h.second.ID, "RAE-CODE")
-	h.askInGuild(t, otherGuild, firstUser, "62", "Link me with code RAE-CODE")
+	h.askInGuild(t, otherGuild, firstUser, "62", "Link me to Rae")
 	if reply := h.replied(t); !strings.Contains(reply.Content, "**Rae**") {
 		t.Fatalf("could not link a member in the second guild: %+v", reply)
 	}
 	h.askInGuild(t, otherGuild, firstUser, "63", "Set Operations as the default")
-	if reply := h.confirmDraft(t, otherGuild, firstUser, "63b", h.replied(t)); !strings.Contains(reply.Content, "Operations (OPS)") {
+	if reply := h.replied(t); !strings.Contains(reply.Content, "Operations (OPS)") {
 		t.Fatalf("could not set a default project in the second guild: %+v", reply)
 	}
 	caller, project, err := h.st.DiscordCaller(t.Context(), h.bot.guildSource(guildID, firstUser), testModel)
@@ -742,13 +592,12 @@ func TestDiscordUnknownGuildQueuesBeforeModelAndRequiresApproval(t *testing.T) {
 		t.Fatalf("unexpected queue: %+v", guilds)
 	}
 	must(t, wrap(h.bot.SetGuildApproval(ctx, store.Caller{ActorID: h.first.ID}, otherGuild, store.DiscordGuildApproved)))
-	h.linkCode(t, h.second.ID, "RAE-CODE")
-	h.askInGuild(t, otherGuild, firstUser, "71", "Link me with code RAE-CODE")
+	h.askInGuild(t, otherGuild, firstUser, "71", "Link me to Rae")
 	if reply := h.replied(t); !strings.Contains(reply.Content, "**Rae**") || h.modelCalls.Load() != 1 {
 		t.Fatalf("dynamically approved server could not use the bot: %+v", reply)
 	}
 	h.askInGuild(t, otherGuild, firstUser, "72", "Set Operations as the default")
-	h.confirmDraft(t, otherGuild, firstUser, "72b", h.replied(t))
+	h.replied(t)
 	h.askInGuild(t, otherGuild, firstUser, "73", "Create a checkout issue")
 	draft := h.replied(t)
 	if draft.Components == nil {

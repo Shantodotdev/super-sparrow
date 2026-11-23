@@ -323,7 +323,7 @@ func serve(ctx context.Context) error {
 
 	var discordBot *discord.Bot
 	if cfg.Discord != nil {
-		discordBot = discord.New(*cfg.Discord, st, mcp.New(st, cfg.PublicURL, logger, version), authService.DiscordLinkCodeHash, logger, time.Now)
+		discordBot = discord.New(*cfg.Discord, st, mcp.New(st, cfg.PublicURL, logger, version), logger, time.Now)
 	}
 
 	stopStreams := make(chan struct{})

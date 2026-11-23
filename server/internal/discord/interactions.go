@@ -29,19 +29,13 @@ const (
 	maxPromptLength = 1500
 	draftLifetime   = 10 * time.Minute
 	confirmPrefix   = "sparrow:create:"
-	setupPrefix     = "sparrow:setup:"
 )
-
-// LinkCodeHasher returns the stored hash of a Discord link code, or a validation error for text
-// that is not a link code.
-type LinkCodeHasher func(code string) ([]byte, error)
 
 // Bot handles Discord mentions and issue confirmation buttons for approved guilds.
 type Bot struct {
 	cfg             config.Discord
 	store           *store.Store
 	tools           *mcp.Server
-	linkCodeHash    LinkCodeHasher
 	model           modelClient
 	client          *http.Client
 	api             string
@@ -95,9 +89,9 @@ type button struct {
 }
 
 // New constructs a Discord bot with shared state for drafts and confirmations.
-func New(cfg config.Discord, st *store.Store, tools *mcp.Server, linkCodeHash LinkCodeHasher, logger *slog.Logger, now func() time.Time) *Bot {
+func New(cfg config.Discord, st *store.Store, tools *mcp.Server, logger *slog.Logger, now func() time.Time) *Bot {
 	return &Bot{
-		cfg: cfg, store: st, tools: tools, linkCodeHash: linkCodeHash, logger: logger, now: now,
+		cfg: cfg, store: st, tools: tools, logger: logger, now: now,
 		model:  anthropicClient{key: cfg.AnthropicKey, model: cfg.Model, client: newHTTPClient(20 * time.Second), endpoint: anthropicMessages},
 		client: newHTTPClient(5 * time.Second), api: discordAPI,
 		perUser: ratelimit.New(8, time.Minute, now), perPendingGuild: ratelimit.New(1, 5*time.Minute, now),

@@ -42,20 +42,6 @@ func (s *server) setDiscordGuildApproval(w http.ResponseWriter, r *http.Request,
 	return nil
 }
 
-// createDiscordLinkCode gives the signed-in person a one-time code to link their Discord account.
-// The code is shown once and only its hash is stored.
-func (s *server) createDiscordLinkCode(w http.ResponseWriter, r *http.Request) error {
-	if s.discord == nil {
-		return store.Refuse(store.ErrNotFound, "Discord integration is disabled")
-	}
-	link, err := s.auth.StartDiscordLink(r.Context(), identityFrom(r.Context()).caller())
-	if err != nil {
-		return err
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"code": link.Code, "expires_at": link.ExpiresAt})
-	return nil
-}
-
 func (s *server) listDiscordLinks(w http.ResponseWriter, r *http.Request) error {
 	links, err := s.store.ListDiscordLinks(r.Context())
 	if err != nil {

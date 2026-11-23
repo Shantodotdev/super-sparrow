@@ -30,7 +30,7 @@ func TestDiscordGuildApprovalsRequireWorkspaceOwner(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publicURL, _ := url.Parse(origin)
-	bot := discord.New(config.Discord{GuildIDs: []string{"123"}}, a.store, nil, nil, logger, time.Now)
+	bot := discord.New(config.Discord{GuildIDs: []string{"123"}}, a.store, nil, logger, time.Now)
 	a.handler = New(Options{Logger: logger, Store: a.store, Auth: a.auth, PublicURL: publicURL, Now: time.Now, Discord: bot})
 	if err := a.store.RequestDiscordGuild(t.Context(), store.DiscordIdentity{GuildID: "456", UserID: "789"}, "Pending server"); err != nil {
 		t.Fatal(err)
@@ -80,48 +80,24 @@ func TestDiscordGuildApprovalsRequireWorkspaceOwner(t *testing.T) {
 	}
 }
 
-func TestDiscordLinkCodesAndLinks(t *testing.T) {
+func TestDiscordLinksRequireWorkspaceOwner(t *testing.T) {
 	a := newAPITeam(t)
 	member := a.fixture.meOf(a.member, nil)
-	a.call(http.MethodPost, "/api/discord/link-code", a.member, nil, http.StatusNotFound, nil)
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	publicURL, _ := url.Parse(origin)
-	bot := discord.New(config.Discord{GuildIDs: []string{"123"}}, a.store, nil, a.auth.DiscordLinkCodeHash, logger, time.Now)
-	a.handler = New(Options{Logger: logger, Store: a.store, Auth: a.auth, PublicURL: publicURL, Now: time.Now, Discord: bot})
-
-	a.call(http.MethodPost, "/api/discord/link-code", a.agent, nil, http.StatusForbidden, nil)
-	var link struct {
-		Code      string    `json:"code"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}
-	a.call(http.MethodPost, "/api/discord/link-code", a.member, nil, http.StatusCreated, &link)
-	if len(link.Code) != 9 || link.Code[4] != '-' || !link.ExpiresAt.After(time.Now()) {
-		t.Fatalf("link code: %+v", link)
-	}
-
-	// The code is redeemed in any case without its dash, and only once.
-	hash, err := a.auth.DiscordLinkCodeHash(strings.ToLower(strings.ReplaceAll(link.Code, "-", "")))
-	if err != nil {
-		t.Fatal(err)
-	}
 	source := store.DiscordIdentity{GuildID: "123", UserID: "789", Configured: true}
-	person, err := a.store.RedeemDiscordLinkCode(t.Context(), source, "m1", "blacksparrow", hash)
-	if err != nil || person.ID != member.ID {
-		t.Fatalf("redeem link code: %+v %v", person, err)
-	}
-	if _, err := a.store.RedeemDiscordLinkCode(t.Context(), store.DiscordIdentity{GuildID: "123", UserID: "790", Configured: true}, "m2", "", hash); !errors.Is(err, store.ErrForbidden) {
-		t.Fatalf("a link code was used twice: %v", err)
+	if err := a.store.SaveDiscordSetup(t.Context(), source, store.DiscordSetup{
+		InteractionID: "m1", UserID: "789", UserName: "blacksparrow", PersonID: member.ID,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	type links struct {
 		Links []store.DiscordLink `json:"links"`
 	}
-	var listed links
 	for _, credential := range []string{a.member, a.agent} {
 		a.call(http.MethodGet, "/api/discord/links", credential, nil, http.StatusForbidden, nil)
 		a.call(http.MethodDelete, "/api/discord/links/123/789", credential, nil, http.StatusForbidden, nil)
 	}
+	var listed links
 	a.call(http.MethodGet, "/api/discord/links", a.owner, nil, http.StatusOK, &listed)
 	if len(listed.Links) != 1 || listed.Links[0].UserID != "789" || listed.Links[0].UserName != "blacksparrow" || listed.Links[0].PersonID != member.ID {
 		t.Fatalf("listed links: %+v", listed)
@@ -131,5 +107,8 @@ func TestDiscordLinkCodesAndLinks(t *testing.T) {
 	a.call(http.MethodGet, "/api/discord/links", a.owner, nil, http.StatusOK, &listed)
 	if len(listed.Links) != 0 {
 		t.Fatalf("link was not removed: %+v", listed)
+	}
+	if _, _, err := a.store.DiscordCaller(t.Context(), source, "test"); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("removed link still acts: %v", err)
 	}
 }

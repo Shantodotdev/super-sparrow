@@ -27,11 +27,6 @@ type DiscordLink = {
   person_name: string;
 };
 
-type DiscordLinkCode = {
-  code: string;
-  expires_at: string;
-};
-
 type GuildAction = "approve" | "revoke";
 
 const inventoryQuery = queryOptions({
@@ -83,7 +78,7 @@ function summarizeGuilds(guilds: DiscordGuild[]): string {
   return parts.join(" · ");
 }
 
-/** Shows the link-code panel to everyone and the server and link controls to the owner. */
+/** Shows the Discord server and member link controls to the workspace owner. */
 function DiscordSettingsPage() {
   const identity = useQuery(meQuery);
 
@@ -103,79 +98,22 @@ function DiscordSettingsPage() {
             {identity.error.message}
           </p>
         )}
-        {identity.data && (
-          <>
-            <LinkCodePanel />
-            {identity.data.role === "owner" ? (
-              <>
-                <DiscordServers />
-                <DiscordLinks />
-              </>
-            ) : (
-              <section className={panelClass}>
-                <h2>Discord servers</h2>
-                <p className="muted mt-[6px] text-[#a2aec2]">
-                  Only workspace owners can manage Discord servers.
-                </p>
-              </section>
-            )}
-          </>
-        )}
+        {identity.data &&
+          (identity.data.role === "owner" ? (
+            <>
+              <DiscordServers />
+              <DiscordLinks />
+            </>
+          ) : (
+            <section className={panelClass}>
+              <h2>Discord servers</h2>
+              <p className="muted mt-[6px] text-[#a2aec2]">
+                Only workspace owners can manage Discord servers.
+              </p>
+            </section>
+          ))}
       </main>
     </>
-  );
-}
-
-/** Lets a signed-in person generate the one-time code that links their Discord account. */
-function LinkCodePanel() {
-  const generate = useMutation({
-    mutationFn: () => apiWrite<DiscordLinkCode>("/api/discord/link-code", "POST"),
-  });
-  const result = generate.data;
-
-  return (
-    <section className={panelClass}>
-      <div className="mb-[20px] flex items-start justify-between gap-[20px] [&_p]:mt-[3px]">
-        <div>
-          <h2>Link your Discord account</h2>
-          <p className="muted text-[#a2aec2]">
-            Generate a one-time code, then send it to Super Sparrow in Discord.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => generate.mutate()}
-          disabled={generate.isPending}
-          aria-busy={generate.isPending}
-          className={refreshClass}
-        >
-          {result ? "Generate new code" : "Get link code"}
-        </button>
-      </div>
-
-      {generate.error && (
-        <p className={errorClass} role="alert">
-          {generate.error.message}
-        </p>
-      )}
-
-      {result && !generate.isPending && (
-        <div className="grid gap-[10px]">
-          <p
-            aria-label="Link code"
-            className="m-0 font-mono text-[28px] font-semibold tracking-[0.12em] text-[#e4eaf4]"
-          >
-            {result.code}
-          </p>
-          <p className="m-0 text-[13px] text-[#c5cfdd]">
-            In an approved Discord server, mention Super Sparrow: link me with code {result.code}
-          </p>
-          <p className="muted m-0 text-[13px] text-[#a2aec2]">
-            Expires {new Date(result.expires_at).toLocaleString()}. A new code replaces this one.
-          </p>
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -199,7 +137,7 @@ function DiscordLinks() {
         <div>
           <h2>Linked members</h2>
           <p className="muted text-[#a2aec2]">
-            Links made before link codes existed should be reviewed.
+            Discord members who act as a teammate when they mention Sparrow.
           </p>
         </div>
         <button
