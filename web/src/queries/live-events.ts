@@ -57,6 +57,7 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
         break;
       case "actor":
         if (event.kind === "actor.shortcuts_updated") affected.add("keyboard-shortcuts");
+        if (event.kind.startsWith("discord.guild_")) affected.add("discord-guilds");
         affected.add("actors");
         affected.add("me");
         affected.add("tokens");
