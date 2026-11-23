@@ -77,19 +77,20 @@ func (d transactionDatabase) BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, 
 
 // writeTx is the transaction a change runs in, with the caller it runs as.
 type writeTx struct {
-	tx     *sql.Tx
-	ctx    context.Context
-	caller Actor
-	client Client
-	model  string
-	now    time.Time
+	tx      *sql.Tx
+	ctx     context.Context
+	caller  Actor
+	client  Client
+	discord DiscordIdentity
+	model   string
+	now     time.Time
 }
 
 // write runs fn in a transaction as the caller and commits when fn succeeds.
 func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error) error {
 	if s.transaction != nil {
 		if by.ActorID != s.transaction.caller.ID || strings.TrimSpace(by.ReportedModel) != s.transaction.model ||
-			by.Client != s.transaction.client {
+			by.Client != s.transaction.client || by.Discord != s.transaction.discord {
 			return forbidden("transaction caller cannot change")
 		}
 		return fn(s.transaction)
@@ -117,7 +118,20 @@ func (s *Store) write(ctx context.Context, by Caller, fn func(w *writeTx) error)
 		return forbidden("caller is disabled")
 	}
 
-	w := &writeTx{tx: tx, ctx: ctx, caller: caller, client: by.Client, model: model, now: s.now().UTC().Truncate(time.Millisecond)}
+	if by.Client == ClientDiscord {
+		if err := requireDiscordGuild(ctx, tx, by.Discord); err != nil {
+			return err
+		}
+		agentID, err := discordAgentID(ctx, tx, by.Discord)
+		if err != nil {
+			return err
+		}
+		if agentID != caller.ID {
+			return forbidden("the Discord teammate mapping changed")
+		}
+	}
+
+	w := &writeTx{tx: tx, ctx: ctx, caller: caller, client: by.Client, discord: by.Discord, model: model, now: s.now().UTC().Truncate(time.Millisecond)}
 	if err := fn(w); err != nil {
 		return err
 	}

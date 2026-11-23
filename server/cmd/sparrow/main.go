@@ -22,10 +22,12 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/cli"
 	"github.com/shantodotdev/super-sparrow/server/internal/config"
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
+	"github.com/shantodotdev/super-sparrow/server/internal/discord"
 	"github.com/shantodotdev/super-sparrow/server/internal/email"
 	"github.com/shantodotdev/super-sparrow/server/internal/httpserver"
 	"github.com/shantodotdev/super-sparrow/server/internal/linear"
 	"github.com/shantodotdev/super-sparrow/server/internal/logging"
+	"github.com/shantodotdev/super-sparrow/server/internal/mcp"
 	"github.com/shantodotdev/super-sparrow/server/internal/r2"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 	"github.com/shantodotdev/super-sparrow/server/migrations"
@@ -319,6 +321,11 @@ func serve(ctx context.Context) error {
 	}
 	defer authService.Wait()
 
+	var discordBot *discord.Bot
+	if cfg.Discord != nil {
+		discordBot = discord.New(*cfg.Discord, st, mcp.New(st, cfg.PublicURL, logger, version), logger, time.Now)
+	}
+
 	stopStreams := make(chan struct{})
 	server := &http.Server{
 		Addr: cfg.ListenAddr,
@@ -336,6 +343,7 @@ func serve(ctx context.Context) error {
 			ObjectOrigin:        "https://" + cfg.AttachmentsR2.AccountID + ".r2.cloudflarestorage.com",
 			CLIDir:              cfg.CLIDir,
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,
+			Discord:             discordBot,
 		}),
 		// JSON request bodies are at most a megabyte, so a slow sender is cut off after the read
 		// timeout. File uploads and downloads manage their own deadlines per request. There is no
@@ -346,8 +354,22 @@ func serve(ctx context.Context) error {
 	}
 	server.RegisterOnShutdown(func() { close(stopStreams) })
 
+	servers := []*http.Server{server}
+	if cfg.Discord != nil && cfg.Discord.ListenAddr != "" {
+		// A tunnel with a fixed origin can expose the interaction route by itself.
+		discordOnly := http.NewServeMux()
+		discordOnly.Handle("POST "+discord.InteractionsPath, server.Handler)
+		servers = append(servers, &http.Server{
+			Addr: cfg.Discord.ListenAddr, Handler: discordOnly,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, IdleTimeout: time.Minute,
+		})
+	}
+
 	jobsCtx, stopJobs := context.WithCancel(context.Background())
 	var jobs sync.WaitGroup
+	if discordBot != nil {
+		jobs.Go(func() { discordBot.Run(jobsCtx) })
+	}
 	if cfg.Backups != nil {
 		runner := backup.NewRunner(backup.Options{
 			Store:     st,
@@ -370,15 +392,20 @@ func serve(ctx context.Context) error {
 	}()
 
 	// Serve in the background so this function can wait for the shutdown signal.
-	serveErr := make(chan error, 1)
-	go func() {
-		logger.Info("server started", "address", cfg.ListenAddr, "version", version, "serves_frontend", cfg.WebDir != "")
-		serveErr <- server.ListenAndServe()
-	}()
+	serveErr := make(chan error, len(servers))
+	for _, endpoint := range servers {
+		defer endpoint.Close()
+		go func() {
+			logger.Info("server starting", "address", endpoint.Addr, "version", version)
+			if err := endpoint.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				serveErr <- fmt.Errorf("serve http on %s: %w", endpoint.Addr, err)
+			}
+		}()
+	}
 
+	var serveFailure error
 	select {
-	case err := <-serveErr:
-		return fmt.Errorf("serve http: %w", err)
+	case serveFailure = <-serveErr:
 	case <-ctx.Done():
 	}
 
@@ -387,9 +414,11 @@ func serve(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("shut down http: %w", err)
+	var shutdownErrors []error
+	for _, endpoint := range servers {
+		if err := endpoint.Shutdown(shutdownCtx); err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Errorf("shut down http on %s: %w", endpoint.Addr, err))
+		}
 	}
-
-	return nil
+	return errors.Join(serveFailure, errors.Join(shutdownErrors...))
 }

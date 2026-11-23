@@ -20,8 +20,10 @@ type EventFilter struct {
 	// ProjectEventsOnly leaves out events about people, agents, sessions, and tokens, which carry
 	// email addresses and device names that agents have no use for.
 	ProjectEventsOnly bool
-	AfterSequence     int64
-	Limit             int
+	// HideDiscordGuildEvents excludes owner-only Discord approval metadata.
+	HideDiscordGuildEvents bool
+	AfterSequence          int64
+	Limit                  int
 }
 
 // ListEvents returns a page of events matching the filter.
@@ -59,6 +61,9 @@ func (s *Store) ListEvents(ctx context.Context, filter EventFilter) ([]Event, er
 	}
 	if filter.ProjectEventsOnly {
 		where = append(where, `project_id IS NOT NULL`)
+	}
+	if filter.HideDiscordGuildEvents {
+		where = append(where, `kind NOT IN ('discord.guild_requested', 'discord.guild_approved', 'discord.guild_revoked')`)
 	}
 	args = append(args, limit)
 

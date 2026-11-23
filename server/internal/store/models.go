@@ -50,24 +50,26 @@ func (a Actor) Active() bool { return a.DisabledAt == nil }
 func (a Actor) IsOwner() bool { return a.Kind == ActorHuman && a.Role == RoleOwner && a.Active() }
 
 // Client is how a caller reached the server: the desktop app's session cookie, a signed-in CLI,
-// or an agent token. A person may run agent tools only through the CLI.
+// an agent token, or a verified Discord interaction. A person may run agent tools only through the CLI.
 type Client string
 
 const (
 	ClientBrowser    Client = "browser"
 	ClientCLI        Client = "cli"
 	ClientAgentToken Client = "agent_token"
+	ClientDiscord    Client = "discord"
 )
 
 // Caller identifies who is making a change. The server builds it from the authenticated session
-// or agent token, never from request input.
+// or agent token, or from the account bound to a verified Discord interaction.
 type Caller struct {
 	ActorID string
 	// ReportedModel is the model an agent says it runs. It is recorded on events as reported,
 	// because the server cannot verify it.
 	ReportedModel string
 	// Client is how the caller reached the server. The zero value is no client.
-	Client Client
+	Client  Client
+	Discord DiscordIdentity
 }
 
 // Project groups issues under a key such as WP.

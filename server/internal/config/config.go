@@ -78,6 +78,7 @@ type Config struct {
 	// Backups configures the backup jobs. It is nil when they are off, which only development
 	// allows.
 	Backups *Backups
+	Discord *Discord
 }
 
 // Backups holds the settings of the hourly sync and the daily backup.
@@ -210,6 +211,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	problems = append(problems, err)
 	cfg.GitHubWebhookSecret = webhookSecret
+
+	cfg.Discord, err = LoadDiscord(getenv)
+	if err == nil && cfg.Discord != nil && cfg.Discord.ListenAddr != "" && cfg.Discord.ListenAddr == cfg.ListenAddr {
+		err = errors.New("DISCORD_LISTEN_ADDR and LISTEN_ADDR must use different addresses")
+	}
+	problems = append(problems, err)
 
 	// Backups run whenever any of their settings is present, and then need all of them, so a
 	// half-configured backup never passes as switched off.
