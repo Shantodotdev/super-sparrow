@@ -12,7 +12,13 @@ import (
 	"time"
 )
 
-var discordSettings = []string{"DISCORD_APPLICATION_ID", "DISCORD_GUILD_IDS", "DISCORD_GUILD_ID", "DISCORD_PUBLIC_KEY", "DISCORD_ANTHROPIC_MODEL", "DISCORD_LISTEN_ADDR", "DISCORD_TIME_ZONE", "DISCORD_BOT_TOKEN"}
+// DiscordAnthropicModel is the Claude model used by the Discord mention assistant.
+const DiscordAnthropicModel = "claude-haiku-5-5"
+
+// DiscordTimeZone is the IANA time zone used for Discord daily status reports.
+const DiscordTimeZone = "Asia/Dhaka"
+
+var discordSettings = []string{"DISCORD_APPLICATION_ID", "DISCORD_GUILD_IDS", "DISCORD_GUILD_ID", "DISCORD_PUBLIC_KEY", "DISCORD_LISTEN_ADDR", "DISCORD_BOT_TOKEN"}
 
 // Discord holds configuration for the approved Discord servers and Anthropic's Messages API.
 type Discord struct {
@@ -38,25 +44,17 @@ func LoadDiscord(getenv func(string) string) (*Discord, error) {
 	}
 
 	var cfg Discord
-	var appErr, guildErr, modelErr, keyErr error
+	var appErr, guildErr, keyErr error
 	cfg.ApplicationID, appErr = discordID(getenv, "DISCORD_APPLICATION_ID")
 	cfg.GuildIDs, guildErr = discordGuildIDs(getenv)
-	cfg.Model, modelErr = required(getenv, "DISCORD_ANTHROPIC_MODEL")
+	cfg.Model = DiscordAnthropicModel
 	token, tokenErr := required(getenv, "DISCORD_BOT_TOKEN")
 	cfg.BotToken = token
-	zone, zoneErr := required(getenv, "DISCORD_TIME_ZONE")
-	if zoneErr == nil {
-		cfg.TimeZone, zoneErr = time.LoadLocation(zone)
-		if zoneErr != nil || zone == "Local" {
-			zoneErr = errors.New("DISCORD_TIME_ZONE must be an IANA time zone")
-		}
-	}
+	var zoneErr error
+	cfg.TimeZone, zoneErr = time.LoadLocation(DiscordTimeZone)
 	cfg.AnthropicKey, keyErr = required(getenv, "ANTHROPIC_API_KEY")
 	if keyErr == nil && (!strings.HasPrefix(cfg.AnthropicKey, "sk-ant-") || strings.ContainsAny(cfg.AnthropicKey, " \r\n\t")) {
 		keyErr = errors.New("ANTHROPIC_API_KEY must be an Anthropic API key")
-	}
-	if modelErr == nil && (!strings.HasPrefix(cfg.Model, "claude-") || strings.ContainsAny(cfg.Model, " \r\n\t")) {
-		modelErr = errors.New("DISCORD_ANTHROPIC_MODEL must be a Claude model ID")
 	}
 
 	var publicErr error
@@ -74,7 +72,7 @@ func LoadDiscord(getenv func(string) string) (*Discord, error) {
 			listenErr = errors.New("DISCORD_LISTEN_ADDR must be a loopback IP address and port")
 		}
 	}
-	if err := errors.Join(appErr, guildErr, modelErr, keyErr, publicErr, listenErr, tokenErr, zoneErr); err != nil {
+	if err := errors.Join(appErr, guildErr, keyErr, publicErr, listenErr, tokenErr, zoneErr); err != nil {
 		return nil, err
 	}
 	return &cfg, nil

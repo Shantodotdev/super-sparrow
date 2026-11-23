@@ -255,12 +255,12 @@ access the workspace.
    channels where it should reply. Sparrow receives mentions through the Discord Gateway with the
    standard Guilds and Guild Messages intents. If you plan to pre-approve servers via config, enable
    Developer Mode in Discord, right-click each server, and choose **Copy Server ID**.
-2. Set `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_ANTHROPIC_MODEL=claude-haiku-5-5`,
-   `ANTHROPIC_API_KEY`, `DISCORD_BOT_TOKEN`, and `DISCORD_TIME_ZONE` (the team’s IANA time zone,
-   such as `Asia/Dhaka`) in your environment. `DISCORD_GUILD_IDS` is optional: set it to a
-   comma-separated list of server IDs to pre-approve them from config (the legacy single-server
-   `DISCORD_GUILD_ID` setting still works when `DISCORD_GUILD_IDS` is unset). Otherwise, newly
-   installed servers appear as pending in **Settings → Discord** for an owner to approve.
+2. Set `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `ANTHROPIC_API_KEY` (Sparrow uses
+   `claude-haiku-5-5` and `Asia/Dhaka`), and `DISCORD_BOT_TOKEN` in your environment.
+   `DISCORD_GUILD_IDS` is optional: set it to a comma-separated list of server IDs to pre-approve
+   them from config (the legacy single-server `DISCORD_GUILD_ID` setting still works when
+   `DISCORD_GUILD_IDS` is unset). Otherwise, newly installed servers appear as pending in
+   **Settings → Discord** for an owner to approve.
 3. Issue confirmation buttons use Discord's signed interactions endpoint at
    `/api/discord/interactions`. For a local or preconfigured tunnel, you can set
    `DISCORD_LISTEN_ADDR` to its loopback origin port (for example, if a tunnel for
