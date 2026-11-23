@@ -101,6 +101,7 @@ The importer is in `server/internal/linear` and the webhook in `server/internal/
 - [x] Parse `## Review round` comments into review rounds and findings.
 - [ ] Run the import for WP Agent's Version 01 project and check the result against Linear.
 - [x] Add the GitHub webhook that closes an issue when its pull request merges, with signature checks.
+- [ ] Pilot Sparrow mentions in approved private Discord servers. Verify per-server teammate mappings and default projects, daily status, draft confirmation, and issue attribution.
 
 ## 9. Deployment and backups
 

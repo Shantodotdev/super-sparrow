@@ -233,6 +233,62 @@ The webhook marks an issue done when its pull request merges. It finds the issue
 
 The server refuses any delivery whose `X-Hub-Signature-256` does not match. The change is recorded as the system actor.
 
+## Discord
+
+The optional Discord integration serves explicitly approved servers. Mappings and default
+projects are specific to each Discord server, and all approved servers share one Sparrow workspace.
+Newly installed servers—or servers where someone mentions Sparrow—appear as pending in
+**Settings → Discord**, where a workspace owner approves or revokes access. Revoked servers are
+ignored. You can also pre-approve server IDs in configuration with `DISCORD_GUILD_IDS` (or the
+legacy single-server `DISCORD_GUILD_ID` setting).
+
+Members of an approved server can mention Sparrow to link Discord accounts to Sparrow teammates or
+choose a default project. Changing an existing teammate's Discord mapping requires that member or a
+linked workspace owner. A linked member can ask about work or draft an issue. Replies are visible
+to everyone who can read the channel, so approve only private servers with members you trust to
+access the workspace.
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create an
+   application. Copy its **Application ID** and **Public Key** from **General Information**.
+   Enable **Guild Install** in **Installation** and add the app to each server with the `bot`
+   scope. Give the bot **View Channel**, **Send Messages**, and **Read Message History** in the
+   channels where it should reply. Sparrow receives mentions through the Discord Gateway with the
+   standard Guilds and Guild Messages intents. If you plan to pre-approve servers via config, enable
+   Developer Mode in Discord, right-click each server, and choose **Copy Server ID**.
+2. Set `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_ANTHROPIC_MODEL=claude-haiku-5-5`,
+   `ANTHROPIC_API_KEY`, `DISCORD_BOT_TOKEN`, and `DISCORD_TIME_ZONE` (the team’s IANA time zone,
+   such as `Asia/Dhaka`) in your environment. `DISCORD_GUILD_IDS` is optional: set it to a
+   comma-separated list of server IDs to pre-approve them from config (the legacy single-server
+   `DISCORD_GUILD_ID` setting still works when `DISCORD_GUILD_IDS` is unset). Otherwise, newly
+   installed servers appear as pending in **Settings → Discord** for an owner to approve.
+3. Issue confirmation buttons use Discord's signed interactions endpoint at
+   `/api/discord/interactions`. For a local or preconfigured tunnel, you can set
+   `DISCORD_LISTEN_ADDR` to its loopback origin port (for example, if a tunnel for
+   `sparrow.example.com` forwards to `http://localhost:8080`, set
+   `DISCORD_LISTEN_ADDR=127.0.0.1:8080` and keep Sparrow's normal `LISTEN_ADDR` on port 8090).
+   The reverse proxy or tunnel must allow Discord's POST requests without a login or challenge.
+   Start or restart the server (`make dev-server` locally) after saving the settings.
+4. In **General Information**, set **Interactions Endpoint URL** to
+   `https://sparrow.example.com/api/discord/interactions` and save it. Discord verifies that
+   Sparrow responds to the signed PING. To check routing first, send an unsigned POST with
+   `curl -i -X POST https://sparrow.example.com/api/discord/interactions`. Sparrow should reply
+   `401` with `invalid Discord signature`.
+5. Unless you pre-approved the server with `DISCORD_GUILD_IDS`, open **Settings → Discord** as a
+   workspace owner and approve the pending server (revoking it later causes Sparrow to ignore it).
+   In a channel the bot can see, select the app’s mention and type a request, such as
+   “@Sparrow link me to Shanto,” “@Sparrow set Checkout as the default,” or “@Sparrow what’s
+   the status for today?” Use an exact Discord username, server nickname, or mention to
+   distinguish teammates with similar names; changing an existing teammate's mapping requires that
+   member or a linked workspace owner. To create an issue, ask Sparrow to draft it and confirm the
+   preview. Only the requester can confirm their draft. Drafts expire after ten minutes or a server
+   restart.
+
+The provider receives the submitted prompt, the tool schemas, and compact project names and keys
+when needed to resolve a project. Configure the provider's data use in line with Discord's
+[Developer Terms](https://support-dev.discord.com/hc/en-us/articles/8562894815383-Discord-Developer-Terms-of-Service)
+and [Developer Policy](https://support-dev.discord.com/hc/en-us/articles/8563934450327-Discord-Developer-Policy)
+before connecting a team server.
+
 ## Importing from Linear
 
 On the server, with the server's settings and a Linear personal API key in `LINEAR_API_KEY`:
