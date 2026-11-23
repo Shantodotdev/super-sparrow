@@ -161,12 +161,15 @@ The browser's `EventSource` reconnects by itself and sends `Last-Event-ID`, and 
 
 ## Discord
 
-| Method and path                         | Access                   | What it does                                                                                           |
-| --------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `GET /api/discord/guilds`               | owner                    | Returns `{enabled, guilds}`; each guild has `{id, name, status}` (`pending`, `approved`, or `revoked`) |
-| `POST /api/discord/guilds/{id}/approve` | owner                    | Approves a known Discord server and returns `{guild}`                                                  |
-| `POST /api/discord/guilds/{id}/revoke`  | owner                    | Revokes a Discord server's access and returns `{guild}`                                                |
-| `POST /api/discord/interactions`        | signed (Discord Ed25519) | Handles Discord PING and issue confirmation button clicks when the Discord integration is enabled      |
+| Method and path                            | Access                    | What it does                                                                                                                                                   |
+| ------------------------------------------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/discord/guilds`                  | owner                     | Returns `{enabled, guilds}`; each guild has `{id, name, status}` (`pending`, `approved`, or `revoked`)                                                         |
+| `POST /api/discord/guilds/{id}/approve`    | owner                     | Approves a known Discord server and returns `{guild}`                                                                                                          |
+| `POST /api/discord/guilds/{id}/revoke`     | owner                     | Revokes a Discord server's access and returns `{guild}`                                                                                                        |
+| `POST /api/discord/link-code`              | person in the desktop app | Creates a one-time code, valid for ten minutes, that links the person's Discord account, and returns `{code, expires_at}`; a new code replaces the earlier one |
+| `GET /api/discord/links`                   | owner                     | Returns `{links}`; each has `{guild_id, guild_name, user_id, user_name, person_id, person_name}`                                                               |
+| `DELETE /api/discord/links/{guild}/{user}` | owner                     | Removes a Discord member's link to a teammate                                                                                                                  |
+| `POST /api/discord/interactions`           | signed (Discord Ed25519)  | Handles Discord PING and the confirmation buttons for issue drafts, member links, and default projects when the Discord integration is enabled                 |
 
 ## Personal keyboard shortcuts
 

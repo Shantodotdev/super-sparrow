@@ -41,3 +41,35 @@ func (s *server) setDiscordGuildApproval(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, map[string]any{"guild": guild})
 	return nil
 }
+
+// createDiscordLinkCode gives the signed-in person a one-time code to link their Discord account.
+// The code is shown once and only its hash is stored.
+func (s *server) createDiscordLinkCode(w http.ResponseWriter, r *http.Request) error {
+	if s.discord == nil {
+		return store.Refuse(store.ErrNotFound, "Discord integration is disabled")
+	}
+	link, err := s.auth.StartDiscordLink(r.Context(), identityFrom(r.Context()).caller())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"code": link.Code, "expires_at": link.ExpiresAt})
+	return nil
+}
+
+func (s *server) listDiscordLinks(w http.ResponseWriter, r *http.Request) error {
+	links, err := s.store.ListDiscordLinks(r.Context())
+	if err != nil {
+		return err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": links})
+	return nil
+}
+
+func (s *server) unlinkDiscordMember(w http.ResponseWriter, r *http.Request) error {
+	caller := identityFrom(r.Context()).caller()
+	if err := s.store.UnlinkDiscordMember(r.Context(), caller, r.PathValue("guild"), r.PathValue("user")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}

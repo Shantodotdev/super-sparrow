@@ -37,7 +37,7 @@ export function SettingsHeader() {
         <Link to="/settings/cli" activeProps={{ className: "selected" }}>
           <Icon name="terminal" /> &nbsp; Connect CLI
         </Link>
-        {identity.data?.role === "owner" && (
+        {identity.data && (
           <Link to="/settings/discord" activeProps={{ className: "selected" }}>
             <img
               src="/brands/discord.svg"

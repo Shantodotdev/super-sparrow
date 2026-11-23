@@ -123,6 +123,9 @@ func New(opts Options) http.Handler {
 	s.route("GET /api/discord/guilds", ownerOnly, s.listDiscordGuilds)
 	s.route("POST /api/discord/guilds/{id}/approve", ownerOnly, s.approveDiscordGuild)
 	s.route("POST /api/discord/guilds/{id}/revoke", ownerOnly, s.revokeDiscordGuild)
+	s.route("POST /api/discord/link-code", humanOnly, s.createDiscordLinkCode)
+	s.route("GET /api/discord/links", ownerOnly, s.listDiscordLinks)
+	s.route("DELETE /api/discord/links/{guild}/{user}", ownerOnly, s.unlinkDiscordMember)
 
 	s.route("GET /api/people", signedIn, s.listPeople)
 	s.route("POST /api/people", ownerOnly, s.invitePerson)
