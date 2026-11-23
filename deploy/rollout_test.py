@@ -72,6 +72,29 @@ class SecretBoundaryTests(unittest.TestCase):
         self.assertNotIn("BACKUP_AGE_IDENTITY", runtime)
         self.assertNotIn("DEPLOY_SSH_KEY", runtime)
 
+    def test_optional_discord_settings_are_all_or_nothing(self):
+        base = {
+            name: "value" for name in deploy.APP_SETTINGS + deploy.CONNECTION_SETTINGS
+        }
+        only_anthropic = dict(base, ANTHROPIC_API_KEY="sk-ant-test")
+        self.assertEqual(set(deploy.production_settings(only_anthropic)), set(deploy.APP_SETTINGS))
+
+        partial = dict(base, DISCORD_APPLICATION_ID="123")
+        with self.assertRaisesRegex(ValueError, "DISCORD_PUBLIC_KEY"):
+            deploy.production_settings(partial)
+
+        complete = dict(
+            base,
+            DISCORD_APPLICATION_ID="123",
+            DISCORD_PUBLIC_KEY="ab" * 32,
+            DISCORD_BOT_TOKEN="bot-token",
+            ANTHROPIC_API_KEY="sk-ant-test",
+        )
+        runtime = deploy.production_settings(complete)
+        self.assertEqual(
+            set(runtime), set(deploy.APP_SETTINGS + deploy.DISCORD_RUNTIME_SETTINGS)
+        )
+
     def test_env_values_cannot_inject_another_setting(self):
         for value in (
             "secret\nAPP_ENV=development",

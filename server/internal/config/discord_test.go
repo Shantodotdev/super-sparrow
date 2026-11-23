@@ -18,16 +18,14 @@ func TestLoadDiscordConfiguration(t *testing.T) {
 	}
 	values["DISCORD_GUILD_ID"] = "456"
 	values["DISCORD_PUBLIC_KEY"] = strings.Repeat("12", 32)
-	values["DISCORD_ANTHROPIC_MODEL"] = "claude-haiku-5-5"
 	values["DISCORD_BOT_TOKEN"] = "test-token"
-	values["DISCORD_TIME_ZONE"] = "Asia/Dhaka"
 	values["DISCORD_LISTEN_ADDR"] = "0.0.0.0:8080"
 	if _, err := LoadDiscord(getenv); err == nil || !strings.Contains(err.Error(), "DISCORD_LISTEN_ADDR") {
 		t.Fatalf("a wildcard listener was accepted: %v", err)
 	}
 	values["DISCORD_LISTEN_ADDR"] = "127.0.0.1:8080"
 	cfg, err := LoadDiscord(getenv)
-	if err != nil || cfg.Model != values["DISCORD_ANTHROPIC_MODEL"] || cfg.ListenAddr != values["DISCORD_LISTEN_ADDR"] {
+	if err != nil || cfg.Model != DiscordAnthropicModel || cfg.TimeZone.String() != DiscordTimeZone || cfg.ListenAddr != values["DISCORD_LISTEN_ADDR"] {
 		t.Fatalf("valid Discord settings were rejected: %v", err)
 	}
 	if !cfg.AllowsGuild("456") || cfg.AllowsGuild("789") {

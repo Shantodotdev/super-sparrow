@@ -31,6 +31,12 @@ APP_SETTINGS = (
     "ATTACHMENTS_R2_SECRET_ACCESS_KEY",
     "ATTACHMENTS_R2_BUCKET",
 )
+DISCORD_SETTINGS = (
+    "DISCORD_APPLICATION_ID",
+    "DISCORD_PUBLIC_KEY",
+    "DISCORD_BOT_TOKEN",
+)
+DISCORD_RUNTIME_SETTINGS = DISCORD_SETTINGS + ("ANTHROPIC_API_KEY",)
 CONNECTION_SETTINGS = (
     "DEPLOY_HOST",
     "DEPLOY_USER",
@@ -46,7 +52,22 @@ def production_settings(settings):
         value = settings.get(name)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Doppler setting {name} is required")
-    return {name: settings[name] for name in APP_SETTINGS}
+    runtime = {name: settings[name] for name in APP_SETTINGS}
+
+    discord_enabled = any(
+        isinstance(settings.get(name), str) and settings[name].strip()
+        for name in DISCORD_SETTINGS
+    )
+    if discord_enabled:
+        for name in DISCORD_RUNTIME_SETTINGS:
+            value = settings.get(name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"Doppler setting {name} is required when Discord is enabled"
+                )
+            runtime[name] = value
+
+    return runtime
 
 
 def main():
