@@ -15,8 +15,9 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
 )
 
-const promptInstructions = `You are Super Sparrow in Discord. A single plain-language request can link an existing Discord member to a Sparrow teammate, set a default project, list issues, report today's status, or draft a new issue.
+const promptInstructions = `You are Super Sparrow in Discord. A single plain-language request can link an existing Discord member to a Sparrow teammate, set a default project, choose the channel for a project's GitHub pull request updates, link their own GitHub username, list issues, report today's status, or draft a new issue.
 "Black Sparrow is Shanto, add him" means link Discord member Black Sparrow to Sparrow teammate Shanto. Preserve names and mentions verbatim. Use "me" only when the requester refers to their own Discord account. Never invite or create teammates.
+"Post GitHub updates for SS here" means set_github_channel for project SS in the channel where you were mentioned. "My GitHub is octocat" means link_github with that username, for the requester only.
 Use today_status for questions about how work is going today, what changed today, and daily project updates. Use the default project if no project is named. If a project name needs resolving, use list_projects. Never invent project keys.
 Only propose a draft if asked to create work. The server puts unscheduled new issues in Backlog and asks for confirmation.
 Select one tool at a time. If the user's meaning is unclear, ask a short clarifying question. Never claim that you committed a write in a plain-text reply.
@@ -73,8 +74,10 @@ func (h *Bot) modelTools(linked bool) []mcp.Definition {
 	definitions = append(definitions,
 		naturalTool("link_teammate", "Link an existing Discord member to an existing Sparrow teammate. Extract the two names exactly as given.", []string{"discord_name", "sparrow_name"}, "discord_name", "sparrow_name"),
 		naturalTool("set_default_project", "Change the Discord server's default Sparrow project. Resolve a project name with list_projects first.", []string{"project_key"}, "project_key"),
+		naturalTool("set_github_channel", "Post a Sparrow project's GitHub pull request updates in the channel where the user is talking to you. Resolve a project name with list_projects first.", []string{"project_key"}, "project_key"),
 	)
 	if linked {
+		definitions = append(definitions, naturalTool("link_github", "Link the requester's own Sparrow account to their GitHub username. Extract the username exactly as given.", []string{"github_username"}, "github_username"))
 		definitions = append(definitions, naturalTool("today_status", "Show today's issue activity and current status totals for a project.", []string{}, "project_key"))
 	}
 	return definitions
@@ -92,7 +95,7 @@ func naturalTool(name, description string, required []string, fields ...string) 
 
 // answer lets the model resolve project names and select one terminal action. Go renders the
 // outcome of list and create actions directly from validated tool data.
-func (h *Bot) answer(ctx context.Context, source store.DiscordIdentity, interactionID, userName, prompt string) (message, error) {
+func (h *Bot) answer(ctx context.Context, source store.DiscordIdentity, channelID, interactionID, userName, prompt string) (message, error) {
 	caller, project, err := h.store.DiscordCaller(ctx, source, h.cfg.Model)
 	linked := err == nil
 	if err != nil && !errors.Is(err, store.ErrForbidden) {
@@ -180,6 +183,10 @@ func (h *Bot) answer(ctx context.Context, source store.DiscordIdentity, interact
 			return h.setDefaultProject(ctx, source, interactionID, stringArgument(call, "project_key"))
 		case "today_status":
 			return h.todayStatus(ctx, stringArgument(call, "project_key"))
+		case "set_github_channel":
+			return h.setGitHubChannel(ctx, source, channelID, stringArgument(call, "project_key"))
+		case "link_github":
+			return h.linkGitHub(ctx, source, caller, stringArgument(call, "github_username"))
 		case "list_projects":
 			result, err := h.projectNames(ctx, caller)
 			if err != nil {
@@ -234,6 +241,48 @@ func (h *Bot) setDefaultProject(ctx context.Context, source store.DiscordIdentit
 		return message{}, err
 	}
 	return plain("I’ll use **" + escape(project.Name) + " (" + project.Key + ")** when you leave out the project."), nil
+}
+
+// setGitHubChannel makes the channel of the mention the place a project's pull request updates go.
+func (h *Bot) setGitHubChannel(ctx context.Context, source store.DiscordIdentity, channelID, projectKey string) (message, error) {
+	if projectKey == "" {
+		return plain("Which Sparrow project's GitHub updates should I post here?"), nil
+	}
+	project, err := h.store.SetDiscordProjectChannel(ctx, source, projectKey, channelID)
+	if err != nil {
+		return message{}, err
+	}
+	return plain("I’ll post " + escape(project.Key) + " pull request updates in this channel."), nil
+}
+
+// linkGitHub saves the GitHub username of the teammate behind the requester's Discord agent.
+// The model never picks the teammate, so a request can only change the requester's own login.
+func (h *Bot) linkGitHub(ctx context.Context, source store.DiscordIdentity, caller store.Caller, login string) (message, error) {
+	if login == "" {
+		return plain("Which GitHub username should I link to your Sparrow account?"), nil
+	}
+
+	// Keep authorization outside the model, including after a slow inference.
+	current, _, err := h.store.DiscordCaller(ctx, source, h.cfg.Model)
+	if err != nil {
+		return message{}, err
+	}
+	if current.ActorID != caller.ActorID {
+		return plain("Your teammate mapping changed. Mention me again."), nil
+	}
+	agent, err := h.store.GetActor(ctx, caller.ActorID)
+	if err != nil {
+		return message{}, fmt.Errorf("load Discord agent %s: %w", caller.ActorID, err)
+	}
+
+	account, err := h.store.SetGitHubLogin(ctx, caller, agent.OwnerActorID, login)
+	if err != nil {
+		return message{}, err
+	}
+	if account == nil {
+		return plain("Which GitHub username should I link to your Sparrow account?"), nil
+	}
+	return plain("Linked your Sparrow account to GitHub @" + escape(account.Login) + "."), nil
 }
 
 // toolCall extracts a single call or the model's first text response.

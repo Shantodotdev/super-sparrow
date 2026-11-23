@@ -4,8 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,13 +16,23 @@ import (
 // room for large ones without letting unsigned requests make the server buffer much.
 const maxWebhookBytes = 1 << 20
 
+// maxDeliveryIDLength bounds the X-GitHub-Delivery header, which names a delivery in the store.
+const maxDeliveryIDLength = 100
+
 const signatureMismatch = "the X-Hub-Signature-256 header does not match the webhook secret"
 
-// githubWebhook closes the linked issue when a pull request merges. Every delivery must carry a
-// valid X-Hub-Signature-256 for the shared secret; anything else is refused before it is read
-// as JSON. A missing or malformed signature, or an event the server has no use for, is answered
-// before the body is read at all. The change is recorded as the system actor, since no person or
-// agent made it.
+// webhookEvents are the GitHub events the server acts on. Any other is acknowledged and dropped.
+var webhookEvents = map[string]bool{
+	"ping": true, "installation": true, "installation_repositories": true, "pull_request": true,
+	"pull_request_review": true, "pull_request_review_comment": true, "issue_comment": true,
+	"check_suite": true, "check_run": true, "status": true,
+}
+
+// githubWebhook passes GitHub's deliveries to the GitHub service, which records pull requests,
+// reviews, comments, and checks. Every delivery must carry a valid X-Hub-Signature-256 for the
+// shared secret; anything else is refused before it is read as JSON. A missing or malformed
+// signature, or an event the server has no use for, is answered before the body is read at all.
+// The changes are recorded as the system actor, since no person or agent made them.
 func (s *server) githubWebhook(w http.ResponseWriter, r *http.Request) error {
 	signature, ok := parseSignature(r.Header.Get("X-Hub-Signature-256"))
 	if !ok {
@@ -33,9 +41,14 @@ func (s *server) githubWebhook(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	event := r.Header.Get("X-GitHub-Event")
-	if event != "ping" && event != "pull_request" {
+	if !webhookEvents[event] {
 		writeJSON(w, http.StatusAccepted, map[string]string{"result": "ignored"})
 		return nil
+	}
+
+	deliveryID := r.Header.Get("X-GitHub-Delivery")
+	if deliveryID == "" || len(deliveryID) > maxDeliveryIDLength {
+		return &store.ValidationError{Field: "X-GitHub-Delivery", Message: fmt.Sprintf("must be a delivery ID of at most %d characters", maxDeliveryIDLength)}
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBytes))
@@ -49,44 +62,15 @@ func (s *server) githubWebhook(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	if event == "ping" {
-		writeJSON(w, http.StatusOK, map[string]string{"result": "pong"})
-		return nil
-	}
-
-	var delivery struct {
-		Action      string `json:"action"`
-		PullRequest struct {
-			HTMLURL string `json:"html_url"`
-			Merged  bool   `json:"merged"`
-			Head    struct {
-				Ref string `json:"ref"`
-			} `json:"head"`
-		} `json:"pull_request"`
-	}
-	if err := json.Unmarshal(body, &delivery); err != nil {
-		return &store.ValidationError{Field: "body", Message: "must be a pull_request event"}
-	}
-	if delivery.Action != "closed" || !delivery.PullRequest.Merged {
-		writeJSON(w, http.StatusAccepted, map[string]string{"result": "ignored"})
-		return nil
-	}
-
-	issue, changed, err := s.store.CloseIssueForMergedPullRequest(r.Context(), store.Caller{ActorID: store.SystemActorID},
-		store.MergedPullRequest{URL: delivery.PullRequest.HTMLURL, Branch: delivery.PullRequest.Head.Ref})
-	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"result": "no matching issue"})
-		return nil
-	}
+	result, err := s.github.HandleDelivery(r.Context(), event, deliveryID, body)
 	if err != nil {
 		return err
 	}
-
-	result := "already closed"
-	if changed {
-		result = "closed"
+	if result == "pong" {
+		writeJSON(w, http.StatusOK, map[string]string{"result": result})
+		return nil
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"result": result, "issue": issue.Key()})
+	writeJSON(w, http.StatusAccepted, map[string]string{"result": result})
 	return nil
 }
 

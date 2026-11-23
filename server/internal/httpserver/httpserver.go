@@ -13,6 +13,7 @@ import (
 
 	"github.com/shantodotdev/super-sparrow/server/internal/auth"
 	"github.com/shantodotdev/super-sparrow/server/internal/discord"
+	"github.com/shantodotdev/super-sparrow/server/internal/github"
 	"github.com/shantodotdev/super-sparrow/server/internal/mcp"
 	"github.com/shantodotdev/super-sparrow/server/internal/ratelimit"
 	"github.com/shantodotdev/super-sparrow/server/internal/store"
@@ -48,6 +49,9 @@ type Options struct {
 	ObjectOrigin string
 	// GitHubWebhookSecret checks GitHub webhook signatures; "" turns the webhook off.
 	GitHubWebhookSecret string
+	// GitHub applies webhook deliveries and reads from GitHub. It is required when
+	// GitHubWebhookSecret is set, and nil otherwise.
+	GitHub *github.Service
 	// CLIDir is the folder of the signed CLI release to offer for download, or "" to offer none.
 	CLIDir  string
 	Discord *discord.Bot
@@ -69,6 +73,7 @@ type server struct {
 	mcp           *mcp.Server
 	cliDir        string
 	webhookSecret string
+	github        *github.Service
 	discord       *discord.Bot
 	mux           *http.ServeMux
 }
@@ -76,6 +81,10 @@ type server struct {
 // New returns the server's HTTP handler, with request logging and panic recovery around every
 // route.
 func New(opts Options) http.Handler {
+	if opts.GitHubWebhookSecret != "" && opts.GitHub == nil {
+		panic("httpserver: GitHubWebhookSecret needs the GitHub service")
+	}
+
 	s := &server{
 		logger:         opts.Logger,
 		db:             opts.DB,
@@ -90,6 +99,7 @@ func New(opts Options) http.Handler {
 		stop:           opts.Stop,
 		mcp:            mcp.New(opts.Store, opts.PublicURL, opts.Logger, opts.Version),
 		webhookSecret:  opts.GitHubWebhookSecret,
+		github:         opts.GitHub,
 		discord:        opts.Discord,
 		cliDir:         opts.CLIDir,
 		mux:            http.NewServeMux(),
@@ -126,8 +136,16 @@ func New(opts Options) http.Handler {
 	s.route("GET /api/discord/links", ownerOnly, s.listDiscordLinks)
 	s.route("DELETE /api/discord/links/{guild}/{user}", ownerOnly, s.unlinkDiscordMember)
 
+	s.route("GET /api/github", ownerOnly, s.githubSettings)
+	s.route("POST /api/github/refresh", ownerOnly, s.refreshGitHub)
+	s.route("PUT /api/github/repositories/{id}/project", ownerOnly, s.linkGitHubRepository)
+	s.route("POST /api/github/repositories/{id}/sync", ownerOnly, s.syncGitHubRepository)
+	s.route("DELETE /api/github/channels/{key}", ownerOnly, s.removeDiscordChannel)
+	s.route("GET /api/github/accounts", signedIn, s.listGitHubAccounts)
+
 	s.route("GET /api/people", signedIn, s.listPeople)
 	s.route("POST /api/people", ownerOnly, s.invitePerson)
+	s.route("PUT /api/people/{id}/github", humanOnly, s.setGitHubLogin)
 	s.route("POST /api/people/{id}/disable", ownerOnly, s.disablePerson)
 
 	s.route("GET /api/tokens", humanOnly, s.listTokens)
@@ -140,6 +158,7 @@ func New(opts Options) http.Handler {
 	s.route("GET /api/projects/{key}", signedIn, s.getProject)
 	s.route("PATCH /api/projects/{key}", humanOnly, s.renameProject)
 	s.route("DELETE /api/projects/{key}", ownerOnly, s.deleteProject)
+	s.route("GET /api/projects/{key}/pull-requests", signedIn, s.listPullRequests)
 	s.route("GET /api/projects/{key}/milestones", signedIn, s.listMilestones)
 	s.route("POST /api/projects/{key}/milestones", humanOnly, s.createMilestone)
 	s.route("PATCH /api/milestones/{id}", humanOnly, s.updateMilestone)

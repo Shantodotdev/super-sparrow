@@ -347,3 +347,149 @@ func TestDefaultAvatarsAreAssignedToExistingPeople(t *testing.T) {
 		t.Fatalf("system avatar %q, %v", system, err)
 	}
 }
+
+func TestGitHubMigrationRebuildsEventsWithoutLosingHistory(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := database.Migrate(ctx, db, upTo(t, "0027")); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO projects (id, key, name, slug, created_at, updated_at)
+		VALUES ('project', 'WP', 'Project', 'project', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+		INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, reported_model, payload, created_at)
+		SELECT 'first', 'project', 'project', 'project', 'project.created', id, 'model-a', '{"name":"Project"}', created_at
+		FROM actors WHERE kind = 'system';
+		INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+		SELECT 'second', NULL, 'actor', id, 'discord.setup', id, '{"interaction_id":"interaction-1"}', created_at
+		FROM actors WHERE kind = 'system';
+		INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+		SELECT 'third', 'project', 'project', 'project', 'project.renamed', id, '{}', created_at
+		FROM actors WHERE kind = 'system';`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM events WHERE id = 'second'`); err == nil {
+		t.Fatal("events were deletable before the migration")
+	}
+
+	if err := database.Migrate(ctx, db, migrations.Files); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Query(`SELECT sequence, id, project_id, target_type, kind, reported_model, payload FROM events ORDER BY sequence`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	type row struct {
+		sequence                  int64
+		id, target, kind, payload string
+		project, model            *string
+	}
+	var events []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.sequence, &r.id, &r.project, &r.target, &r.kind, &r.model, &r.payload); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	rows.Close()
+
+	if len(events) < 3 {
+		t.Fatalf("events = %d, want the ones inserted kept", len(events))
+	}
+	kept := map[string]row{}
+	for _, event := range events {
+		kept[event.id] = event
+	}
+	first, second, third := kept["first"], kept["second"], kept["third"]
+	if first.id == "" || second.id == "" || third.id == "" {
+		t.Fatalf("events were lost: %+v", events)
+	}
+	if first.project == nil || *first.project != "project" || first.model == nil || *first.model != "model-a" || first.kind != "project.created" || first.payload != `{"name":"Project"}` {
+		t.Errorf("first event changed: %+v", first)
+	}
+	if second.project != nil || second.model != nil || second.target != "actor" {
+		t.Errorf("second event changed: %+v", second)
+	}
+	if !(first.sequence < second.sequence && second.sequence < third.sequence) {
+		t.Errorf("sequence order changed: %d %d %d", first.sequence, second.sequence, third.sequence)
+	}
+
+	// New events continue the numbering instead of reusing a number.
+	var maxBefore int64
+	if err := db.QueryRow(`SELECT max(sequence) FROM events`).Scan(&maxBefore); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"repository", "pull_request"} {
+		_, err := db.Exec(`INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+			SELECT ?, NULL, ?, '1', 'github.test', id, '{}', created_at FROM actors WHERE kind = 'system'`, "new-"+target, target)
+		if err != nil {
+			t.Errorf("target type %s was refused: %v", target, err)
+		}
+	}
+	var next int64
+	if err := db.QueryRow(`SELECT sequence FROM events WHERE id = 'new-repository'`).Scan(&next); err != nil || next != maxBefore+1 {
+		t.Errorf("next sequence = %d (%v), want %d", next, err, maxBefore+1)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+		SELECT 'bad', NULL, 'spaceship', '1', 'x', id, '{}', created_at FROM actors WHERE kind = 'system'`); err == nil {
+		t.Error("an unknown target type was accepted")
+	}
+
+	// The append-only guards and indexes are back.
+	if _, err := db.Exec(`UPDATE events SET payload = '{}' WHERE id = 'first'`); err == nil {
+		t.Error("events_no_update was not restored")
+	}
+	if _, err := db.Exec(`DELETE FROM events WHERE id = 'first'`); err == nil {
+		t.Error("events_no_delete was not restored")
+	}
+	for _, name := range []string{"events_target", "events_project", "events_actor", "events_issue", "discord_setup_interaction"} {
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'events' AND name = ?`, name).Scan(&count); err != nil || count != 1 {
+			t.Errorf("index %s present = %d (%v)", name, count, err)
+		}
+	}
+	for _, name := range []string{"events_no_update", "events_no_delete"} {
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = ?`, name).Scan(&count); err != nil || count != 1 {
+			t.Errorf("trigger %s present = %d (%v)", name, count, err)
+		}
+	}
+
+	// A Discord setup interaction can be recorded only once.
+	insertSetup := `INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+		SELECT ?, NULL, 'actor', id, 'discord.setup', id, '{"interaction_id":"interaction-2"}', created_at FROM actors WHERE kind = 'system'`
+	if _, err := db.Exec(insertSetup, "setup-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(insertSetup, "setup-b"); err == nil {
+		t.Error("discord_setup_interaction no longer rejects a repeated interaction")
+	}
+	// The earlier setup event kept its interaction too.
+	if _, err := db.Exec(`INSERT INTO events (id, project_id, target_type, target_id, kind, actor_id, payload, created_at)
+		SELECT 'setup-c', NULL, 'actor', id, 'discord.setup', id, '{"interaction_id":"interaction-1"}', created_at FROM actors WHERE kind = 'system'`); err == nil {
+		t.Error("an interaction recorded before the migration can be recorded again")
+	}
+
+	var violations int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil || violations != 0 {
+		t.Fatalf("foreign key violations = %d: %v", violations, err)
+	}
+	for _, table := range []string{"github_installations", "github_repositories", "github_pull_requests", "github_reviews", "github_deliveries", "github_accounts", "discord_project_channels"} {
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil || count != 1 {
+			t.Errorf("table %s present = %d (%v)", table, count, err)
+		}
+	}
+}

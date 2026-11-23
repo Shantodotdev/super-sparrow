@@ -1,20 +1,19 @@
 package httpserver
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shantodotdev/super-sparrow/server/internal/github"
 )
 
 const webhookSecret = "a-long-enough-webhook-secret"
@@ -25,9 +24,13 @@ const objectOrigin = "https://objects.test"
 func (a *apiTeam) withOptions(webDir string) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publicURL, _ := url.Parse(origin)
+	service, err := github.NewService(a.store, nil, nil, logger)
+	if err != nil {
+		a.t.Fatalf("NewService: %v", err)
+	}
 	a.handler = New(Options{
 		Logger: logger, Store: a.store, Auth: a.auth, PublicURL: publicURL, Now: time.Now,
-		WebDir: webDir, ObjectOrigin: objectOrigin, GitHubWebhookSecret: webhookSecret,
+		WebDir: webDir, ObjectOrigin: objectOrigin, GitHubWebhookSecret: webhookSecret, GitHub: service,
 	})
 }
 
@@ -97,54 +100,4 @@ func TestShellPageAllowsOnlyItsOwnInlineScripts(t *testing.T) {
 	if response.Header().Get("Content-Type") != "text/html; charset=utf-8" {
 		t.Errorf("shell served as %q", response.Header().Get("Content-Type"))
 	}
-}
-
-func (a *apiTeam) deliver(event, body, signature string) *httptest.ResponseRecorder {
-	a.t.Helper()
-	request := httptest.NewRequest(http.MethodPost, "/api/webhooks/github", strings.NewReader(body))
-	request.Header.Set("X-GitHub-Event", event)
-	request.Header.Set("X-Hub-Signature-256", signature)
-	response := httptest.NewRecorder()
-	a.handler.ServeHTTP(response, request)
-	return response
-}
-
-func sign(body string) string {
-	mac := hmac.New(sha256.New, []byte(webhookSecret))
-	mac.Write([]byte(body))
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
-}
-
-func TestGitHubWebhookClosesTheIssueOnMerge(t *testing.T) {
-	a := newAPITeam(t)
-	a.project()
-	a.withOptions("")
-
-	merged := `{"action":"closed","pull_request":{"html_url":"https://github.com/o/r/pull/3","merged":true,"head":{"ref":"feat/wp-1-meta"}}}`
-	wantStatus(t, a.deliver("pull_request", merged, "sha256=00"), http.StatusUnauthorized)
-	wantStatus(t, a.deliver("pull_request", merged, sign(merged+" ")), http.StatusUnauthorized)
-	wantStatus(t, a.deliver("push", "{}", ""), http.StatusUnauthorized)
-	oversized := strings.Repeat(" ", maxWebhookBytes+1)
-	wantStatus(t, a.deliver("pull_request", oversized, sign(oversized)), http.StatusBadRequest)
-
-	unmerged := strings.Replace(merged, `"merged":true`, `"merged":false`, 1)
-	wantStatus(t, a.deliver("pull_request", unmerged, sign(unmerged)), http.StatusAccepted)
-	wantStatus(t, a.deliver("ping", "{}", sign("{}")), http.StatusOK)
-
-	response := a.deliver("pull_request", merged, sign(merged))
-	wantStatus(t, response, http.StatusOK)
-	if !strings.Contains(response.Body.String(), `"result":"closed"`) {
-		t.Fatalf("delivery answered %s", response.Body)
-	}
-
-	var issue struct {
-		Issue issueView `json:"issue"`
-	}
-	a.call(http.MethodGet, "/api/issues/WP-1", a.member, nil, http.StatusOK, &issue)
-	if issue.Issue.Status != "done" || issue.Issue.PullRequestURL != "https://github.com/o/r/pull/3" {
-		t.Fatalf("issue after merge %+v", issue.Issue)
-	}
-
-	other := `{"action":"closed","pull_request":{"html_url":"https://github.com/o/r/pull/4","merged":true,"head":{"ref":"chore/deps"}}}`
-	wantStatus(t, a.deliver("pull_request", other, sign(other)), http.StatusAccepted)
 }

@@ -79,6 +79,9 @@ type Config struct {
 	// allows.
 	Backups *Backups
 	Discord *Discord
+	// GitHubApp holds the GitHub App's credentials. It is nil when the App is off; the webhook
+	// secret then still checks deliveries, if it is set.
+	GitHubApp *GitHubApp
 }
 
 // Backups holds the settings of the hourly sync and the daily backup.
@@ -211,6 +214,12 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	problems = append(problems, err)
 	cfg.GitHubWebhookSecret = webhookSecret
+
+	cfg.GitHubApp, err = LoadGitHubApp(getenv)
+	if err == nil && cfg.GitHubApp != nil && webhookSecret == "" {
+		err = errors.New("GITHUB_WEBHOOK_SECRET is required when the GitHub App is set")
+	}
+	problems = append(problems, err)
 
 	cfg.Discord, err = LoadDiscord(getenv)
 	if err == nil && cfg.Discord != nil && cfg.Discord.ListenAddr != "" && cfg.Discord.ListenAddr == cfg.ListenAddr {

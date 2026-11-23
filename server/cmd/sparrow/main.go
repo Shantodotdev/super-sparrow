@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,6 +25,7 @@ import (
 	"github.com/shantodotdev/super-sparrow/server/internal/database"
 	"github.com/shantodotdev/super-sparrow/server/internal/discord"
 	"github.com/shantodotdev/super-sparrow/server/internal/email"
+	"github.com/shantodotdev/super-sparrow/server/internal/github"
 	"github.com/shantodotdev/super-sparrow/server/internal/httpserver"
 	"github.com/shantodotdev/super-sparrow/server/internal/linear"
 	"github.com/shantodotdev/super-sparrow/server/internal/logging"
@@ -297,6 +299,32 @@ func seedDevelopmentOwner(ctx context.Context, st *store.Store) error {
 	return nil
 }
 
+// newGitHubService builds the GitHub service when a webhook secret is configured, with the App
+// client when the App's credentials are too, and announces pull requests through the Discord bot
+// when there is one. It returns nil when GitHub is off.
+func newGitHubService(cfg config.Config, st *store.Store, discordBot *discord.Bot, logger *slog.Logger) (*github.Service, error) {
+	if cfg.GitHubWebhookSecret == "" {
+		return nil, nil
+	}
+
+	var app *github.App
+	if cfg.GitHubApp != nil {
+		client := &http.Client{Timeout: 20 * time.Second}
+		var err error
+		app, err = github.NewApp(cfg.GitHubApp.ID, cfg.GitHubApp.Slug, cfg.GitHubApp.PrivateKey, github.APIURL, client, time.Now)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// A nil *discord.Bot must not become a non-nil Notifier.
+	var notifier github.Notifier
+	if discordBot != nil {
+		notifier = discordBot
+	}
+	return github.NewService(st, app, notifier, logger)
+}
+
 // serve migrates the database and serves HTTP until ctx ends, running the backup jobs alongside
 // when they are enabled. On shutdown it ends event streams, waits for open requests to finish,
 // and lets a running backup record its result.
@@ -326,6 +354,14 @@ func serve(ctx context.Context) error {
 		discordBot = discord.New(*cfg.Discord, st, mcp.New(st, cfg.PublicURL, logger, version), logger, time.Now)
 	}
 
+	githubService, err := newGitHubService(cfg, st, discordBot, logger)
+	if err != nil {
+		return err
+	}
+	if githubService != nil {
+		defer githubService.Wait()
+	}
+
 	stopStreams := make(chan struct{})
 	server := &http.Server{
 		Addr: cfg.ListenAddr,
@@ -343,6 +379,7 @@ func serve(ctx context.Context) error {
 			ObjectOrigin:        "https://" + cfg.AttachmentsR2.AccountID + ".r2.cloudflarestorage.com",
 			CLIDir:              cfg.CLIDir,
 			GitHubWebhookSecret: cfg.GitHubWebhookSecret,
+			GitHub:              githubService,
 			Discord:             discordBot,
 		}),
 		// JSON request bodies are at most a megabyte, so a slow sender is cut off after the read

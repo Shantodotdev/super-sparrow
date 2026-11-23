@@ -4,8 +4,10 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { findingStatusLabel } from "../lib/finding-status";
 import { issueStatusLabel } from "../lib/issue-status";
 import { formatTime } from "../lib/format";
+import { describeGithubEvent } from "../lib/github-events";
 import type { ActivityEvent, FindingStatus, IssueStatus } from "../lib/types";
 import { issuesQuery } from "../queries/issues";
+import { Icon } from "./icon";
 import { Person } from "./person";
 
 /** Returns the issue an event is about: its target, or the issue its payload names. */
@@ -94,15 +96,32 @@ export function EventLine({ event }: { event: ActivityEvent }) {
   const projectSlug = useProjectSlugs();
   const { data: issues } = useSuspenseQuery(issuesQuery);
   const issue = issues.find((item) => item.id === eventIssueId(event));
-  const { action, detail } = describe(event);
+  const github = describeGithubEvent(event);
+  const { action, detail } = github ?? describe(event);
 
   return (
     <div className="grid grid-cols-[100px_14px_180px_1fr] items-start gap-[18px] px-0 py-[15px] max-[700px]:grid-cols-[65px_10px_1fr] max-[700px]:gap-[8px] max-[700px]:[&_>_div:last-child]:col-3 [&_p]:mt-[6px] [&_time]:text-[#95a6bd]">
       <time dateTime={event.created_at}>{formatTime(event.created_at)}</time>
       <div className="mt-[5px] h-[10px] w-[10px] rounded-full bg-[#77889f]" />
-      <Person actorId={event.actor_id} />
+      {github && github.login ? (
+        <span className="inline-flex items-center gap-2 whitespace-nowrap" title="GitHub user">
+          <Icon name="github" />@{github.login}
+        </span>
+      ) : (
+        <Person actorId={github ? github.actorId : event.actor_id} />
+      )}
       <div>
         <span>{action} </span>
+        {github?.link && (
+          <a
+            href={github.link.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="border-0 bg-none p-0 text-[#719bff] hover:text-[#d2e0ff]"
+          >
+            {github.link.text}
+          </a>
+        )}
         {issue && (
           <Link
             to="/$projectSlug/issues/$issue"

@@ -74,6 +74,7 @@ type message struct {
 
 type allowed struct {
 	Parse []string `json:"parse"`
+	Users []string `json:"users,omitempty"`
 }
 
 type actionRow struct {

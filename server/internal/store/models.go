@@ -277,11 +277,14 @@ const (
 	TargetReviewRound TargetType = "review_round"
 	TargetFinding     TargetType = "finding"
 	TargetComment     TargetType = "comment"
+	TargetRepository  TargetType = "repository"
+	TargetPullRequest TargetType = "pull_request"
 )
 
 func (t TargetType) valid() bool {
 	switch t {
-	case TargetActor, TargetProject, TargetMilestone, TargetLabel, TargetIssue, TargetReviewRound, TargetFinding, TargetComment:
+	case TargetActor, TargetProject, TargetMilestone, TargetLabel, TargetIssue, TargetReviewRound, TargetFinding, TargetComment,
+		TargetRepository, TargetPullRequest:
 		return true
 	}
 	return false

@@ -29,15 +29,16 @@ import (
 )
 
 const (
-	appID      = "1234567890"
-	channelID  = "9876543210"
-	guildID    = "2345678901"
-	otherGuild = "2345678902"
-	thirdGuild = "2345678903"
-	firstUser  = "3456789012"
-	secondUser = "4567890123"
-	setupUser  = "5678901234"
-	testModel  = "claude-haiku-5-5"
+	appID       = "1234567890"
+	channelID   = "9876543210"
+	newsChannel = "9876543211"
+	guildID     = "2345678901"
+	otherGuild  = "2345678902"
+	thirdGuild  = "2345678903"
+	firstUser   = "3456789012"
+	secondUser  = "4567890123"
+	setupUser   = "5678901234"
+	testModel   = "claude-haiku-5-5"
 )
 
 type discordHarness struct {
@@ -50,6 +51,7 @@ type discordHarness struct {
 	second     store.Actor
 	modelCalls atomic.Int32
 	replies    chan message
+	posts      chan message
 	modelGate  chan struct{}
 }
 
@@ -65,7 +67,7 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &discordHarness{privateKey: private, now: time.Now().Truncate(time.Second), replies: make(chan message, 10), modelGate: make(chan struct{}, 1)}
+	h := &discordHarness{privateKey: private, now: time.Now().Truncate(time.Second), replies: make(chan message, 10), posts: make(chan message, 10), modelGate: make(chan struct{}, 1)}
 	clock := func() time.Time { return h.now }
 	h.st = store.New(db, clock, nil)
 	system := store.Caller{ActorID: store.SystemActorID}
@@ -91,14 +93,14 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			Messages []conversation   `json:"messages"`
 			Tools    []mcp.Definition `json:"tools"`
 		}
-		if err := json.NewDecoder(req.Body).Decode(&input); err != nil || input.Model != testModel || len(input.Messages) == 0 || (len(input.Tools) != 3 && len(input.Tools) != 6) {
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil || input.Model != testModel || len(input.Messages) == 0 || (len(input.Tools) != 4 && len(input.Tools) != 8) {
 			t.Errorf("bad model request: %+v, %v", input, err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		for _, tool := range input.Tools {
 			switch tool.Name {
-			case "create_issue", "list_projects", "list_issues", "link_teammate", "set_default_project", "today_status":
+			case "create_issue", "list_projects", "list_issues", "link_teammate", "set_default_project", "today_status", "set_github_channel", "link_github":
 			default:
 				t.Errorf("unexpected model tool: %s", tool.Name)
 			}
@@ -116,6 +118,12 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			result = toolReply("set_default_project", `{"project_key":"OPS"}`)
 		case "Link me to Rae":
 			result = toolReply("link_teammate", `{"discord_name":"me","sparrow_name":"Rae"}`)
+		case "Post GitHub updates for OPS here":
+			result = toolReply("set_github_channel", `{"project_key":"OPS"}`)
+		case "My GitHub is octocat":
+			result = toolReply("link_github", `{"github_username":"@octocat"}`)
+		case "My GitHub is not valid":
+			result = toolReply("link_github", `{"github_username":"not valid!"}`)
 		case "What's the status for today?":
 			result = toolReply("today_status", `{}`)
 		case "Today with empty project":
@@ -168,6 +176,15 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			default:
 				t.Error("unexpected Discord lookup")
 			}
+			return
+		}
+		if req.Method == http.MethodPost && req.URL.Path == "/channels/"+newsChannel+"/messages" {
+			var post message
+			if err := json.NewDecoder(req.Body).Decode(&post); err != nil || req.Header.Get("Authorization") != "Bot test-token" {
+				t.Errorf("bad channel post: %v", err)
+			}
+			h.posts <- post
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		if req.Method != http.MethodPost || req.URL.Path != "/channels/"+channelID+"/messages" || req.Header.Get("Authorization") != "Bot test-token" {

@@ -37,6 +37,11 @@ DISCORD_SETTINGS = (
     "DISCORD_BOT_TOKEN",
 )
 DISCORD_RUNTIME_SETTINGS = DISCORD_SETTINGS + ("ANTHROPIC_API_KEY",)
+GITHUB_APP_SETTINGS = (
+    "GITHUB_APP_ID",
+    "GITHUB_APP_SLUG",
+    "GITHUB_APP_PRIVATE_KEY",
+)
 CONNECTION_SETTINGS = (
     "DEPLOY_HOST",
     "DEPLOY_USER",
@@ -66,6 +71,24 @@ def production_settings(settings):
                     f"Doppler setting {name} is required when Discord is enabled"
                 )
             runtime[name] = value
+
+    github_enabled = any(
+        isinstance(settings.get(name), str) and settings[name].strip()
+        for name in GITHUB_APP_SETTINGS
+    )
+    if github_enabled:
+        for name in GITHUB_APP_SETTINGS:
+            value = settings.get(name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"Doppler setting {name} is required when the GitHub App is enabled"
+                )
+            runtime[name] = value
+        # The server env file holds one line per setting, so the key's lines are joined
+        # with literal \n escapes, which the server turns back into newlines.
+        runtime["GITHUB_APP_PRIVATE_KEY"] = "\\n".join(
+            runtime["GITHUB_APP_PRIVATE_KEY"].strip().splitlines()
+        )
 
     return runtime
 

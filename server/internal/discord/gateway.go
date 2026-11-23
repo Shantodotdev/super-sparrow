@@ -161,7 +161,7 @@ func (h *Bot) respondToMention(ctx context.Context, request mention) {
 	default:
 		work, cancel := context.WithTimeout(ctx, 45*time.Second)
 		var err error
-		reply, err = h.answer(work, request.source, request.messageID, request.userName, request.prompt)
+		reply, err = h.answer(work, request.source, request.channelID, request.messageID, request.userName, request.prompt)
 		if err != nil {
 			reply = plain(h.userError(work, "answer Discord mention", err))
 		}

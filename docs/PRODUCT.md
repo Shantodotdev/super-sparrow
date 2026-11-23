@@ -46,6 +46,6 @@ Our code is now written at agent speed, but our tracking tools still work at hum
 ## Later
 
 - Connection to our own CI/CD platform, or one combined product.
-- GitHub pull request sync beyond closing issues on merge.
+- Acting on GitHub from Sparrow, such as merging or reviewing pull requests.
 - Reports on agent performance: findings per agent, confirmed rate, fix rate.
 - Possibly offering it to other teams who build with agents.
