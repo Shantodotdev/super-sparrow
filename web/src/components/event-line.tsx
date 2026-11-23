@@ -55,6 +55,23 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
       return { action: `marked ${finding(p)} a duplicate on` };
     case "comment.added":
       return { action: "commented on" };
+    case "discord.setup":
+      return { action: "updated Discord setup" };
+    case "discord.guild_requested":
+      return {
+        action: "requested Discord server approval",
+        detail: typeof p.guild_id === "string" ? p.guild_id : undefined,
+      };
+    case "discord.guild_approved":
+      return {
+        action: "approved Discord server",
+        detail: typeof p.guild_id === "string" ? p.guild_id : undefined,
+      };
+    case "discord.guild_revoked":
+      return {
+        action: "revoked Discord server",
+        detail: typeof p.guild_id === "string" ? p.guild_id : undefined,
+      };
     default:
       return { action: event.kind.replace(/[._]/g, " ") };
   }

@@ -4,6 +4,7 @@ import { Icon } from "./icon";
 export const agentIcons: Record<string, string> = {
   codex: "/brands/codex.png",
   "claude-code": "/brands/claude.svg",
+  discord: "/brands/discord.svg",
 };
 
 /**
