@@ -22,6 +22,19 @@ type conversation struct {
 	Content any    `json:"content"`
 }
 
+type cacheControl struct {
+	Type string `json:"type"`
+	TTL  string `json:"ttl,omitempty"`
+}
+
+type systemBlock struct {
+	Type         string       `json:"type"`
+	Text         string       `json:"text"`
+	CacheControl cacheControl `json:"cache_control"`
+}
+
+var promptCache = cacheControl{Type: "ephemeral", TTL: "1h"}
+
 type anthropicClient struct {
 	key      string
 	model    string
@@ -31,7 +44,12 @@ type anthropicClient struct {
 
 func (a anthropicClient) complete(ctx context.Context, system string, messages []conversation, tools []mcp.Definition) ([]json.RawMessage, error) {
 	body, err := json.Marshal(map[string]any{
-		"model": a.model, "max_tokens": 2048, "system": system, "messages": messages, "tools": tools,
+		"model":         a.model,
+		"max_tokens":    2048,
+		"cache_control": promptCache,
+		"system":        []systemBlock{{Type: "text", Text: system, CacheControl: promptCache}},
+		"messages":      messages,
+		"tools":         tools,
 		"output_config": map[string]string{"effort": "low"},
 		"tool_choice":   map[string]any{"type": "auto", "disable_parallel_tool_use": true},
 	})

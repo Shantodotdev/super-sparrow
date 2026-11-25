@@ -162,6 +162,7 @@ func (h *Bot) respondToMention(ctx context.Context, request mention) {
 		work, cancel := context.WithTimeout(ctx, 45*time.Second)
 		var err error
 		reply, err = h.answer(work, request.source, request.channelID, request.messageID, request.userName, request.prompt)
+		answered := err == nil
 		if err != nil {
 			reply = plain(h.userError(work, "answer Discord mention", err))
 		}
@@ -170,6 +171,9 @@ func (h *Bot) respondToMention(ctx context.Context, request mention) {
 		status, err = h.guildAccess(ctx, request.source)
 		if err != nil || status != store.DiscordGuildApproved {
 			return
+		}
+		if answered {
+			h.rememberExchange(request.source.GuildID, request.channelID, formatUserMessage(request.userName, request.prompt), reply.Content)
 		}
 	}
 

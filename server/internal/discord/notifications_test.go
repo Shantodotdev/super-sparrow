@@ -73,16 +73,30 @@ func TestPullRequestMergedMentionsAuthorAndMerger(t *testing.T) {
 	post := <-h.posts
 	want := "**Pull request merged · OPS**\n" +
 		"[acme/shop#12 Fix \\*checkout\\* flow](https://github.com/acme/shop/pull/12)\n" +
-		"by <@" + firstUser + "> · merged by <@" + secondUser + ">"
+		"<@" + firstUser + ">, your PR was merged by <@" + secondUser + ">."
 	if post.Content != want || post.Flags != 4 || !slices.Equal(post.AllowedMentions.Users, []string{firstUser, secondUser}) || len(post.AllowedMentions.Parse) != 0 {
 		t.Fatalf("unexpected merged message: %+v", post)
+	}
+
+	unmappedMerger := h.pullRequest(t, "OPS")
+	unmappedMerger.MergedByLogin = "stranger_1"
+	h.bot.PullRequestChanged(t.Context(), store.GitHubPullRequestChange{PullRequest: unmappedMerger, Kind: "github.pull_request.merged"})
+	post = <-h.posts
+	wantUnmapped := "**Pull request merged · OPS**\n" +
+		"[acme/shop#12 Fix \\*checkout\\* flow](https://github.com/acme/shop/pull/12)\n" +
+		"<@" + firstUser + ">, your PR was merged by stranger\\_1."
+	if post.Content != wantUnmapped || !slices.Equal(post.AllowedMentions.Users, []string{firstUser}) {
+		t.Fatalf("unexpected merged message with unmapped merger: %+v", post)
 	}
 
 	pull := h.pullRequest(t, "OPS")
 	pull.MergedByLogin = "octocat"
 	h.bot.PullRequestChanged(t.Context(), store.GitHubPullRequestChange{PullRequest: pull, Kind: "github.pull_request.merged"})
 	post = <-h.posts
-	if strings.Contains(post.Content, "merged by") || !slices.Equal(post.AllowedMentions.Users, []string{firstUser}) {
+	wantSelf := "**Pull request merged · OPS**\n" +
+		"[acme/shop#12 Fix \\*checkout\\* flow](https://github.com/acme/shop/pull/12)\n" +
+		"<@" + firstUser + ">, your PR was merged."
+	if post.Content != wantSelf || !slices.Equal(post.AllowedMentions.Users, []string{firstUser}) {
 		t.Fatalf("the author who merged was mentioned twice: %+v", post)
 	}
 }
