@@ -45,6 +45,8 @@ type Bot struct {
 	perPendingGuild *ratelimit.Limiter
 	draftMu         sync.Mutex
 	drafts          map[string]draft
+	memoryMu        sync.Mutex
+	memory          map[memoryKey]channelHistory
 }
 
 type interaction struct {
@@ -96,7 +98,7 @@ func New(cfg config.Discord, st *store.Store, tools *mcp.Server, logger *slog.Lo
 		model:  anthropicClient{key: cfg.AnthropicKey, model: cfg.Model, client: newHTTPClient(20 * time.Second), endpoint: anthropicMessages},
 		client: newHTTPClient(5 * time.Second), api: discordAPI,
 		perUser: ratelimit.New(8, time.Minute, now), perPendingGuild: ratelimit.New(1, 5*time.Minute, now),
-		drafts: make(map[string]draft),
+		drafts: make(map[string]draft), memory: make(map[memoryKey]channelHistory),
 	}
 }
 

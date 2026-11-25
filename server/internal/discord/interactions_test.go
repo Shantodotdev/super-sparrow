@@ -43,16 +43,17 @@ const (
 
 type discordHarness struct {
 	*httptest.Server
-	bot        *Bot
-	privateKey ed25519.PrivateKey
-	now        time.Time
-	st         *store.Store
-	first      store.Actor
-	second     store.Actor
-	modelCalls atomic.Int32
-	replies    chan message
-	posts      chan message
-	modelGate  chan struct{}
+	bot          *Bot
+	privateKey   ed25519.PrivateKey
+	now          time.Time
+	st           *store.Store
+	first        store.Actor
+	second       store.Actor
+	modelCalls   atomic.Int32
+	lastMessages []conversation
+	replies      chan message
+	posts        chan message
+	modelGate    chan struct{}
 }
 
 func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
@@ -89,12 +90,19 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			return
 		}
 		var input struct {
-			Model    string           `json:"model"`
-			Messages []conversation   `json:"messages"`
-			Tools    []mcp.Definition `json:"tools"`
+			Model        string           `json:"model"`
+			CacheControl cacheControl     `json:"cache_control"`
+			System       []systemBlock    `json:"system"`
+			Messages     []conversation   `json:"messages"`
+			Tools        []mcp.Definition `json:"tools"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil || input.Model != testModel || len(input.Messages) == 0 || (len(input.Tools) != 4 && len(input.Tools) != 8) {
 			t.Errorf("bad model request: %+v, %v", input, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if input.CacheControl != promptCache || len(input.System) != 1 || input.System[0].Type != "text" || input.System[0].CacheControl != promptCache {
+			t.Errorf("missing 1h prompt caching configuration: cache=%+v system=%+v", input.CacheControl, input.System)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -106,8 +114,21 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			}
 		}
 
+		h.lastMessages = input.Messages
+		prompt := ""
+		for i := len(input.Messages) - 1; i >= 0; i-- {
+			if input.Messages[i].Role == "user" {
+				if text, ok := input.Messages[i].Content.(string); ok {
+					prompt = text
+					break
+				}
+			}
+		}
+		lastMessage := input.Messages[len(input.Messages)-1]
+		_, isFollowupPrompt := lastMessage.Content.(string)
+
 		var result string
-		switch input.Messages[0].Content {
+		switch prompt {
 		case "Add Black Sparrow is Sam. Add him.":
 			result = toolReply("link_teammate", `{"discord_name":"Black Sparrow","sparrow_name":"Sam"}`)
 		case "Link Night Owl to Rae":
@@ -142,10 +163,10 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			}
 			result = toolReply("create_issue", `{"title":"Checkout spinner","status":"todo","plan":"Check the spinner logs."}`)
 		case "Find issues in Operations":
-			if len(input.Messages) == 1 {
+			if isFollowupPrompt {
 				result = toolReply("list_projects", `{}`)
 			} else {
-				transcript, _ := json.Marshal(input.Messages[2])
+				transcript, _ := json.Marshal(lastMessage)
 				if !bytes.Contains(transcript, []byte("Operations")) || !bytes.Contains(transcript, []byte("tool_result")) {
 					t.Errorf("wrong discovery result: %s", transcript)
 				}
@@ -155,6 +176,8 @@ func newDiscordHarness(t *testing.T, extraGuilds ...string) *discordHarness {
 			result = toolReply("delete_project", `{"project_key":"WP"}`)
 		case "Bad issue lookup":
 			result = toolReply("list_issues", `{"project_key":"MISSING"}`)
+		case "Clarify first":
+			result = `{"stop_reason":"end_turn","content":[{"type":"text","text":"Which project should I use?"}]}`
 		default:
 			result = toolReply("list_issues", `{"statuses":["todo"]}`)
 		}
@@ -673,5 +696,57 @@ func TestDiscordEmptyProjectFallbackAndOversizedDraft(t *testing.T) {
 	h.bot.draftMu.Unlock()
 	if draftCount != 0 {
 		t.Fatalf("oversized draft was stored in pending drafts: %d", draftCount)
+	}
+}
+
+func TestDiscordChannelMemoryRetainsWithinWindowAndExpires(t *testing.T) {
+	h := newDiscordHarness(t, otherGuild)
+	h.setup(t, "90", firstUser, h.first.ID, "WP")
+
+	h.ask(t, firstUser, "91", "Clarify first")
+	if reply := h.replied(t); reply.Content != "Which project should I use?" {
+		t.Fatalf("unexpected clarification: %+v", reply)
+	}
+	if len(h.lastMessages) != 1 || h.lastMessages[0].Content != "Clarify first" {
+		t.Fatalf("first turn should not include prior history: %+v", h.lastMessages)
+	}
+
+	h.now = h.now.Add(20 * time.Minute)
+	h.ask(t, firstUser, "92", "List issues")
+	h.replied(t)
+	if len(h.lastMessages) != 3 ||
+		h.lastMessages[0].Role != "user" || h.lastMessages[0].Content != "Clarify first" ||
+		h.lastMessages[1].Role != "assistant" || h.lastMessages[1].Content != "Which project should I use?" ||
+		h.lastMessages[2].Role != "user" || h.lastMessages[2].Content != "List issues" {
+		t.Fatalf("follow-up within 30 minutes did not include prior exchange: %+v", h.lastMessages)
+	}
+
+	// Another guild does not see the first guild's channel memory.
+	h.askInGuild(t, otherGuild, firstUser, "93", "Clarify first")
+	h.replied(t)
+	if len(h.lastMessages) != 1 {
+		t.Fatalf("channel memory leaked across guilds: %+v", h.lastMessages)
+	}
+
+	// After 30 minutes of inactivity, channel memory expires.
+	h.now = h.now.Add(31 * time.Minute)
+	h.ask(t, firstUser, "94", "List issues")
+	h.replied(t)
+	if len(h.lastMessages) != 1 || h.lastMessages[0].Content != "List issues" {
+		t.Fatalf("expired channel memory was not cleared: %+v", h.lastMessages)
+	}
+
+	// Memory stays bounded to maxMemoryTurns prior exchanges.
+	for i := range maxMemoryTurns + 3 {
+		h.bot.rememberExchange(guildID, channelID, fmt.Sprintf("user %d", i), fmt.Sprintf("assistant %d", i))
+	}
+	if history := h.bot.recentMessages(guildID, channelID); len(history) != maxMemoryTurns*2 {
+		t.Fatalf("memory exceeded turn cap: got %d messages, want %d", len(history), maxMemoryTurns*2)
+	}
+
+	// Revoking a guild clears its stored channel memory.
+	must(t, wrap(h.bot.SetGuildApproval(t.Context(), store.Caller{ActorID: h.first.ID}, otherGuild, store.DiscordGuildRevoked)))
+	if history := h.bot.recentMessages(otherGuild, channelID); len(history) != 0 {
+		t.Fatalf("revoked guild kept channel memory: %+v", history)
 	}
 }

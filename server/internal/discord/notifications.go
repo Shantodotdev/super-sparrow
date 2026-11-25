@@ -94,13 +94,15 @@ func pullRequestMessage(kind, projectKey string, pull store.GitHubPullRequest, u
 	var lines []string
 	if kind == pullMerged {
 		lines = []string{"**Pull request merged · " + escape(projectKey) + "**", link}
-		who := "by " + person(pull.AuthorLogin)
-		if merger := pull.MergedByLogin; merger != "" && !strings.EqualFold(merger, pull.AuthorLogin) {
-			if _, mapped := users[strings.ToLower(merger)]; mapped {
-				who += " · merged by " + person(merger)
-			}
+		merger := pull.MergedByLogin
+		switch {
+		case pull.AuthorLogin != "" && merger != "" && !strings.EqualFold(merger, pull.AuthorLogin):
+			lines = append(lines, person(pull.AuthorLogin)+", your PR was merged by "+person(merger)+".")
+		case pull.AuthorLogin != "":
+			lines = append(lines, person(pull.AuthorLogin)+", your PR was merged.")
+		case merger != "":
+			lines = append(lines, "Merged by "+person(merger)+".")
 		}
-		lines = append(lines, who)
 	} else {
 		lines = []string{"**New pull request · " + escape(projectKey) + "**", link,
 			fmt.Sprintf("%s → %s · +%d −%d", escape(oneLine(pull.HeadRef)), escape(oneLine(pull.BaseRef)), pull.Additions, pull.Deletions),

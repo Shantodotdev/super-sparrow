@@ -15,7 +15,11 @@ func (h *Bot) GuildApprovals(ctx context.Context) ([]store.DiscordGuildApproval,
 
 // SetGuildApproval applies an authenticated workspace owner's decision.
 func (h *Bot) SetGuildApproval(ctx context.Context, caller store.Caller, id string, status store.DiscordGuildStatus) (store.DiscordGuildApproval, error) {
-	return h.store.SetDiscordGuildApproval(ctx, caller, id, h.cfg.AllowsGuild(id), status)
+	approval, err := h.store.SetDiscordGuildApproval(ctx, caller, id, h.cfg.AllowsGuild(id), status)
+	if err == nil && status == store.DiscordGuildRevoked {
+		h.clearGuildMemory(id)
+	}
+	return approval, err
 }
 
 func (h *Bot) guildSource(guildID, userID string) store.DiscordIdentity {
