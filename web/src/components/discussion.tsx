@@ -2,19 +2,20 @@ import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 import { matchesChord } from "../lib/shortcuts";
 import { Textarea } from "./input";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { formatRelative } from "../lib/format";
 import type { Comment } from "../lib/types";
 import { useAddComment } from "../queries/findings";
-import { commentsQuery, useActor } from "../queries/project";
+import { findingCommentsQuery, issueCommentsQuery } from "../queries/issue-resources";
+import { useActor } from "../queries/project";
 import { Avatar } from "./avatar";
 import { reviewActorName } from "../lib/review";
 import { MarkdownView } from "./markdown-view";
 
 type DiscussionProps = {
-  issueId: string;
-  /** The finding whose discussion to show, or "" for the issue's own comments. */
-  findingId: string;
+  issueKey: string;
+  /** The finding whose discussion to show, or omitted for the issue's own comments. */
+  finding?: { round: number; number: number };
   variant?: "default" | "review";
 };
 
@@ -31,20 +32,20 @@ function threaded(comments: Comment[]): { comment: Comment; reply: boolean }[] {
 }
 
 /** The comments on an issue or a finding, oldest first, with a box for adding one. */
-export function Discussion({ issueId, findingId, variant = "default" }: DiscussionProps) {
+export function Discussion({ issueKey, finding, variant = "default" }: DiscussionProps) {
   const { bindings } = useKeyboardShortcuts();
-  const { data: allComments } = useSuspenseQuery(commentsQuery);
+  const commentsQueryResult = useQuery(
+    finding
+      ? findingCommentsQuery(issueKey, finding.round, finding.number)
+      : issueCommentsQuery(issueKey),
+  );
   const actor = useActor();
   const addComment = useAddComment();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [body, setBody] = useState("");
 
-  const comments = allComments.filter((comment) =>
-    findingId
-      ? comment.finding_id === findingId
-      : comment.issue_id === issueId && !comment.finding_id,
-  );
+  const comments = commentsQueryResult.data ?? [];
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -52,7 +53,7 @@ export function Discussion({ issueId, findingId, variant = "default" }: Discussi
 
     setPending(true);
     try {
-      await addComment(issueId, findingId, body.trim());
+      await addComment(issueKey, body.trim(), finding);
       setBody("");
       setError("");
     } catch (error) {
@@ -71,7 +72,12 @@ export function Discussion({ issueId, findingId, variant = "default" }: Discussi
   return (
     <div className={`flex min-h-0 flex-1 flex-col ${variant === "review" ? "text-[14.5px]" : ""}`}>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {variant === "review" && comments.length === 0 && (
+        {commentsQueryResult.isPending && (
+          <p role="status" className="text-[13px] text-[#8290a4]">
+            Loading comments…
+          </p>
+        )}
+        {variant === "review" && !commentsQueryResult.isPending && comments.length === 0 && (
           <p className="text-[13px] text-[#8290a4]">
             No comments yet. Add context or ask a question.
           </p>

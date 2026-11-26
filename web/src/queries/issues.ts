@@ -30,7 +30,10 @@ export function useUpdateIssue() {
       if (!issue) throw new Error("Issue is not loaded");
       return apiWrite(`/api/issues/${issue.key}`, "PATCH", change(issue));
     },
-    onSuccess: () => client.invalidateQueries(),
+    onSuccess: () => {
+      for (const key of ["issues", "issue", "milestones", "activity"])
+        void client.invalidateQueries({ queryKey: [key] });
+    },
     onError: (error) => notify(error.message),
   });
   return (id: string, change: (issue: Issue) => Partial<Issue>) => mutation.mutate({ id, change });
@@ -52,10 +55,15 @@ export function useSetChecklistItem() {
       apiWrite(`/api/issues/${issue.key}/checklist`, "PATCH", {
         items: [{ index: item.index, text: item.text, checked }],
       }),
-    onSuccess: () => client.invalidateQueries(),
-    onError: (error) => {
+    onSuccess: (_data, { issue }) => {
+      void client.invalidateQueries({ queryKey: issueQuery(issue.key).queryKey });
+      void client.invalidateQueries({ queryKey: ["issues"] });
+      void client.invalidateQueries({ queryKey: ["activity", issue.key.toUpperCase()] });
+      void client.invalidateQueries({ queryKey: ["activity"], exact: true });
+    },
+    onError: (error, { issue }) => {
       notify(error.message);
-      void client.invalidateQueries();
+      void client.invalidateQueries({ queryKey: issueQuery(issue.key).queryKey });
     },
   });
   return (issue: Issue, item: ChecklistItem, checked: boolean) =>
@@ -99,7 +107,8 @@ export function usePatchIssue(key: string) {
       void client.invalidateQueries({ queryKey: issuesQuery.queryKey });
       void client.invalidateQueries({ queryKey: issueQuery(key).queryKey });
       void client.invalidateQueries({ queryKey: ["milestones"] });
-      void client.invalidateQueries({ queryKey: ["activity"] });
+      void client.invalidateQueries({ queryKey: ["activity", key.toUpperCase()] });
+      void client.invalidateQueries({ queryKey: ["activity"], exact: true });
     },
     onError: (error) => notify(error.message),
   });
@@ -171,6 +180,9 @@ export function useMoveIssues() {
         issues: issues.map((issue) => issue.key),
         project: projectKey,
       }).then((result) => result.issues),
-    onSettled: () => void client.invalidateQueries(),
+    onSettled: () => {
+      for (const key of ["issues", "issue", "milestones", "activity"])
+        void client.invalidateQueries({ queryKey: [key] });
+    },
   });
 }

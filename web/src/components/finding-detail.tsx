@@ -2,13 +2,14 @@ import { matchesChord } from "../lib/shortcuts";
 import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { formatRelative } from "../lib/format";
 import { findingActions } from "../lib/review";
 import type { Finding, FindingStatus } from "../lib/types";
-import { findingsQuery, useChangeFindingStatus, type Decision } from "../queries/findings";
-import { issuesQuery } from "../queries/issues";
-import { useProjectSlugs } from "../hooks/use-project";
+import { useChangeFindingStatus, type Decision } from "../queries/findings";
+import { issueFindingsQuery } from "../queries/issue-resources";
+import { projectIssuesQuery } from "../queries/project-resources";
+import { useProject, useProjectSlugs } from "../hooks/use-project";
 import { AttachmentsPanel } from "./attachments-panel";
 import { Discussion } from "./discussion";
 import { FindingSeverity, FindingStatus as FindingStatusLabel } from "./finding-row";
@@ -50,8 +51,12 @@ export function FindingDetail({
   onOpenFinding?: (finding: Finding) => void;
 }) {
   const { bindings } = useKeyboardShortcuts();
-  const { data: findings } = useSuspenseQuery(findingsQuery);
-  const { data: issues } = useSuspenseQuery(issuesQuery);
+  const project = useProject();
+  const { data: findings } = useSuspenseQuery(issueFindingsQuery(finding.issue_key));
+  const projectIssues = useQuery({
+    ...projectIssuesQuery(project.key),
+    enabled: !!finding.follow_up_issue_id,
+  });
   const projectSlug = useProjectSlugs();
   const change = useChangeFindingStatus();
   const [askingReason, setAskingReason] = useState(false);
@@ -59,7 +64,7 @@ export function FindingDetail({
   const reasonInput = useRef<HTMLInputElement>(null);
   const surface = useRef<HTMLElement>(null);
   const original = findings.find((item) => item.id === finding.duplicate_of_finding_id);
-  const followUp = issues.find((item) => item.id === finding.follow_up_issue_id);
+  const followUp = projectIssues.data?.find((item) => item.id === finding.follow_up_issue_id);
   const actions = finding.duplicate_of_finding_id ? [] : findingActions(finding.status);
   const location =
     finding.file_path && `${finding.file_path}${finding.line ? `:${finding.line}` : ""}`;
@@ -308,8 +313,8 @@ export function FindingDetail({
         </h3>
         <Discussion
           key={finding.id}
-          issueId={finding.issue_id}
-          findingId={finding.id}
+          issueKey={finding.issue_key}
+          finding={{ round: finding.round, number: finding.number }}
           variant="review"
         />
       </section>

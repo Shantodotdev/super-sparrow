@@ -9,28 +9,24 @@ import { Select } from "../components/select";
 import { formatDate } from "../lib/format";
 import { validateReviewSearch } from "../lib/search";
 import type { Finding, Issue, ReviewRound } from "../lib/types";
-import { findingsQuery } from "../queries/findings";
-import { issuesQuery } from "../queries/issues";
-import {
-  actorsQuery,
-  commentsQuery,
-  labelsQuery,
-  reviewRoundsQuery,
-  useActor,
-} from "../queries/project";
+import { issueFindingsQuery, issueReviewRoundsQuery } from "../queries/issue-resources";
+import { issueQuery } from "../queries/issues";
+import { actorsQuery, projectsQuery, useActor } from "../queries/project";
+import { projectLabelsQuery } from "../queries/project-resources";
 import { loadQuery } from "../queries/options";
 
 export const Route = createFileRoute("/$projectSlug/issues_/$issue_/reviews/$round")({
   staticData: { section: "issues" },
   validateSearch: validateReviewSearch,
-  loader: async ({ context }) => {
+  loader: async ({ context, params }) => {
+    const projects = await loadQuery(context.queryClient, projectsQuery);
+    const project = projects.find((item) => item.slug === params.projectSlug);
     await Promise.all([
-      loadQuery(context.queryClient, issuesQuery),
-      loadQuery(context.queryClient, findingsQuery),
-      loadQuery(context.queryClient, reviewRoundsQuery),
+      loadQuery(context.queryClient, issueQuery(params.issue)),
+      loadQuery(context.queryClient, issueFindingsQuery(params.issue)),
+      loadQuery(context.queryClient, issueReviewRoundsQuery(params.issue)),
       loadQuery(context.queryClient, actorsQuery),
-      loadQuery(context.queryClient, commentsQuery),
-      loadQuery(context.queryClient, labelsQuery),
+      ...(project ? [loadQuery(context.queryClient, projectLabelsQuery(project.key))] : []),
     ]);
   },
   component: ReviewPage,
@@ -40,12 +36,11 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue_/reviews/$rou
 function ReviewPage() {
   const project = useProject();
   const { issue: issueKey, round: roundParam } = Route.useParams();
-  const { data: issues } = useSuspenseQuery(issuesQuery);
-  const { data: findings } = useSuspenseQuery(findingsQuery);
-  const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
+  const { data: issue } = useSuspenseQuery(issueQuery(issueKey));
+  const { data: findings } = useSuspenseQuery(issueFindingsQuery(issueKey));
+  const { data: rounds } = useSuspenseQuery(issueReviewRoundsQuery(issueKey));
 
-  const issue = issues.find((item) => item.key === issueKey && item.project_id === project.id);
-  if (!issue) {
+  if (!issue || issue.project_id !== project.id) {
     return (
       <NotFoundState
         title="Issue not found"
@@ -54,7 +49,7 @@ function ReviewPage() {
     );
   }
 
-  const issueRounds = rounds.filter((item) => item.issue_id === issue.id);
+  const issueRounds = rounds;
   const round = issueRounds.find((item) => String(item.number) === roundParam);
   if (!round) {
     return (

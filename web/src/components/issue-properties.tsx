@@ -6,6 +6,7 @@ import { issueStatusLabel, issueStatuses, statusIcon, statusIconColor } from "..
 import type { Issue, IssueStatus } from "../lib/types";
 import { issueQuery, useMoveIssueToProject, usePatchIssue } from "../queries/issues";
 import { actorsQuery, milestonesQuery, projectsQuery } from "../queries/project";
+import { projectMilestonesQuery } from "../queries/project-resources";
 import { Icon } from "./icon";
 import { LabelChips } from "./label-chips";
 import { ResourceSelector } from "./resource-selector";
@@ -28,7 +29,7 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
   const project = useProject();
   const client = useQueryClient();
   const { data: actors } = useSuspenseQuery(actorsQuery);
-  const { data: milestones } = useSuspenseQuery(milestonesQuery);
+  const { data: milestones } = useSuspenseQuery(projectMilestonesQuery(project.key));
   const patch = usePatchIssue(issue.key);
   const { data: projects } = useSuspenseQuery(projectsQuery);
   const moveIssue = useMoveIssueToProject();
@@ -51,7 +52,8 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
             replace: true,
           });
           client.removeQueries({ queryKey: issueQuery(issue.key).queryKey });
-          void client.invalidateQueries();
+          for (const key of ["issues", "milestones", "activity"])
+            void client.invalidateQueries({ queryKey: [key] });
           setMoveTarget(undefined);
         },
       },
@@ -153,17 +155,20 @@ export function IssueProperties({ issue }: IssuePropertiesProps) {
             "POST",
             { name },
           );
-          client.setQueryData(milestonesQuery.queryKey, (current) => [
+          client.setQueryData(projectMilestonesQuery(project.key).queryKey, (current) => [
             ...(current ?? []),
             milestone,
           ]);
+          client.setQueryData(milestonesQuery.queryKey, (current) =>
+            current ? [...current, milestone] : current,
+          );
           return milestone.id;
         }}
       />
       <div className="mt-5 border-t border-t-[#252b34] pt-[16px]">
         <h3>Labels</h3>
         <div className="mb-2">
-          <LabelChips labelIds={issue.label_ids} />
+          <LabelChips labelIds={issue.label_ids} projectKey={issue.project_key} />
         </div>
         <LabelSelector
           projectId={issue.project_id}

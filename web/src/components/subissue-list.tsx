@@ -138,7 +138,7 @@ export function SubissueList({
                         {subissue.title}
                       </span>
                       <span className="max-w-[260px] justify-self-end [&>span]:flex-nowrap [&>span]:overflow-hidden">
-                        <LabelChips labelIds={subissue.label_ids} />
+                        <LabelChips labelIds={subissue.label_ids} projectKey={issue.project_key} />
                       </span>
                     </button>
                   </li>

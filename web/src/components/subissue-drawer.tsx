@@ -174,7 +174,9 @@ function SubissueDetail({
         </span>
         <span className="self-start pt-[9px]">Labels</span>
         <div className="flex min-w-0 flex-col gap-2 [&_button[aria-expanded]]:min-h-[34px] [&_button[aria-expanded]]:text-[13px]">
-          {subissue.label_ids.length > 0 && <LabelChips labelIds={subissue.label_ids} />}
+          {subissue.label_ids.length > 0 && (
+            <LabelChips labelIds={subissue.label_ids} projectKey={issue.project_key} />
+          )}
           <LabelSelector
             projectId={issue.project_id}
             selected={subissue.label_ids}
