@@ -10,6 +10,7 @@ import { Icon } from "../components/icon";
 import { IssueBoard } from "../components/issue-board";
 import { IssueList } from "../components/issue-list";
 import { NewIssueModal } from "../components/new-issue-modal";
+import { IssueBoardSkeleton, IssueListSkeleton } from "../components/skeleton";
 import { useElementHeight } from "../hooks/use-element-height";
 import { filterIssues } from "../lib/issue-filter";
 import { issueStatusLabel, issueStatuses } from "../lib/issue-status";
@@ -18,6 +19,7 @@ import { validateIssuesSearch, type IssuesSearch } from "../lib/search";
 import { useCreateIssue } from "../queries/issues";
 import { actorsQuery, projectsQuery } from "../queries/project";
 import {
+  projectActiveIssuesQuery,
   projectIssuesQuery,
   projectLabelsQuery,
   projectMilestonesQuery,
@@ -31,6 +33,7 @@ export const Route = createFileRoute("/$projectSlug/issues")({
     const projects = await loadQuery(context.queryClient, projectsQuery);
     const project = projects.find((p) => p.slug === params.projectSlug);
     if (!project) return;
+    void context.queryClient.prefetchQuery(projectActiveIssuesQuery(project.key));
     void context.queryClient.prefetchQuery(projectIssuesQuery(project.key));
     void context.queryClient.prefetchQuery(actorsQuery);
     void context.queryClient.prefetchQuery(projectLabelsQuery(project.key));
@@ -243,7 +246,13 @@ function IssuesPage() {
           </button>
         </div>
       )}
-      {!issueList.data || !people.data || !projectLabels.data ? null : view === "board" ? (
+      {!issueList.data || !people.data || !projectLabels.data ? (
+        view === "board" ? (
+          <IssueBoardSkeleton />
+        ) : (
+          <IssueListSkeleton />
+        )
+      ) : view === "board" ? (
         <IssueBoard issues={filtered} statusFilter={search.status} />
       ) : (
         <IssueList

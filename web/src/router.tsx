@@ -1,5 +1,6 @@
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
+import { PageContentSkeleton } from "./components/skeleton";
 import { ApiError } from "./lib/api";
 import type { Actor, NavSection } from "./lib/types";
 import { routeTree } from "./routeTree.gen";
@@ -49,8 +50,8 @@ export function getRouter() {
     routeTree,
     context: { queryClient },
     defaultPreload: "intent",
-    defaultPendingComponent: () => null,
-    defaultPendingMs: 0,
+    defaultPendingComponent: PageContentSkeleton,
+    defaultPendingMs: 120,
     defaultPendingMinMs: 0,
     // Loaders always run on preload; TanStack Query decides whether cached data is fresh enough.
     defaultPreloadStaleTime: 0,

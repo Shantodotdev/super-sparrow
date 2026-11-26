@@ -9,11 +9,15 @@ mod settings;
 mod shortcut;
 mod updater;
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tauri::ipc::CapabilityBuilder;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::webview::PageLoadEvent;
+use tauri::window::Color;
 use tauri::{
     AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
 };
@@ -26,6 +30,10 @@ use settings::Settings;
 
 const MAIN_WINDOW: &str = "main";
 const CAPTURE_WINDOW: &str = "capture";
+/// Matches the web app's dark background (#08090b) so the native window never flashes white.
+const APP_BACKGROUND: Color = Color(8, 9, 11, 255);
+/// Maximum wait before revealing a startup window if the server is slow or unreachable.
+const REVEAL_FALLBACK: Duration = Duration::from_millis(1500);
 /// The argument the login item starts the app with, so it starts in the tray without a window.
 const HIDDEN_ARGUMENT: &str = "--hidden";
 /// The User-Agent of the app's windows. The server serves its pages only to requests that carry
@@ -84,6 +92,8 @@ pub fn run() {
         .manage(capture::CaptureState::default())
         .invoke_handler(tauri::generate_handler![
             hide_capture,
+            toggle_quick_capture,
+            open_signin,
             current_shortcut,
             configure_shortcut,
             notify,
@@ -156,11 +166,7 @@ fn open_link(app: &AppHandle, link: &url::Url) {
     let Some(page) = cli_login::approval_page(link, &server.0) else {
         return;
     };
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        if let Err(error) = window.navigate(page) {
-            eprintln!("could not open the CLI approval page: {error}");
-        }
-    }
+    navigate_main(app, &path_with_query(&page), page);
     show_main(app);
 }
 
@@ -168,8 +174,29 @@ fn open_link(app: &AppHandle, link: &url::Url) {
 #[tauri::command]
 fn hide_capture(app: AppHandle) {
     if let Some(window) = app.get_webview_window(CAPTURE_WINDOW) {
+        capture::restore_if_capturing(&window);
         let _ = window.hide();
     }
+}
+
+/// Opens or hides the standalone capture window when triggered from the main window's shortcut.
+#[tauri::command]
+fn toggle_quick_capture(app: AppHandle) {
+    toggle_capture(&app);
+}
+
+/// Hides quick capture and brings the main window to sign-in when an unauthenticated person
+/// triggers capture before signing in.
+#[tauri::command]
+fn open_signin(app: AppHandle) {
+    if let Some(window) = app.get_webview_window(CAPTURE_WINDOW) {
+        capture::restore_if_capturing(&window);
+        let _ = window.hide();
+    }
+    if let Ok(url) = app.state::<Server>().0.join("signin") {
+        navigate_main(&app, "/signin", url);
+    }
+    show_main(&app);
 }
 
 /// Returns the capture shortcut's label, such as "Meta+Shift+Q", or "" while it is paused, so the page
@@ -297,12 +324,16 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             .permission("core:default")
             .permission("core:window:allow-start-dragging")
             .permission("allow-hide-capture")
+            .permission("allow-toggle-quick-capture")
+            .permission("allow-open-signin")
             .permission("allow-current-shortcut")
             .permission("allow-configure-shortcut")
             .permission("allow-notify")
             .permission("allow-capture-screen")
             .permission("allow-end-capture"),
     )?;
+    let revealed = Arc::new(AtomicBool::new(!show));
+    let on_load_revealed = Arc::clone(&revealed);
     let main = WebviewWindowBuilder::new(app, MAIN_WINDOW, WebviewUrl::External(server.clone()))
         .title(if cfg!(debug_assertions) {
             "Super Sparrow - Developer"
@@ -310,27 +341,50 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             "Super Sparrow"
         })
         .user_agent(USER_AGENT)
+        .background_color(APP_BACKGROUND)
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
-        .visible(show)
+        .visible(false)
         // Tauri's file-drop handler swallows the page's own drag and drop, which moves
         // issues between statuses, and crashes WebKitGTK on Linux.
         .disable_drag_drop_handler()
+        .on_page_load(move |window, payload| {
+            capture::restore_if_capturing(&window);
+            if payload.event() == PageLoadEvent::Finished
+                && !on_load_revealed.swap(true, Ordering::SeqCst)
+            {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        })
         .build()?;
     hide_on_close(&main);
+    if show {
+        let fallback_window = main.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(REVEAL_FALLBACK);
+            if !revealed.swap(true, Ordering::SeqCst) {
+                let _ = fallback_window.show();
+                let _ = fallback_window.set_focus();
+            }
+        });
+    }
     Ok(())
 }
 
-/// Creates the capture window on the server, shown. It is made on the first shortcut press
-/// rather than at startup, so an app idling in the tray runs one page instead of two; after
-/// that it is only hidden and shown.
+/// Creates the capture window on the server, revealed once the page finishes loading so the first
+/// open does not flash a blank frame. After that it is only hidden and shown.
 fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWindow> {
     let capture_url = server
         .join("capture")
         .map_err(|error| tauri::Error::Anyhow(error.into()))?;
+    let revealed = Arc::new(AtomicBool::new(false));
+    let on_load_revealed = Arc::clone(&revealed);
     let window = WebviewWindowBuilder::new(app, CAPTURE_WINDOW, WebviewUrl::External(capture_url))
         .title("Quick capture")
         .user_agent(USER_AGENT)
+        .background_color(Color(0, 0, 0, 0))
+        .initialization_script("document.documentElement.dataset.captureWindow = 'true';")
         .inner_size(560.0, 640.0)
         .min_inner_size(380.0, 360.0)
         .decorations(false)
@@ -340,10 +394,28 @@ fn open_capture(app: &AppHandle, server: &url::Url) -> tauri::Result<WebviewWind
         .visible_on_all_workspaces(true)
         .skip_taskbar(true)
         .center()
-        .focused(true)
+        .visible(false)
         .disable_drag_drop_handler()
+        .on_page_load(move |window, payload| {
+            capture::restore_if_capturing(&window);
+            if payload.event() == PageLoadEvent::Finished
+                && !on_load_revealed.swap(true, Ordering::SeqCst)
+            {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.eval("document.querySelector('#quick-capture-title')?.focus()");
+            }
+        })
         .build()?;
     hide_on_close(&window);
+    let fallback_window = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(REVEAL_FALLBACK);
+        if !revealed.swap(true, Ordering::SeqCst) {
+            let _ = fallback_window.show();
+            let _ = fallback_window.set_focus();
+        }
+    });
     Ok(window)
 }
 
@@ -377,12 +449,38 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// Navigates the main window through the SPA router when loaded, falling back to a full load.
+fn navigate_main(app: &AppHandle, href: &str, fallback: url::Url) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    if let Ok(encoded) = serde_json::to_string(href) {
+        let script = format!(
+            "if (typeof window.__sparrowNavigate === 'function') {{ window.__sparrowNavigate({encoded}); }} else {{ window.location.assign({encoded}); }}"
+        );
+        if window.eval(&script).is_ok() {
+            return;
+        }
+    }
+    if let Err(error) = window.navigate(fallback) {
+        eprintln!("could not navigate main window: {error}");
+    }
+}
+
+fn path_with_query(url: &url::Url) -> String {
+    match url.query() {
+        Some(query) => format!("{}?{query}", url.path()),
+        None => url.path().to_string(),
+    }
+}
+
 /// Closing a window only hides it, so the app keeps running in the tray.
 fn hide_on_close(window: &WebviewWindow) {
     let handle = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
+            capture::restore_if_capturing(&handle);
             let _ = handle.hide();
         }
     });
@@ -447,15 +545,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             "shortcuts" => {
                 show_main(app);
-                if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                    match app.state::<Server>().0.join("settings/shortcuts") {
-                        Ok(url) => {
-                            if let Err(error) = window.navigate(url) {
-                                eprintln!("open keyboard shortcuts: {error}");
-                            }
-                        }
-                        Err(error) => eprintln!("open keyboard shortcuts: {error}"),
-                    }
+                match app.state::<Server>().0.join("settings/shortcuts") {
+                    Ok(url) => navigate_main(app, "/settings/shortcuts", url),
+                    Err(error) => eprintln!("open keyboard shortcuts: {error}"),
                 }
             }
             _ => {}

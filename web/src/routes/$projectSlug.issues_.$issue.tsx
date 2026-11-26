@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useProject } from "../hooks/use-project";
 import { Link, Navigate, createFileRoute } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Discussion } from "../components/discussion";
-import { EventLine, eventIssueId } from "../components/event-line";
+import { EventLine } from "../components/event-line";
 import { Icon, type IconName } from "../components/icon";
 import { AttachmentsPanel } from "../components/attachments-panel";
 import { IssuePlan } from "../components/issue-plan";
@@ -12,25 +12,24 @@ import { IssueTextField } from "../components/issue-text-field";
 import { IssueProperties } from "../components/issue-properties";
 import { NotFoundState } from "../components/not-found-state";
 import { IssueReviews } from "../components/issue-reviews";
+import { IssueDetailSkeleton } from "../components/skeleton";
 import { SubissueList } from "../components/subissue-list";
 import { subissuesQuery } from "../queries/subissues";
 import { Tabs } from "../components/tabs";
 import { slugify } from "../lib/format";
 import { statusIcon } from "../lib/issue-status";
 import { validateIssueSearch, type IssueTab } from "../lib/search";
-import type { ActivityEvent, Finding, Issue, ReviewRound } from "../lib/types";
-import { findingsQuery } from "../queries/findings";
+import type { Issue } from "../lib/types";
 import { issueAttachmentsQuery } from "../queries/attachments";
-import { issueQuery, issuesQuery } from "../queries/issues";
 import {
-  activityQuery,
-  actorsQuery,
-  commentsQuery,
-  labelsQuery,
-  milestonesQuery,
-  projectsQuery,
-  reviewRoundsQuery,
-} from "../queries/project";
+  issueCommentsQuery,
+  issueEventsQuery,
+  issueFindingsQuery,
+  issueReviewRoundsQuery,
+} from "../queries/issue-resources";
+import { issueQuery } from "../queries/issues";
+import { actorsQuery, projectsQuery } from "../queries/project";
+import { projectLabelsQuery, projectMilestonesQuery } from "../queries/project-resources";
 import { loadQuery } from "../queries/options";
 import { useShortcutKeys } from "../components/shortcuts";
 import { isTypingTarget } from "../lib/shortcuts";
@@ -38,19 +37,25 @@ import { isTypingTarget } from "../lib/shortcuts";
 export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   staticData: { section: "issues" },
   validateSearch: validateIssueSearch,
+  pendingComponent: IssueDetailSkeleton,
   loader: async ({ context, params }) => {
+    const projects = await loadQuery(context.queryClient, projectsQuery);
+    const project = projects.find((item) => item.slug === params.projectSlug);
+    void context.queryClient.prefetchQuery(subissuesQuery(params.issue));
+    void context.queryClient.prefetchQuery(issueFindingsQuery(params.issue));
+    void context.queryClient.prefetchQuery(issueReviewRoundsQuery(params.issue));
     void context.queryClient.prefetchQuery(issueAttachmentsQuery(params.issue));
+    void context.queryClient.prefetchQuery(issueCommentsQuery(params.issue));
+    void context.queryClient.prefetchQuery(issueEventsQuery(params.issue));
     await Promise.all([
       loadQuery(context.queryClient, issueQuery(params.issue)),
-      loadQuery(context.queryClient, subissuesQuery(params.issue)),
-      loadQuery(context.queryClient, issuesQuery),
-      loadQuery(context.queryClient, findingsQuery),
-      loadQuery(context.queryClient, reviewRoundsQuery),
       loadQuery(context.queryClient, actorsQuery),
-      loadQuery(context.queryClient, labelsQuery),
-      loadQuery(context.queryClient, milestonesQuery),
-      loadQuery(context.queryClient, commentsQuery),
-      loadQuery(context.queryClient, activityQuery),
+      ...(project
+        ? [
+            loadQuery(context.queryClient, projectLabelsQuery(project.key)),
+            loadQuery(context.queryClient, projectMilestonesQuery(project.key)),
+          ]
+        : []),
     ]);
   },
   component: IssuePage,
@@ -70,9 +75,6 @@ function IssuePage() {
   const project = useProject();
   const { issue: issueKey } = Route.useParams();
   const { data: issue } = useSuspenseQuery(issueQuery(issueKey));
-  const { data: findings } = useSuspenseQuery(findingsQuery);
-  const { data: rounds } = useSuspenseQuery(reviewRoundsQuery);
-  const { data: events } = useSuspenseQuery(activityQuery);
   const { data: projects } = useSuspenseQuery(projectsQuery);
 
   // An old key, from before the issue moved to another project, opens the issue at its new key.
@@ -97,32 +99,27 @@ function IssuePage() {
     );
   }
 
-  return (
-    <IssueDetail
-      key={issue.id}
-      issue={issue}
-      rounds={rounds.filter((round) => round.issue_id === issue.id)}
-      findings={findings.filter((finding) => finding.issue_id === issue.id)}
-      events={events.filter((event) => eventIssueId(event) === issue.id)}
-    />
-  );
+  return <IssueDetail key={issue.id} issue={issue} />;
 }
 
 type IssueDetailProps = {
   issue: Issue;
-  rounds: ReviewRound[];
-  findings: Finding[];
-  events: ActivityEvent[];
 };
 
-function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
+function IssueDetail({ issue }: IssueDetailProps) {
   const project = useProject();
   const search = Route.useSearch();
   const { tab = "plan" } = search;
   const navigate = Route.useNavigate();
   const transitionRun = useRef(0);
   const [creatingSubissue, setCreatingSubissue] = useState(false);
-  const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
+  const subissuesQueryResult = useQuery(subissuesQuery(issue.key));
+  const roundsQueryResult = useQuery(issueReviewRoundsQuery(issue.key));
+  const findingsQueryResult = useQuery(issueFindingsQuery(issue.key));
+  const activity = useQuery({ ...issueEventsQuery(issue.key), enabled: tab === "activity" });
+  const subissues = subissuesQueryResult.data ?? [];
+  const rounds = roundsQueryResult.data ?? [];
+  const findings = findingsQueryResult.data ?? [];
 
   const switchTab = (nextTab: IssueTab) => {
     if (nextTab === tab) return;
@@ -287,28 +284,41 @@ function IssueDetail({ issue, rounds, findings, events }: IssueDetailProps) {
               onCreatingChange={setCreatingSubissue}
             />
           )}
-          {(tab === "rounds" || tab === "findings") && (
-            <IssueReviews
-              issue={issue}
-              rounds={rounds}
-              findings={findings}
-              search={search}
-              onSearchChange={(next) => {
-                void navigate({ search: next });
-              }}
-            />
-          )}
+          {(tab === "rounds" || tab === "findings") &&
+            (roundsQueryResult.isPending || findingsQueryResult.isPending ? (
+              <p role="status" className="muted py-[20px] text-[#a2aec2]">
+                Loading reviews…
+              </p>
+            ) : (
+              <IssueReviews
+                issue={issue}
+                rounds={rounds}
+                findings={findings}
+                search={search}
+                onSearchChange={(next) => {
+                  void navigate({ search: next });
+                }}
+              />
+            ))}
           {tab === "activity" && (
             <div className="px-0 py-[20px]">
-              {events.length === 0 && <p className="muted text-[#a2aec2]">No activity yet.</p>}
-              {[...events].reverse().map((event) => (
-                <EventLine key={event.id} event={event} />
-              ))}
+              {activity.isPending && (
+                <p role="status" className="muted text-[#a2aec2]">
+                  Loading activity…
+                </p>
+              )}
+              {activity.data && activity.data.length === 0 && (
+                <p className="muted text-[#a2aec2]">No activity yet.</p>
+              )}
+              {activity.data &&
+                [...activity.data]
+                  .reverse()
+                  .map((event) => <EventLine key={event.id} event={event} issue={issue} />)}
             </div>
           )}
           {tab === "comments" && (
             <div className="flex min-h-0 flex-1 flex-col pt-[20px] pb-[24px]">
-              <Discussion issueId={issue.id} findingId="" />
+              <Discussion issueKey={issue.key} />
             </div>
           )}
         </div>

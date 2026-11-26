@@ -1,7 +1,14 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiWrite } from "../lib/api";
-import type { Finding, FindingStatus, Issue } from "../lib/types";
-import { issuesQuery } from "./issues";
+import type { Comment, Finding, FindingStatus, Issue } from "../lib/types";
+import { cacheCreatedIssue } from "./issue-cache";
+import {
+  findingCommentsQuery,
+  issueCommentsQuery,
+  issueEventsQuery,
+  issueFindingsQuery,
+} from "./issue-resources";
+import { issueQuery } from "./issues";
 import { findingPath, getFindings } from "./resources";
 import { projectsQuery } from "./project-resources";
 
@@ -30,26 +37,26 @@ export function useChangeFindingStatus() {
         { status, reason },
       ),
     onSuccess: ({ finding, follow_up_issue }) => {
-      void client.cancelQueries({ queryKey: findingsQuery.queryKey });
+      const scopedFindings = issueFindingsQuery(finding.issue_key).queryKey;
+      void client.cancelQueries({ queryKey: scopedFindings });
+      client.setQueryData<Finding[]>(scopedFindings, (current) =>
+        current?.map((item) => (item.id === finding.id ? finding : item)),
+      );
+      void client.cancelQueries({ queryKey: findingsQuery.queryKey, exact: true });
       client.setQueryData(findingsQuery.queryKey, (current) =>
         current?.map((item) => (item.id === finding.id ? finding : item)),
       );
-      if (follow_up_issue) {
-        void client.cancelQueries({ queryKey: issuesQuery.queryKey });
-        client.setQueryData(
-          issuesQuery.queryKey,
-          (current) =>
-            current && [
-              follow_up_issue,
-              ...current.filter((item) => item.id !== follow_up_issue.id),
-            ],
-        );
-      }
-      for (const key of ["findings", "issues", "issue", "activity"])
-        void client.invalidateQueries({ queryKey: [key] });
+      if (follow_up_issue) cacheCreatedIssue(client, follow_up_issue);
+      void client.invalidateQueries({ queryKey: scopedFindings });
+      void client.invalidateQueries({ queryKey: findingsQuery.queryKey, exact: true });
+      void client.invalidateQueries({ queryKey: issueQuery(finding.issue_key).queryKey });
+      void client.invalidateQueries({ queryKey: issueEventsQuery(finding.issue_key).queryKey });
+      void client.invalidateQueries({ queryKey: ["issues"] });
+      void client.invalidateQueries({ queryKey: ["activity"], exact: true });
     },
-    onError: () => {
-      void client.invalidateQueries({ queryKey: findingsQuery.queryKey });
+    onError: (_error, { finding }) => {
+      void client.invalidateQueries({ queryKey: issueFindingsQuery(finding.issue_key).queryKey });
+      void client.invalidateQueries({ queryKey: findingsQuery.queryKey, exact: true });
     },
   });
 }
@@ -58,22 +65,37 @@ export function useAddComment() {
   const client = useQueryClient();
   const mutation = useMutation({
     mutationFn: ({
-      issueId,
-      findingId,
+      issueKey,
+      finding,
       body,
     }: {
-      issueId: string;
-      findingId: string;
+      issueKey: string;
+      finding?: { round: number; number: number };
       body: string;
     }) => {
-      const issue = client.getQueryData(issuesQuery.queryKey)?.find((i) => i.id === issueId);
-      const finding = client.getQueryData(findingsQuery.queryKey)?.find((f) => f.id === findingId);
-      if (!issue || (findingId && !finding)) throw new Error("Comment target is not loaded");
-      const path = finding ? findingPath(finding) : `/api/issues/${issue.key}`;
-      return apiWrite(`${path}/comments`, "POST", { body });
+      const path = finding
+        ? `/api/issues/${encodeURIComponent(issueKey)}/reviews/${finding.round}/findings/${finding.number}/comments`
+        : `/api/issues/${encodeURIComponent(issueKey)}/comments`;
+      return apiWrite<{ comment: Comment }>(path, "POST", { body });
     },
-    onSuccess: () => client.invalidateQueries(),
+    onSuccess: ({ comment }, { issueKey, finding }) => {
+      const scopedKey = finding
+        ? findingCommentsQuery(issueKey, finding.round, finding.number).queryKey
+        : issueCommentsQuery(issueKey).queryKey;
+      client.setQueryData<Comment[]>(scopedKey, (current) =>
+        current && !current.some((item) => item.id === comment.id)
+          ? [...current, comment]
+          : current,
+      );
+      void client.invalidateQueries({ queryKey: scopedKey });
+      void client.invalidateQueries({ queryKey: issueQuery(issueKey).queryKey });
+      void client.invalidateQueries({ queryKey: issueEventsQuery(issueKey).queryKey });
+      if (finding)
+        void client.invalidateQueries({ queryKey: issueFindingsQuery(issueKey).queryKey });
+      void client.invalidateQueries({ queryKey: ["issues"] });
+      void client.invalidateQueries({ queryKey: ["activity"], exact: true });
+    },
   });
-  return (issueId: string, findingId: string, body: string) =>
-    mutation.mutateAsync({ issueId, findingId, body });
+  return (issueKey: string, body: string, finding?: { round: number; number: number }) =>
+    mutation.mutateAsync({ issueKey, finding, body });
 }

@@ -1,11 +1,11 @@
 import { useProjectSlugs } from "../hooks/use-project";
 import { Link } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { findingStatusLabel } from "../lib/finding-status";
 import { issueStatusLabel } from "../lib/issue-status";
 import { formatTime } from "../lib/format";
 import { describeGithubEvent } from "../lib/github-events";
-import type { ActivityEvent, FindingStatus, IssueStatus } from "../lib/types";
+import type { ActivityEvent, FindingStatus, Issue, IssueStatus } from "../lib/types";
 import { issuesQuery } from "../queries/issues";
 import { Icon } from "./icon";
 import { Person } from "./person";
@@ -92,10 +92,10 @@ function describe(event: ActivityEvent): { action: string; detail?: string } {
  * One event in an activity timeline: when, who, and what, linking to its issue. An agent's event
  * shows the model it reported, which the server records but cannot verify.
  */
-export function EventLine({ event }: { event: ActivityEvent }) {
+export function EventLine({ event, issue: knownIssue }: { event: ActivityEvent; issue?: Issue }) {
   const projectSlug = useProjectSlugs();
-  const { data: issues } = useSuspenseQuery(issuesQuery);
-  const issue = issues.find((item) => item.id === eventIssueId(event));
+  const issues = useQuery({ ...issuesQuery, enabled: !knownIssue });
+  const issue = knownIssue ?? issues.data?.find((item) => item.id === eventIssueId(event));
   const github = describeGithubEvent(event);
   const { action, detail } = github ?? describe(event);
 

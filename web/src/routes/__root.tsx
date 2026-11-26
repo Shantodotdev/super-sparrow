@@ -7,21 +7,20 @@ import {
   HeadContent,
   Scripts,
   createRootRouteWithContext,
-  useRouterState,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import appCss from "../styles.css?url";
 import { AppShell } from "../components/app-shell";
+import { AppShellSkeleton } from "../components/skeleton";
 import { ToastProvider } from "../components/toast";
 import { clearQueryCache } from "../queries/persistence";
-import previewScript from "../lib/page-preview-runtime.js?url";
-import { dismissPagePreview, watchPagePreview } from "../lib/page-preview";
+import { desktopInvoke } from "../lib/desktop";
 import interFont from "../assets/inter-variable.ttf?url";
 import { retireServiceWorker } from "../lib/retire-service-worker";
 
 /** The HTML shell around every page, with the shared query client from the router context. */
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  pendingComponent: () => null,
+  pendingComponent: RootPending,
   pendingMs: 0,
   pendingMinMs: 0,
   beforeLoad: async ({ context, location }) => {
@@ -41,6 +40,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearQueryCache(context.queryClient);
+        if (location.pathname.replace(/\/+$/, "") === "/capture") {
+          const invoke = desktopInvoke();
+          if (invoke) {
+            void invoke("open_signin");
+            return;
+          }
+        }
         throw redirect({ to: "/signin" });
       }
       throw error;
@@ -58,17 +64,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", href: "/favicon-48.png", type: "image/png", sizes: "48x48" },
       { rel: "preload", href: interFont, as: "font", type: "font/ttf", crossOrigin: "anonymous" },
       { rel: "stylesheet", href: appCss },
-      { rel: "preload", href: previewScript, as: "script" },
     ],
   }),
   shellComponent: RootDocument,
   component: RootLayout,
 });
 
-/** Makes startup errors visible and interactive even when a cached preview was restored. */
-function RootError({ error }: ErrorComponentProps) {
-  useEffect(dismissPagePreview, []);
+function RootPending() {
+  if (typeof window === "undefined") return null;
+  const pathname = window.location.pathname.replace(/\/+$/, "");
+  if (pathname === "/signin" || pathname === "/capture") return null;
 
+  return <AppShellSkeleton />;
+}
+
+/** Shows startup errors with a way to sign in again. */
+function RootError({ error }: ErrorComponentProps) {
   return (
     <div role="alert" className="p-8">
       <p>{error instanceof Error ? error.message : "Could not load the page"}</p>
@@ -84,11 +95,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <div id="page-preview" aria-hidden="true" inert suppressHydrationWarning />
-        <div id="app-content" suppressHydrationWarning>
-          {children}
-        </div>
-        <script src={previewScript} />
+        {children}
         <Scripts />
       </body>
     </html>
@@ -97,7 +104,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
 function RootLayout() {
   const { queryClient } = Route.useRouteContext();
-  const loading = useRouterState({ select: (state) => state.isLoading });
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -106,9 +112,6 @@ function RootLayout() {
         () => undefined,
       );
   }, []);
-  useEffect(() => {
-    if (mounted && !loading) return watchPagePreview(queryClient);
-  }, [mounted, loading, queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

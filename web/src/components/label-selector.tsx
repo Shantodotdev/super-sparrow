@@ -3,6 +3,7 @@ import { useProject } from "../hooks/use-project";
 import { apiWrite } from "../lib/api";
 import type { Label } from "../lib/types";
 import { labelsQuery } from "../queries/project";
+import { projectLabelsQuery } from "../queries/project-resources";
 import { ResourceSelector } from "./resource-selector";
 
 type LabelSelectorProps = {
@@ -15,7 +16,7 @@ type LabelSelectorProps = {
 export function LabelSelector({ projectId, selected, onChange }: LabelSelectorProps) {
   const project = useProject();
   const client = useQueryClient();
-  const { data: labels } = useSuspenseQuery(labelsQuery);
+  const { data: labels } = useSuspenseQuery(projectLabelsQuery(project.key));
 
   return (
     <ResourceSelector
@@ -31,7 +32,13 @@ export function LabelSelector({ projectId, selected, onChange }: LabelSelectorPr
           "POST",
           { name, color },
         );
-        client.setQueryData(labelsQuery.queryKey, (current) => [...(current ?? []), label]);
+        client.setQueryData(projectLabelsQuery(project.key).queryKey, (current) => [
+          ...(current ?? []),
+          label,
+        ]);
+        client.setQueryData(labelsQuery.queryKey, (current) =>
+          current ? [...current, label] : current,
+        );
         return label.id;
       }}
     />

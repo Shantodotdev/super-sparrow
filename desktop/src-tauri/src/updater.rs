@@ -10,7 +10,8 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 const RETRY_WHILE_OPEN: Duration = Duration::from_secs(10 * 60);
 
 /// Checks for a release shortly after launch and then every few hours. An update is installed
-/// only while the main window is hidden, so a restart never interrupts someone who is working.
+/// only while both the main and quick-capture windows are hidden, so a restart never interrupts
+/// someone who is working or writing a draft.
 pub fn start(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -38,7 +39,7 @@ async fn check(app: &AppHandle) -> Result<Outcome, tauri_plugin_updater::Error> 
     let Some(update) = app.updater()?.check().await? else {
         return Ok(Outcome::Current);
     };
-    if main_window_open(app) {
+    if any_window_open(app) {
         return Ok(Outcome::Waiting);
     }
 
@@ -46,8 +47,10 @@ async fn check(app: &AppHandle) -> Result<Outcome, tauri_plugin_updater::Error> 
     app.restart()
 }
 
-fn main_window_open(app: &AppHandle) -> bool {
-    app.get_webview_window("main")
-        .and_then(|window| window.is_visible().ok())
-        .unwrap_or(false)
+fn any_window_open(app: &AppHandle) -> bool {
+    ["main", "capture"].into_iter().any(|label| {
+        app.get_webview_window(label)
+            .and_then(|window| window.is_visible().ok())
+            .unwrap_or(false)
+    })
 }

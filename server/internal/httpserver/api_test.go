@@ -274,6 +274,11 @@ func TestIssuesListUpdateAndBranchLookup(t *testing.T) {
 	if len(page.Issues) != 2 {
 		t.Fatalf("backlog has %d issues", len(page.Issues))
 	}
+	a.call(http.MethodGet, "/api/projects/WP/issues?status=backlog&include_plan=true", a.member, nil, http.StatusOK, &page)
+	if len(page.Issues) != 2 || page.Issues[0].Plan == nil {
+		t.Fatalf("include_plan=true did not return full issue views: %+v", page.Issues)
+	}
+	wantField(t, a.request(http.MethodGet, "/api/projects/WP/issues?include_plan=maybe", a.member, nil), "include_plan")
 }
 
 func TestReviewLoopThroughTheAPI(t *testing.T) {

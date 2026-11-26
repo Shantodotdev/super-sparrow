@@ -4,7 +4,14 @@ import type { ActivityEvent, Issue } from "../lib/types";
 import { cacheCreatedIssue } from "./issue-cache";
 import { refreshLiveEvents } from "./live-events";
 import {
+  issueCommentsQuery,
+  issueEventsQuery,
+  issueFindingsQuery,
+  issueReviewRoundsQuery,
+} from "./issue-resources";
+import {
   allIssuesQuery,
+  projectActiveIssuesQuery,
   projectIssuesQuery,
   projectLabelsQuery,
   projectsQuery,
@@ -207,5 +214,78 @@ test("committed issue creation refreshes calculated milestone statuses without a
   expect(cache.getQueryState(["milestones"])?.isInvalidated).toBe(true);
   expect(cache.getQueryState(["milestones", "WP"])?.isInvalidated).toBe(true);
   expect(cache.getQueryState(["milestones", "SS"])?.isInvalidated).toBe(false);
+  cache.clear();
+});
+
+test("scoped issue detail queries fetch only that issue's resources and refresh selectively", async () => {
+  const cache = client();
+  const requests: string[] = [];
+  globalThis.fetch = (async (path: string) => {
+    requests.push(path);
+    if (path === "/api/issues/WP-201/reviews") return Response.json({ rounds: [] });
+    if (path === "/api/issues/WP-201/findings?include_duplicates=true")
+      return Response.json({ findings: [] });
+    if (path === "/api/issues/WP-201/comments") return Response.json({ comments: [] });
+    if (path === "/api/issues/WP-201/events?limit=200&after=0")
+      return Response.json({ events: [], next_after: null });
+    throw new Error(`Unexpected request ${path}`);
+  }) as typeof fetch;
+
+  await Promise.all([
+    cache.fetchQuery(issueReviewRoundsQuery("WP-201")),
+    cache.fetchQuery(issueFindingsQuery("WP-201")),
+    cache.fetchQuery(issueCommentsQuery("WP-201")),
+    cache.fetchQuery(issueEventsQuery("WP-201")),
+  ]);
+  expect(requests).toEqual([
+    "/api/issues/WP-201/reviews",
+    "/api/issues/WP-201/findings?include_duplicates=true",
+    "/api/issues/WP-201/comments",
+    "/api/issues/WP-201/events?limit=200&after=0",
+  ]);
+
+  cache.setQueryData(projectsQuery.queryKey, [
+    { id: "wp", key: "WP", name: "WP", slug: "wp" },
+    { id: "ss", key: "SS", name: "SS", slug: "ss" },
+  ]);
+  cache.setQueryData(["issue", issue.key], issue);
+  cache.setQueryData(["findings", "SS-1"], []);
+  cache.setQueryData(["comments", "SS-1", ""], []);
+  cache.setQueryData(["activity", "SS-1"], []);
+  refreshLiveEvents(cache, [
+    {
+      ...creation(),
+      target_type: "comment",
+      kind: "comment.added",
+      payload: { issue_id: issue.id, issue_key: issue.key },
+    },
+  ]);
+
+  expect(cache.getQueryState(["comments", "WP-201", ""])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["activity", "WP-201"])?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(["findings", "SS-1"])?.isInvalidated).toBe(false);
+  expect(cache.getQueryState(["comments", "SS-1", ""])?.isInvalidated).toBe(false);
+  expect(cache.getQueryState(["activity", "SS-1"])?.isInvalidated).toBe(false);
+  cache.clear();
+});
+
+test("project active issue preload fetches only non-done, non-canceled issues with plans and seeds detail cache", async () => {
+  const cache = client();
+  const requests: string[] = [];
+  const activeIssue: Issue = { ...issue, status: "in_progress", plan: "# Preloaded plan" };
+  globalThis.fetch = (async (path: string) => {
+    requests.push(path);
+    if (
+      path ===
+      "/api/projects/WP/issues?limit=200&status=in_review%2Cin_progress%2Ctodo%2Cbacklog&include_plan=true"
+    )
+      return Response.json({ issues: [activeIssue], next_before: null });
+    throw new Error(`Unexpected request ${path}`);
+  }) as typeof fetch;
+
+  const loaded = await cache.fetchQuery(projectActiveIssuesQuery("WP"));
+  expect(loaded).toEqual([activeIssue]);
+  expect(requests).toHaveLength(1);
+  expect(cache.getQueryData(["issue", activeIssue.key])).toEqual(activeIssue);
   cache.clear();
 });

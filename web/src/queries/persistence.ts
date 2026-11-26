@@ -9,6 +9,7 @@ import type { Actor } from "../lib/types";
 export const queryCacheMaxAge = 60 * 60 * 1000;
 
 const storageKey = "super-sparrow:query-cache:v1";
+const legacyPreviewKey = "super-sparrow:page-preview:v1";
 const resources = new Set([
   "me",
   "projects",
@@ -64,6 +65,7 @@ export function restoreQueryCache(client: QueryClient): void {
   if (typeof window === "undefined") return;
 
   try {
+    window.sessionStorage.removeItem(legacyPreviewKey);
     const raw = window.sessionStorage.getItem(storageKey);
     if (!raw) return;
 
@@ -191,7 +193,10 @@ function discardQueryCache(client: QueryClient): void {
   client.clear();
 
   try {
-    if (typeof window !== "undefined") window.sessionStorage.removeItem(storageKey);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(storageKey);
+      window.sessionStorage.removeItem(legacyPreviewKey);
+    }
   } catch {
     // Blocked browser storage must not prevent sign-out.
   }

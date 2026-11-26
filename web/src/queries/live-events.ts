@@ -8,11 +8,18 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
   const affected = new Set<string>(["activity"]);
   const projectKeys = new Set<string>();
   const issueIDs = new Set<string>();
+  const eventIssueKeys = new Set<string>();
   const attachmentIssues = new Set<string>();
   let githubChanged = false;
   for (const event of events) {
     if (event.kind.startsWith("github.") || event.kind === "discord.channel.set") {
       githubChanged = true;
+    }
+    if (typeof event.payload.issue_key === "string") {
+      eventIssueKeys.add(event.payload.issue_key.toUpperCase());
+    }
+    if (typeof event.payload.key === "string") {
+      eventIssueKeys.add(event.payload.key.toUpperCase());
     }
     if (event.kind === "attachment.created" || event.kind === "attachment.deleted") {
       if (typeof event.payload.issue_key === "string") {
@@ -101,6 +108,33 @@ export function refreshLiveEvents(client: QueryClient, events: ActivityEvent[]):
       if (resource === "keyboard-shortcuts") return affected.has("keyboard-shortcuts");
       if (resource === "attachments") {
         return typeof key === "string" && attachmentIssues.has(key.toUpperCase());
+      }
+      if (
+        (resource === "review-rounds" ||
+          resource === "findings" ||
+          resource === "comments" ||
+          resource === "activity") &&
+        typeof key === "string"
+      ) {
+        if (!affected.has(resource)) return false;
+        const upperKey = key.toUpperCase();
+        if (eventIssueKeys.has(upperKey)) return true;
+        const issue = client.getQueryData<Issue>(["issue", upperKey]);
+        if (issue) {
+          if (issueIDs.has(issue.id)) return true;
+          if (resource === "activity") {
+            return events.some(
+              (event) => event.target_id === issue.id || event.payload.issue_id === issue.id,
+            );
+          }
+          return events.some(
+            (event) =>
+              event.project_id === issue.project_id &&
+              ["finding", "review_round", "comment"].includes(event.target_type),
+          );
+        }
+        const prefix = upperKey.split("-")[0];
+        return !!prefix && projectKeys.has(prefix);
       }
       if (typeof resource !== "string" || !affected.has(resource)) return false;
       return key === undefined || typeof key !== "string" || projectKeys.has(key);

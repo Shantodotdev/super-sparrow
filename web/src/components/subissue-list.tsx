@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   issueStatusLabel,
   issueStatuses,
@@ -30,7 +30,8 @@ export function SubissueList({
   creating: boolean;
   onCreatingChange: (creating: boolean) => void;
 }) {
-  const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
+  const subissuesResult = useQuery(subissuesQuery(issue.key));
+  const subissues = subissuesResult.data ?? [];
   const contextMenu = useSubissueContextMenu(issue);
   const [collapsed, setCollapsed] = useState<IssueStatus[]>([]);
   const sectionRef = useRef<HTMLElement>(null);
@@ -65,7 +66,12 @@ export function SubissueList({
           <Icon name="plus" className="size-4" />
         </button>
       </div>
-      {subissues.length === 0 && (
+      {subissuesResult.isPending && (
+        <p role="status" className="muted mt-[3px] text-[12px] text-[#a2aec2]">
+          Loading subissues…
+        </p>
+      )}
+      {!subissuesResult.isPending && subissues.length === 0 && (
         <p className="muted mt-[3px] text-[12px] text-[#a2aec2]">No subissues yet.</p>
       )}
       {issueStatuses.map((status) => {
@@ -138,7 +144,7 @@ export function SubissueList({
                         {subissue.title}
                       </span>
                       <span className="max-w-[260px] justify-self-end [&>span]:flex-nowrap [&>span]:overflow-hidden">
-                        <LabelChips labelIds={subissue.label_ids} />
+                        <LabelChips labelIds={subissue.label_ids} projectKey={issue.project_key} />
                       </span>
                     </button>
                   </li>

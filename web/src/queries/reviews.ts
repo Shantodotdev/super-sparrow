@@ -2,13 +2,18 @@ import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-q
 import { apiWrite } from "../lib/api";
 import type { Finding, FindingSeverity, ReviewRound } from "../lib/types";
 import { findingsQuery } from "./findings";
+import { issueEventsQuery, issueFindingsQuery, issueReviewRoundsQuery } from "./issue-resources";
+import { issueQuery } from "./issues";
 import { reviewRoundsQuery } from "./project";
 
-/** Refreshes derived counts and history after publishing the committed review data. */
-function refreshReviews(client: QueryClient) {
-  for (const key of ["review-rounds", "findings", "issues", "issue", "activity", "comments"]) {
-    void client.invalidateQueries({ queryKey: [key] });
-  }
+/** Refreshes derived counts and history for one issue after publishing committed review data. */
+function refreshReviews(client: QueryClient, issueKey: string) {
+  void client.invalidateQueries({ queryKey: issueReviewRoundsQuery(issueKey).queryKey });
+  void client.invalidateQueries({ queryKey: issueFindingsQuery(issueKey).queryKey });
+  void client.invalidateQueries({ queryKey: issueQuery(issueKey).queryKey });
+  void client.invalidateQueries({ queryKey: issueEventsQuery(issueKey).queryKey });
+  void client.invalidateQueries({ queryKey: ["issues"] });
+  void client.invalidateQueries({ queryKey: ["activity"], exact: true });
 }
 
 /** Starts a review and publishes it before background reads complete. */
@@ -22,11 +27,15 @@ export function useStartReview(issueKey: string) {
         { plan_coverage: coverage },
       ),
     onSuccess: ({ round }) => {
-      void client.cancelQueries({ queryKey: reviewRoundsQuery.queryKey });
-      client.setQueryData(reviewRoundsQuery.queryKey, (current) =>
+      const scopedKey = issueReviewRoundsQuery(issueKey).queryKey;
+      void client.cancelQueries({ queryKey: scopedKey });
+      client.setQueryData<ReviewRound[]>(scopedKey, (current) =>
         current ? [...current.filter((item) => item.id !== round.id), round] : [round],
       );
-      refreshReviews(client);
+      client.setQueryData(reviewRoundsQuery.queryKey, (current) =>
+        current ? [...current.filter((item) => item.id !== round.id), round] : current,
+      );
+      refreshReviews(client, issueKey);
     },
   });
 }
@@ -42,11 +51,15 @@ export function useFinishReview(issueKey: string, round: number) {
         { summary },
       ),
     onSuccess: ({ round }) => {
-      void client.cancelQueries({ queryKey: reviewRoundsQuery.queryKey });
+      const scopedKey = issueReviewRoundsQuery(issueKey).queryKey;
+      void client.cancelQueries({ queryKey: scopedKey });
+      client.setQueryData<ReviewRound[]>(scopedKey, (current) =>
+        current?.map((item) => (item.id === round.id ? round : item)),
+      );
       client.setQueryData(reviewRoundsQuery.queryKey, (current) =>
         current?.map((item) => (item.id === round.id ? round : item)),
       );
-      refreshReviews(client);
+      refreshReviews(client, issueKey);
     },
   });
 }
@@ -73,11 +86,15 @@ export function useCreateFinding(issueKey: string, round: number) {
         input,
       ),
     onSuccess: ({ finding }) => {
-      void client.cancelQueries({ queryKey: findingsQuery.queryKey });
-      client.setQueryData(findingsQuery.queryKey, (current) =>
+      const scopedKey = issueFindingsQuery(issueKey).queryKey;
+      void client.cancelQueries({ queryKey: scopedKey });
+      client.setQueryData<Finding[]>(scopedKey, (current) =>
         current ? [...current.filter((item) => item.id !== finding.id), finding] : [finding],
       );
-      refreshReviews(client);
+      client.setQueryData(findingsQuery.queryKey, (current) =>
+        current ? [...current.filter((item) => item.id !== finding.id), finding] : current,
+      );
+      refreshReviews(client, issueKey);
     },
   });
 }

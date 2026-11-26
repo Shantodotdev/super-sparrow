@@ -11,7 +11,6 @@ export function keyboardPreferencesQuery(actorID: string) {
     enabled: !!actorID,
     staleTime: 15_000,
     refetchOnWindowFocus: "always",
-    refetchInterval: 30_000,
     retry: false,
   });
 }
