@@ -19,7 +19,7 @@ import { Tabs } from "../components/tabs";
 import { slugify } from "../lib/format";
 import { statusIcon } from "../lib/issue-status";
 import { validateIssueSearch, type IssueTab } from "../lib/search";
-import type { Finding, Issue, ReviewRound } from "../lib/types";
+import type { Issue } from "../lib/types";
 import { issueAttachmentsQuery } from "../queries/attachments";
 import {
   issueCommentsQuery,
@@ -41,14 +41,14 @@ export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   loader: async ({ context, params }) => {
     const projects = await loadQuery(context.queryClient, projectsQuery);
     const project = projects.find((item) => item.slug === params.projectSlug);
+    void context.queryClient.prefetchQuery(subissuesQuery(params.issue));
+    void context.queryClient.prefetchQuery(issueFindingsQuery(params.issue));
+    void context.queryClient.prefetchQuery(issueReviewRoundsQuery(params.issue));
     void context.queryClient.prefetchQuery(issueAttachmentsQuery(params.issue));
     void context.queryClient.prefetchQuery(issueCommentsQuery(params.issue));
     void context.queryClient.prefetchQuery(issueEventsQuery(params.issue));
     await Promise.all([
       loadQuery(context.queryClient, issueQuery(params.issue)),
-      loadQuery(context.queryClient, subissuesQuery(params.issue)),
-      loadQuery(context.queryClient, issueFindingsQuery(params.issue)),
-      loadQuery(context.queryClient, issueReviewRoundsQuery(params.issue)),
       loadQuery(context.queryClient, actorsQuery),
       ...(project
         ? [
@@ -75,8 +75,6 @@ function IssuePage() {
   const project = useProject();
   const { issue: issueKey } = Route.useParams();
   const { data: issue } = useSuspenseQuery(issueQuery(issueKey));
-  const { data: findings } = useSuspenseQuery(issueFindingsQuery(issueKey));
-  const { data: rounds } = useSuspenseQuery(issueReviewRoundsQuery(issueKey));
   const { data: projects } = useSuspenseQuery(projectsQuery);
 
   // An old key, from before the issue moved to another project, opens the issue at its new key.
@@ -101,24 +99,27 @@ function IssuePage() {
     );
   }
 
-  return <IssueDetail key={issue.id} issue={issue} rounds={rounds} findings={findings} />;
+  return <IssueDetail key={issue.id} issue={issue} />;
 }
 
 type IssueDetailProps = {
   issue: Issue;
-  rounds: ReviewRound[];
-  findings: Finding[];
 };
 
-function IssueDetail({ issue, rounds, findings }: IssueDetailProps) {
+function IssueDetail({ issue }: IssueDetailProps) {
   const project = useProject();
   const search = Route.useSearch();
   const { tab = "plan" } = search;
   const navigate = Route.useNavigate();
   const transitionRun = useRef(0);
   const [creatingSubissue, setCreatingSubissue] = useState(false);
-  const { data: subissues } = useSuspenseQuery(subissuesQuery(issue.key));
+  const subissuesQueryResult = useQuery(subissuesQuery(issue.key));
+  const roundsQueryResult = useQuery(issueReviewRoundsQuery(issue.key));
+  const findingsQueryResult = useQuery(issueFindingsQuery(issue.key));
   const activity = useQuery({ ...issueEventsQuery(issue.key), enabled: tab === "activity" });
+  const subissues = subissuesQueryResult.data ?? [];
+  const rounds = roundsQueryResult.data ?? [];
+  const findings = findingsQueryResult.data ?? [];
 
   const switchTab = (nextTab: IssueTab) => {
     if (nextTab === tab) return;
@@ -283,17 +284,22 @@ function IssueDetail({ issue, rounds, findings }: IssueDetailProps) {
               onCreatingChange={setCreatingSubissue}
             />
           )}
-          {(tab === "rounds" || tab === "findings") && (
-            <IssueReviews
-              issue={issue}
-              rounds={rounds}
-              findings={findings}
-              search={search}
-              onSearchChange={(next) => {
-                void navigate({ search: next });
-              }}
-            />
-          )}
+          {(tab === "rounds" || tab === "findings") &&
+            (roundsQueryResult.isPending || findingsQueryResult.isPending ? (
+              <p role="status" className="muted py-[20px] text-[#a2aec2]">
+                Loading reviews…
+              </p>
+            ) : (
+              <IssueReviews
+                issue={issue}
+                rounds={rounds}
+                findings={findings}
+                search={search}
+                onSearchChange={(next) => {
+                  void navigate({ search: next });
+                }}
+              />
+            ))}
           {tab === "activity" && (
             <div className="px-0 py-[20px]">
               {activity.isPending && (

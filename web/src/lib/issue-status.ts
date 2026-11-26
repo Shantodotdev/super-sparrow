@@ -11,6 +11,13 @@ export const issueStatuses: IssueStatus[] = [
   "canceled",
 ];
 
+/** Active issue statuses preloaded for the current project; done and canceled load on demand. */
+export const activeIssueStatuses: IssueStatus[] = ["in_review", "in_progress", "todo", "backlog"];
+
+export function isActiveIssueStatus(status: IssueStatus): boolean {
+  return status !== "done" && status !== "canceled";
+}
+
 export const issueStatusLabel: Record<IssueStatus, string> = {
   in_review: "In Review",
   in_progress: "In Progress",

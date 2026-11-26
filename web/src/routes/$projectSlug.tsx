@@ -1,8 +1,9 @@
 import { useEffect } from "react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, Outlet, useLocation } from "@tanstack/react-router";
 import { saveLastProject } from "../lib/last-project";
 import { projectsQuery } from "../queries/project";
+import { projectActiveIssuesQuery } from "../queries/project-resources";
 import { NotFoundState } from "../components/not-found-state";
 
 const legacyRoutes = {
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/$projectSlug")({ component: ProjectLayout
 function ProjectLayout() {
   const { projectSlug } = Route.useParams();
   const location = useLocation();
+  const client = useQueryClient();
   const { data: projects } = useSuspenseQuery(projectsQuery);
   const oldProject = projects.find((project) => project.id === projectSlug);
   useEffect(() => {
@@ -26,10 +28,13 @@ function ProjectLayout() {
     }
   }, [oldProject, projectSlug, location.pathname, location.searchStr, location.hash]);
 
-  const known = projects.some((project) => project.slug === projectSlug);
+  const currentProject = projects.find((project) => project.slug === projectSlug);
+  const known = !!currentProject;
   useEffect(() => {
-    if (known) saveLastProject(projectSlug);
-  }, [known, projectSlug]);
+    if (!currentProject) return;
+    saveLastProject(projectSlug);
+    void client.prefetchQuery(projectActiveIssuesQuery(currentProject.key));
+  }, [currentProject, projectSlug, client]);
 
   if (oldProject) return <p role="status">Opening project…</p>;
   const legacy = legacyRoutes[projectSlug as keyof typeof legacyRoutes];

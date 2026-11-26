@@ -27,6 +27,10 @@ func (s *server) listIssues(w http.ResponseWriter, r *http.Request) error {
 	if filter.Limit, err = queryLimit(r); err != nil {
 		return err
 	}
+	includePlan, err := queryBool(r, "include_plan")
+	if err != nil {
+		return err
+	}
 
 	issues, err := s.store.ListIssues(r.Context(), filter)
 	if err != nil {
@@ -39,7 +43,11 @@ func (s *server) listIssues(w http.ResponseWriter, r *http.Request) error {
 
 	views := make([]issueView, 0, len(issues))
 	for _, issue := range issues {
-		views = append(views, newIssueSummaryView(issue))
+		if includePlan {
+			views = append(views, newIssueView(issue))
+		} else {
+			views = append(views, newIssueSummaryView(issue))
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"issues": views, "next_before": nextBefore})
 	return nil

@@ -1,10 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { isActiveIssueStatus } from "../lib/issue-status";
 import type { Issue } from "../lib/types";
 
 /** Publishes a committed creation without waiting for background reads or seeding incomplete lists. */
 export function cacheCreatedIssue(client: QueryClient, issue: Issue): void {
   const matches = (key: readonly unknown[]) =>
     key[0] === "issues" && (key.length === 1 || key[1] === issue.project_key);
+  const matchesForUpdate = (key: readonly unknown[]) =>
+    matches(key) && (key[2] !== "active" || isActiveIssueStatus(issue.status));
   void client.cancelQueries({ predicate: (query) => matches(query.queryKey) });
   const keepNewest = (current: Issue | undefined) =>
     current &&
@@ -12,7 +15,7 @@ export function cacheCreatedIssue(client: QueryClient, issue: Issue): void {
       ? current
       : issue;
   client.setQueriesData<Issue[]>(
-    { predicate: (query) => matches(query.queryKey) },
+    { predicate: (query) => matchesForUpdate(query.queryKey) },
     (current) =>
       current && [
         keepNewest(current.find((item) => item.id === issue.id)),

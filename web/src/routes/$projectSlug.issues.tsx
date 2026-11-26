@@ -19,6 +19,7 @@ import { validateIssuesSearch, type IssuesSearch } from "../lib/search";
 import { useCreateIssue } from "../queries/issues";
 import { actorsQuery, projectsQuery } from "../queries/project";
 import {
+  projectActiveIssuesQuery,
   projectIssuesQuery,
   projectLabelsQuery,
   projectMilestonesQuery,
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/$projectSlug/issues")({
     const projects = await loadQuery(context.queryClient, projectsQuery);
     const project = projects.find((p) => p.slug === params.projectSlug);
     if (!project) return;
+    void context.queryClient.prefetchQuery(projectActiveIssuesQuery(project.key));
     void context.queryClient.prefetchQuery(projectIssuesQuery(project.key));
     void context.queryClient.prefetchQuery(actorsQuery);
     void context.queryClient.prefetchQuery(projectLabelsQuery(project.key));

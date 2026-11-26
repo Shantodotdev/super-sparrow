@@ -11,6 +11,7 @@ import {
 } from "./issue-resources";
 import {
   allIssuesQuery,
+  projectActiveIssuesQuery,
   projectIssuesQuery,
   projectLabelsQuery,
   projectsQuery,
@@ -265,5 +266,26 @@ test("scoped issue detail queries fetch only that issue's resources and refresh 
   expect(cache.getQueryState(["findings", "SS-1"])?.isInvalidated).toBe(false);
   expect(cache.getQueryState(["comments", "SS-1", ""])?.isInvalidated).toBe(false);
   expect(cache.getQueryState(["activity", "SS-1"])?.isInvalidated).toBe(false);
+  cache.clear();
+});
+
+test("project active issue preload fetches only non-done, non-canceled issues with plans and seeds detail cache", async () => {
+  const cache = client();
+  const requests: string[] = [];
+  const activeIssue: Issue = { ...issue, status: "in_progress", plan: "# Preloaded plan" };
+  globalThis.fetch = (async (path: string) => {
+    requests.push(path);
+    if (
+      path ===
+      "/api/projects/WP/issues?limit=200&status=in_review%2Cin_progress%2Ctodo%2Cbacklog&include_plan=true"
+    )
+      return Response.json({ issues: [activeIssue], next_before: null });
+    throw new Error(`Unexpected request ${path}`);
+  }) as typeof fetch;
+
+  const loaded = await cache.fetchQuery(projectActiveIssuesQuery("WP"));
+  expect(loaded).toEqual([activeIssue]);
+  expect(requests).toHaveLength(1);
+  expect(cache.getQueryData(["issue", activeIssue.key])).toEqual(activeIssue);
   cache.clear();
 });

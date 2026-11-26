@@ -1,5 +1,5 @@
 import { apiGet } from "../lib/api";
-import type { ActivityEvent, Finding, Issue } from "../lib/types";
+import type { ActivityEvent, Finding, Issue, IssueStatus } from "../lib/types";
 
 export type Project = { id: string; key: string; name: string; slug: string };
 
@@ -7,9 +7,21 @@ export async function getProjects(): Promise<Project[]> {
   return (await apiGet<{ projects: Project[] }>("/api/projects")).projects;
 }
 
+export type IssueListOptions = {
+  statuses?: IssueStatus[];
+  includePlan?: boolean;
+};
+
 /** Reads every issue page without losing records beyond the API page size. */
-export async function getIssues(projects?: Pick<Project, "key">[]): Promise<Issue[]> {
+export async function getIssues(
+  projects?: Pick<Project, "key">[],
+  options?: IssueListOptions,
+): Promise<Issue[]> {
   projects ??= await getProjects();
+  const statusParam = options?.statuses?.length
+    ? `&status=${encodeURIComponent(options.statuses.join(","))}`
+    : "";
+  const planParam = options?.includePlan ? "&include_plan=true" : "";
   return (
     await Promise.all(
       projects.map(async (project) => {
@@ -17,7 +29,7 @@ export async function getIssues(projects?: Pick<Project, "key">[]): Promise<Issu
         let before: number | null = null;
         do {
           const page: { issues: Issue[]; next_before: number | null } = await apiGet(
-            `/api/projects/${encodeURIComponent(project.key)}/issues?limit=200${before === null ? "" : `&before=${before}`}`,
+            `/api/projects/${encodeURIComponent(project.key)}/issues?limit=200${statusParam}${planParam}${before === null ? "" : `&before=${before}`}`,
           );
           issues.push(...page.issues);
           before = page.next_before;
