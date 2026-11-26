@@ -84,6 +84,7 @@ pub fn run() {
         .manage(capture::CaptureState::default())
         .invoke_handler(tauri::generate_handler![
             hide_capture,
+            toggle_quick_capture,
             current_shortcut,
             configure_shortcut,
             notify,
@@ -170,6 +171,12 @@ fn hide_capture(app: AppHandle) {
     if let Some(window) = app.get_webview_window(CAPTURE_WINDOW) {
         let _ = window.hide();
     }
+}
+
+/// Opens or hides the standalone capture window when triggered from the main window's shortcut.
+#[tauri::command]
+fn toggle_quick_capture(app: AppHandle) {
+    toggle_capture(&app);
 }
 
 /// Returns the capture shortcut's label, such as "Meta+Shift+Q", or "" while it is paused, so the page
@@ -297,6 +304,7 @@ fn connect(app: &AppHandle, server: url::Url, show: bool) -> tauri::Result<()> {
             .permission("core:default")
             .permission("core:window:allow-start-dragging")
             .permission("allow-hide-capture")
+            .permission("allow-toggle-quick-capture")
             .permission("allow-current-shortcut")
             .permission("allow-configure-shortcut")
             .permission("allow-notify")

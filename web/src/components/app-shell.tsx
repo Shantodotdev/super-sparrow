@@ -14,6 +14,7 @@ import { clearQueryCache } from "../queries/persistence";
 import { ShortcutHelp, useGlobalShortcuts } from "./shortcuts";
 import { QuickCapture } from "./quick-capture";
 import { matchesChord } from "../lib/shortcuts";
+import { desktopInvoke, isDesktop } from "../lib/desktop";
 import { KeyboardShortcutsProvider, useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 
 /**
@@ -34,7 +35,7 @@ function Shell() {
   const bare = useMatches({ select: (matches) => matches.some((match) => match.staticData.bare) });
   const client = useQueryClient();
   const projects = useQuery({ ...projectsQuery, enabled: !bare });
-  const identity = useQuery({ ...meQuery, enabled: !bare, refetchInterval: 30_000 });
+  const identity = useQuery({ ...meQuery, enabled: !bare });
   useEffect(() => {
     if (identity.error instanceof ApiError && identity.error.status === 401) {
       clearQueryCache(client);
@@ -45,6 +46,7 @@ function Shell() {
     if (bare) return;
     let stream: EventSource;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let hasConnected = false;
     const changes: ActivityEvent[] = [];
     const notifier = desktopNotifier(client);
     const connect = () => {
@@ -64,7 +66,13 @@ function Shell() {
         }
       });
       stream.onopen = () => {
-        void client.invalidateQueries({}, { cancelRefetch: false });
+        if (hasConnected) {
+          void client.invalidateQueries({}, { cancelRefetch: false });
+        }
+        hasConnected = true;
+      };
+      stream.onerror = () => {
+        void client.invalidateQueries({ queryKey: meQuery.queryKey });
       };
     };
     const close = () => {
@@ -86,13 +94,15 @@ function Shell() {
       window.removeEventListener("pageshow", resume);
     };
   }, [bare, client]);
+  const desktop = isDesktop();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureMounted, setCaptureMounted] = useState(false);
   useGlobalShortcuts(() => setHelpOpen(true));
 
-  // The personal capture binding works even while typing. In the desktop app
-  // the system-wide shortcut takes the key first and opens the capture window instead.
+  // The personal capture binding works even while typing. In the desktop app, always delegate to
+  // the standalone capture window instead of opening an in-page overlay inside the main window.
   useEffect(() => {
     if (bare) return;
     const toggle = (event: KeyboardEvent) => {
@@ -105,6 +115,12 @@ function Shell() {
       )
         return;
       event.preventDefault();
+      const invoke = desktopInvoke();
+      if (invoke) {
+        void invoke("toggle_quick_capture");
+        return;
+      }
+      setCaptureMounted(true);
       setCaptureOpen((open) => !open);
     };
     window.addEventListener("keydown", toggle, true);
@@ -148,7 +164,7 @@ function Shell() {
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       )}
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
-      {!!projects.data?.length && (
+      {!desktop && captureMounted && !!projects.data?.length && (
         <QuickCapture open={captureOpen} onClose={() => setCaptureOpen(false)} />
       )}
     </AppFrame>

@@ -36,10 +36,11 @@ const KeyboardContext = createContext<{
 /** Shares server-backed personal bindings and synchronizes the desktop's one global accelerator. */
 export function KeyboardShortcutsProvider({ children }: { children: ReactNode }) {
   const path = useLocation({ select: (location) => location.pathname });
-  const identity = useQuery({ ...meQuery, enabled: path !== "/signin", retry: false });
-  const preferences = useQuery(
-    keyboardPreferencesQuery(path === "/signin" ? "" : (identity.data?.id ?? "")),
-  );
+  const normalizedPath = path.replace(/\/+$/, "");
+  const isCaptureWindow = normalizedPath === "/capture";
+  const isSignIn = normalizedPath === "/signin";
+  const identity = useQuery({ ...meQuery, enabled: !isSignIn, retry: false });
+  const preferences = useQuery(keyboardPreferencesQuery(isSignIn ? "" : (identity.data?.id ?? "")));
   const bindings = resolveBindings(preferences.data?.overrides ?? {});
   const [desktopError, setDesktopError] = useState("");
   const [recording, setRecording] = useState<ShortcutID | null>(null);
@@ -48,6 +49,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
   const ready = preferences.isSuccess;
 
   useEffect(() => {
+    if (isCaptureWindow || isSignIn) return;
     const invoke = desktopInvoke();
     if (!ready) return;
     if (!invoke) {
@@ -72,9 +74,10 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     return () => {
       active = false;
     };
-  }, [capture, ready, preferences.data?.revision, recording]);
+  }, [capture, ready, preferences.data?.revision, recording, isCaptureWindow, isSignIn]);
 
   useEffect(() => {
+    if (isCaptureWindow) return;
     const reset = () => {
       setRecording(null);
       void desktopInvoke()?.("configure_shortcut", {
@@ -84,9 +87,10 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     };
     window.addEventListener("sparrow:clear-cache", reset);
     return () => window.removeEventListener("sparrow:clear-cache", reset);
-  }, []);
+  }, [isCaptureWindow]);
 
   useEffect(() => {
+    if (isCaptureWindow) return;
     const restore = () => {
       if (recording)
         void desktopInvoke()?.("configure_shortcut", { binding: capture, temporary: false }).catch(
@@ -95,7 +99,7 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
     };
     window.addEventListener("pagehide", restore);
     return () => window.removeEventListener("pagehide", restore);
-  }, [recording, capture]);
+  }, [recording, capture, isCaptureWindow]);
 
   return (
     <KeyboardContext.Provider
