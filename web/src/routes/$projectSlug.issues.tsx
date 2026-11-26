@@ -10,6 +10,7 @@ import { Icon } from "../components/icon";
 import { IssueBoard } from "../components/issue-board";
 import { IssueList } from "../components/issue-list";
 import { NewIssueModal } from "../components/new-issue-modal";
+import { IssueBoardSkeleton, IssueListSkeleton } from "../components/skeleton";
 import { useElementHeight } from "../hooks/use-element-height";
 import { filterIssues } from "../lib/issue-filter";
 import { issueStatusLabel, issueStatuses } from "../lib/issue-status";
@@ -243,7 +244,13 @@ function IssuesPage() {
           </button>
         </div>
       )}
-      {!issueList.data || !people.data || !projectLabels.data ? null : view === "board" ? (
+      {!issueList.data || !people.data || !projectLabels.data ? (
+        view === "board" ? (
+          <IssueBoardSkeleton />
+        ) : (
+          <IssueListSkeleton />
+        )
+      ) : view === "board" ? (
         <IssueBoard issues={filtered} statusFilter={search.status} />
       ) : (
         <IssueList

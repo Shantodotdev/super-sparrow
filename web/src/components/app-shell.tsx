@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
 import { AppFrame } from "./app-frame";
+import { AppShellSkeleton, IssueListSkeleton } from "./skeleton";
 import { clearQueryCache } from "../queries/persistence";
 import { ShortcutHelp, useGlobalShortcuts } from "./shortcuts";
 import { QuickCapture } from "./quick-capture";
@@ -130,7 +131,7 @@ function Shell() {
   }, [bindings.palette, recording]);
 
   if (bare) return <Outlet />;
-  if (!identity.data) return null;
+  if (!identity.data) return <AppShellSkeleton />;
   if (projects.data?.length === 0) return <ProjectOnboarding />;
 
   return (
@@ -141,6 +142,7 @@ function Shell() {
           <button onClick={() => void projects.refetch()}>Try again</button>
         </div>
       )}
+      {!projects.data && !projects.error && <IssueListSkeleton />}
       {!!projects.data?.length && <Outlet />}
       {!!projects.data?.length && (
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

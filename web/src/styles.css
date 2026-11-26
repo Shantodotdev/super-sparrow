@@ -1,24 +1,12 @@
 @import "tailwindcss";
 @import "./components/issue-plan.css";
 
-#page-preview {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 2147483647;
-  background: #08090b;
-  pointer-events: none;
-}
-#page-preview[data-active] {
-  display: block;
-}
-
 @font-face {
   font-family: Inter;
   src: url("./assets/inter-variable.ttf") format("truetype");
   font-style: normal;
   font-weight: 100 900;
-  font-display: block;
+  font-display: swap;
 }
 @keyframes select-in {
   from {

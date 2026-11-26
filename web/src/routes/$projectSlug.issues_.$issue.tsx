@@ -12,6 +12,7 @@ import { IssueTextField } from "../components/issue-text-field";
 import { IssueProperties } from "../components/issue-properties";
 import { NotFoundState } from "../components/not-found-state";
 import { IssueReviews } from "../components/issue-reviews";
+import { IssueDetailSkeleton } from "../components/skeleton";
 import { SubissueList } from "../components/subissue-list";
 import { subissuesQuery } from "../queries/subissues";
 import { Tabs } from "../components/tabs";
@@ -38,6 +39,7 @@ import { isTypingTarget } from "../lib/shortcuts";
 export const Route = createFileRoute("/$projectSlug/issues_/$issue")({
   staticData: { section: "issues" },
   validateSearch: validateIssueSearch,
+  pendingComponent: IssueDetailSkeleton,
   loader: async ({ context, params }) => {
     void context.queryClient.prefetchQuery(issueAttachmentsQuery(params.issue));
     await Promise.all([
