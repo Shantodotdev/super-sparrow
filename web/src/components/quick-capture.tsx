@@ -126,9 +126,17 @@ export function QuickCapture({ open, onClose, standalone = false }: QuickCapture
     };
   }, []);
 
-  // Each opening focuses the title, so the person can start typing at once.
+  // Each opening focuses the title, so the person can start typing at once; closing blurs it so
+  // hidden inputs cannot swallow page shortcuts.
   useEffect(() => {
-    if (open) requestAnimationFrame(() => titleInput.current?.focus());
+    if (!open) {
+      if (panel.current?.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement).blur();
+      }
+      return;
+    }
+    const frame = requestAnimationFrame(() => titleInput.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   // The personal close binding closes the open panel, even while typing in it.
