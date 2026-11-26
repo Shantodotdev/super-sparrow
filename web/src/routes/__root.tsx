@@ -14,6 +14,7 @@ import { AppShell } from "../components/app-shell";
 import { AppShellSkeleton } from "../components/skeleton";
 import { ToastProvider } from "../components/toast";
 import { clearQueryCache } from "../queries/persistence";
+import { desktopInvoke } from "../lib/desktop";
 import interFont from "../assets/inter-variable.ttf?url";
 import { retireServiceWorker } from "../lib/retire-service-worker";
 
@@ -39,6 +40,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearQueryCache(context.queryClient);
+        if (location.pathname.replace(/\/+$/, "") === "/capture") {
+          const invoke = desktopInvoke();
+          if (invoke) {
+            void invoke("open_signin");
+            return;
+          }
+        }
         throw redirect({ to: "/signin" });
       }
       throw error;

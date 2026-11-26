@@ -104,6 +104,10 @@
   :host {
     @apply bg-[#08090b] font-[Inter,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif] text-[14px] text-[#edf0f6] [font-synthesis:none];
   }
+  :root[data-capture-window],
+  :root[data-capture-window] body {
+    background: transparent !important;
+  }
   * {
     @apply box-border;
   }

@@ -9,7 +9,7 @@ use std::time::Duration;
 use image::ImageEncoder;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use tauri::ipc::Response;
-use tauri::{PhysicalPosition, PhysicalSize, State, WebviewWindow};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow};
 
 /// How long a hidden window takes to leave the screen before the capture, so it is not in it.
 const HIDE_DELAY: Duration = Duration::from_millis(220);
@@ -65,6 +65,17 @@ pub async fn capture_screen(
 /// Puts the calling window back where it was before capture_screen.
 #[tauri::command]
 pub fn end_capture(window: WebviewWindow, state: State<'_, CaptureState>) -> Result<(), String> {
+    restore_geometry(&window, &state)?;
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+/// Restores a window's pre-capture geometry if a page reload or close interrupts screenshot mode.
+pub fn restore_if_capturing(window: &WebviewWindow) {
+    let state = window.app_handle().state::<CaptureState>();
+    let _ = restore_geometry(window, &state);
+}
+
+fn restore_geometry(window: &WebviewWindow, state: &CaptureState) -> Result<(), String> {
     let previous = state.0.lock().ok().and_then(|mut saved| {
         let index = saved
             .iter()
@@ -80,7 +91,7 @@ pub fn end_capture(window: WebviewWindow, state: State<'_, CaptureState>) -> Res
             .set_always_on_top(on_top)
             .map_err(|error| error.to_string())?;
     }
-    window.set_focus().map_err(|error| error.to_string())
+    Ok(())
 }
 
 /// Captures the monitor at a point, in physical pixels, and encodes it as PNG.

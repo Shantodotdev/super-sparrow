@@ -6,7 +6,7 @@ import { ApiError } from "../lib/api";
 import { ProjectOnboarding } from "./project-onboarding";
 import { meQuery, projectsQuery } from "../queries/project";
 import { useEffect, useState } from "react";
-import { Outlet, useMatches } from "@tanstack/react-router";
+import { Outlet, useMatches, useRouter } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
 import { AppFrame } from "./app-frame";
 import { AppShellSkeleton, IssueListSkeleton } from "./skeleton";
@@ -32,8 +32,20 @@ export function AppShell() {
 /** Renders the signed-in application and its shared keyboard surfaces. */
 function Shell() {
   const { bindings, recording } = useKeyboardShortcuts();
+  const router = useRouter();
   const bare = useMatches({ select: (matches) => matches.some((match) => match.staticData.bare) });
   const client = useQueryClient();
+
+  useEffect(() => {
+    if (bare) return;
+    const host = window as Window & { __sparrowNavigate?: (href: string) => void };
+    host.__sparrowNavigate = (href: string) => {
+      void router.navigate({ href });
+    };
+    return () => {
+      delete host.__sparrowNavigate;
+    };
+  }, [bare, router]);
   const projects = useQuery({ ...projectsQuery, enabled: !bare });
   const identity = useQuery({ ...meQuery, enabled: !bare });
   useEffect(() => {
